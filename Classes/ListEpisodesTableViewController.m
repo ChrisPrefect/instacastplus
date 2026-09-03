@@ -16,6 +16,7 @@
 #import "CDPlaylist.h"
 #import "CDSmartPlaylist.h"
 #import "DatabaseManager.h"
+#import "InstacastPlus-Swift.h"
 
 #define EPISODE_PAGE_SIZE 25
 
@@ -211,6 +212,31 @@
     if ([self _deferEpisodeReloadDuringInteraction]) {
         return;
     }
+    // Never reload out from under a running scroll — updateEpisodes empties the table, so
+    // the offset would be clamped away mid-gesture. Retry once the scrolling has settled.
+    if (self.tableView.dragging || self.tableView.decelerating) {
+        [self coalescedPerformSelector:@selector(_reloadListAfterCountChange) afterDelay:1.0];
+        return;
+    }
+
+    // updateEpisodes discards every loaded page and resets paging to 0. On a list the user
+    // has scrolled into, that collapses contentSize and UIKit clamps contentOffset to the
+    // top — the list jumps back to its beginning on its own, just because the episode count
+    // changed (a feed refresh, a finished episode, an applied iCloud state). Persist the
+    // current offset and re-arm the restore so the existing paging loop walks back to it.
+    BOOL preservesScrollPosition = (self.tableView.window != nil && self.nextPageOffset > EPISODE_PAGE_SIZE);
+    if (preservesScrollPosition) {
+        [self _storeScrollPosition];
+        _didRestoreScrollPosition = NO;
+        [[ICDiagnosticLogger shared] logEvent:@"list-scroll"
+                                      message:@"Listen-Neuaufbau nach Zähleränderung – Scrollposition gesichert"
+                                     metadata:@{
+                                         @"list": self.list.name ?: @"",
+                                         @"loadedEpisodes": @(self.loadedEpisodes.count),
+                                         @"contentOffsetY": @(self.tableView.contentOffset.y),
+                                     }];
+    }
+
     [self updateEpisodes];
     [self reloadDataAndPreserveSelection];
 

@@ -4049,6 +4049,21 @@ extension ICiCloudSyncManager {
         }
     }
 
+    // Takes a permanently rejected record out of the engine's pending changes and counts it
+    // as resolved for the backfill accounting, so neither the send batch nor the initial
+    // upload can stall on a record the server will never accept.
+    func dropPermanentlyRejectedRecordSave(
+        _ failedSave: CKSyncEngine.Event.SentRecordZoneChanges.FailedRecordSave
+    ) {
+        let recordID = failedSave.record.recordID
+        syncEngine?.state.remove(pendingRecordZoneChanges: [.saveRecord(recordID)])
+        var metadata = cloudKitErrorMetadata(failedSave.error)
+        metadata["recordName"] = recordID.recordName
+        metadata["recordType"] = failedSave.record.recordType
+        logSyncEvent("CloudKit-Record dauerhaft abgelehnt – verworfen", metadata: metadata)
+        recordInitialUploadRecordsSaved([recordID])
+    }
+
     func handleFailedRecordSave(
         _ failedSave: CKSyncEngine.Event.SentRecordZoneChanges.FailedRecordSave,
         preappliedEpisodeConflictRecordNames: Set<String>,
@@ -4132,6 +4147,17 @@ extension ICiCloudSyncManager {
         case .unknownItem:
             retryRecords.append(.saveRecord(recordID))
             return false
+        case .invalidArguments:
+            // Permanent, client-side rejection: the very same record can never be stored,
+            // so CKSyncEngine keeping it pending poisons every later batch. The case that
+            // actually happened in the field (customer log 02.09.): a record type that
+            // exists in the development schema but was never deployed to production —
+            // "Cannot create new type ICSubscriptionTombstone in production schema". All
+            // 435 send batches failed, no sync cycle ever completed, and the app retried
+            // every 30 s forever, taking every other record type down with it. Drop the
+            // record so the rest of the batch can finish; the log below names the type.
+            dropPermanentlyRejectedRecordSave(failedSave)
+            return true
         case .networkFailure, .networkUnavailable, .zoneBusy, .serviceUnavailable, .requestRateLimited:
             handleCloudKitSendError(failedSave.error)
             return false

@@ -22,7 +22,7 @@ project_source = (ROOT / "Instacast.xcodeproj" / "project.pbxproj").read_text()
 de_strings = (ROOT / "Resources" / "de.lproj" / "Localizable.strings").read_text()
 en_strings = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text()
 model_catalog_source = engine_source.split(
-    "private static let models: [ICDownloadableModel] = [", 1
+    "private static let definedModels: [ICDownloadableModel] = [", 1
 )[1].split("\n    ]", 1)[0]
 options_footer_source = (ROOT / "Classes" / "OptionsViewController.m").read_text().split(
     "- (UIView *)tableView:(UITableView *)tableView viewForFooterInSection:(NSInteger)section", 1
@@ -344,4 +344,22 @@ require(
     'case "deleteChapterModel":' in (ROOT / "Classes" / "ICTranscriptionDebugAutomation.swift").read_text()
     and '"deleteBlockedReason"' in (ROOT / "Classes" / "ICTranscriptionDebugAutomation.swift").read_text(),
     "Remote transcription automation cannot exercise blocked chapter-model deletion during a live job.",
+)
+
+# Mac Catalyst: llama.xcframework hat keine maccatalyst-Slice, lokale GGUF-Kapitelmodelle
+# sind dort nicht lauffähig. Sie dürfen deshalb weder im Katalog noch als Default auftauchen,
+# sonst bietet die App einen 2,6-GB-Download an, der danach nur einen Fehler liefert — und der
+# Force-Unwrap in selectedModel(for:) würde auf den fehlenden Default treffen.
+require(
+    "#if canImport(llama)" in engine_source
+    and "definedModels.filter { !($0.role == .textToChapters && $0.chapterProvider == .localGGUF) }" in engine_source,
+    "Without llama the catalog must drop local GGUF chapter models.",
+)
+require(
+    'private static let defaultChapterModelIdentifier = "apple-foundation-models"' in engine_source,
+    "Without llama the default chapter model must be one that actually exists on that platform.",
+)
+require(
+    "case chapterStarts" in local_runner_source.split("#else", 1)[1],
+    "The llama-less LocalGGUFModelRunner stub must stay in sync with the real grammar enum.",
 )

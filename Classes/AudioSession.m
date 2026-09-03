@@ -365,6 +365,11 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
 
 	BOOL canStartEpisode = YES;
 
+    // Which rule picked the follow-up episode. Logged below — the three sources (Up Next,
+    // continuation of the list playback was started from, per-feed continuous play) are
+    // indistinguishable in the diagnostics otherwise.
+    NSString* source = @"none";
+
     // Find the next episode after the current one in the playlist
     CDEpisode* anEpisode = nil;
     NSArray* currentPlaylist = [self playlist];
@@ -381,6 +386,10 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
         // If current is the last one, anEpisode stays nil (end of playlist)
     } else {
         anEpisode = [currentPlaylist firstObject];
+    }
+
+    if (anEpisode) {
+        source = @"upnext";
     }
 
     // If no episode from Up Next, continue the episode list the playback was started
@@ -400,6 +409,7 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
                 CDEpisode* candidate = episodes[i];
                 if (![candidate isEqual:self.episode] && !candidate.consumed && [candidate preferedMedium]) {
                     anEpisode = candidate;
+                    source = @"source-list";
                     break;
                 }
             }
@@ -427,6 +437,7 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
                             CDEpisode* candidate = episodes[i];
                             if (!candidate.consumed && [candidate preferedMedium]) {
                                 anEpisode = candidate;
+                                source = @"feed";
                                 break;
                             }
                         }
@@ -436,6 +447,7 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
                             CDEpisode* candidate = episodes[i];
                             if (!candidate.consumed && [candidate preferedMedium]) {
                                 anEpisode = candidate;
+                                source = @"feed";
                                 break;
                             }
                         }
@@ -452,7 +464,21 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
         canStartEpisode = NO;
     }
 
-	return (canStartEpisode && [anEpisode preferedMedium]) ? anEpisode : nil;
+    CDEpisode* nextEpisode = (canStartEpisode && [anEpisode preferedMedium]) ? anEpisode : nil;
+
+    [[ICDiagnosticLogger shared] logEvent:@"playback-continuation"
+                                  message:@"Folgeepisode bestimmt"
+                                 metadata:@{
+                                     @"source": source,
+                                     @"currentEpisodeHash": self.episode.objectHash ?: @"",
+                                     @"nextEpisodeHash": nextEpisode.objectHash ?: @"",
+                                     @"candidateHash": anEpisode.objectHash ?: @"",
+                                     @"upNextCount": @(currentPlaylist.count),
+                                     @"sourceListUID": self.sourceEpisodeListUID ?: @"",
+                                     @"canStartEpisode": @(canStartEpisode),
+                                 }];
+
+	return nextEpisode;
 }
 
 - (void) playEpisode:(CDEpisode*)anEpisode
@@ -470,6 +496,22 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
     // nil list (e.g. a manual playlist screen) arms an explicit "no source" — the next
     // playEpisode: clears any previous source instead of falling back to it.
     self.pendingSourceEpisodeListUID = list.uid ?: @"";
+}
+
+// A list screen arms its list before presenting the player, but only _playEpisode: consumes
+// that arm. Tapping play on the episode that is already loaded (in "Recently played" that is
+// the normal case — its top row IS the last played episode) merely resumes the player, so the
+// arm used to survive and was applied to the next episode started from a completely different
+// screen, which then kept continuing that stale list.
+- (void) applyPendingPlaybackSourceToCurrentEpisode
+{
+    if (self.pendingSourceEpisodeListUID == nil) {
+        return;
+    }
+
+    [self _resolvePlaybackSourceListForEpisode:self.episode
+                     preservingPlaybackSource:YES];
+    [self _savePlaybackStateInUserDefaults];
 }
 
 - (CDEpisodeList*) _episodeListWithUID:(NSString*)listUID

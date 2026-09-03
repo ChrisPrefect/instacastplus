@@ -10,6 +10,7 @@ struct WatchEpisodeListView: View {
     @ObservedObject private var playbackSummary = WatchPlayerController.shared.listPlaybackSummary
     @State private var playerPath: [String] = []
     @State private var handledActiveScenePlayback = false
+    @State private var handledInitialAppearance = false
 
     private var accentColor: Color {
         Color(hex: store.accentColorHex)
@@ -82,7 +83,15 @@ struct WatchEpisodeListView: View {
             }
             .onAppear {
                 popUnavailablePlayerIfNeeded()
-                handleActiveScenePlaybackIfNeeded()
+                // The root list's onAppear also fires when the user pops the player off the
+                // stack. Only the very first appearance may open the player from here —
+                // every later "app became active" case is handled by the scenePhase change
+                // below. Without this gate a back-navigation re-opened the player as soon as
+                // handledActiveScenePlayback happened to be reset (once per active phase).
+                if !handledInitialAppearance {
+                    handledInitialAppearance = true
+                    handleActiveScenePlaybackIfNeeded()
+                }
             }
             // Re-entering the app while an episode is playing lands on the player, not the list.
             // Navigating back to the list during playback stays on the list.

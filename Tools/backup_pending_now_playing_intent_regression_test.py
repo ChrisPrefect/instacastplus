@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -33,6 +34,27 @@ def function_source(source: str, signature: str) -> str:
             if depth == 0:
                 return source[start:index + 1]
     raise AssertionError(f"Unterminated function: {signature}")
+
+
+def method_body_matching(source: str, pattern: str) -> str:
+    """Same as method_body, but locates the selector by regex.
+
+    The public playEpisode: funnel spans several lines since it gained
+    preservingPlaybackSource:, so an exact-substring pin breaks on reformatting.
+    """
+    match = re.search(pattern, source)
+    require(match is not None, f"Missing method matching: {pattern}")
+    brace = source.find("{", match.end())
+    require(brace >= 0, f"Missing method body: {pattern}")
+    depth = 0
+    for index in range(brace, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[brace + 1:index]
+    raise AssertionError(f"Unterminated method: {pattern}")
 
 
 def method_body(source: str, signature: str) -> str:
@@ -149,8 +171,16 @@ restore_play = method_body(
     "- (void) restorePlaybackEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent "
     "at:(NSTimeInterval)time autostart:(BOOL)autostart",
 )
-require("recordsPlaybackIntent:YES" in normal_play,
+playback_funnel = method_body_matching(
+    AUDIO,
+    r"- \(void\)\s*playEpisode:\(CDEpisode\*\)anEpisode\s+queueUpCurrent:\(BOOL\)queueUpCurrent\s+"
+    r"at:\(NSTimeInterval\)time\s+autostart:\(BOOL\)autostart\s+"
+    r"preservingPlaybackSource:\(BOOL\)preservingPlaybackSource",
+)
+require("recordsPlaybackIntent:YES" in playback_funnel,
         "Normal explicit playback must advance the durable intent revision exactly in the shared core.")
+require("recordsPlaybackIntent" not in normal_play and "preservingPlaybackSource:NO" in normal_play,
+        "The 4-argument playEpisode: must forward into that single funnel instead of recording intent itself.")
 require("recordsPlaybackIntent:NO" in restore_play and "_recordPlaybackIntent" not in restore_play,
         "Automatic backup restore must not masquerade as a newer user intent.")
 play_core = method_body(AUDIO, "- (void) _playEpisode:(CDEpisode*)anEpisode")

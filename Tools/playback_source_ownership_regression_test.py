@@ -185,4 +185,23 @@ require(
     "Siri play and play/pause must preserve ownership only when reopening AudioSession's restored episode.",
 )
 
+# A list screen arms its source before presenting the player, but only _playEpisode:
+# consumes that arm. Tapping play on the already loaded episode (in "Recently Played" the
+# top row IS that episode) only resumes the player — the arm then leaked onto the next
+# episode started from another screen and made the stale list continue forever.
+require(
+    "- (void) applyPendingPlaybackSourceToCurrentEpisode;" in audio_header,
+    "AudioSession must expose a way to consume a pending source arm on a pure resume.",
+)
+require(
+    "self.pendingSourceEpisodeListUID == nil"
+    in method_body(audio_session, "- (void) applyPendingPlaybackSourceToCurrentEpisode"),
+    "Consuming a pending source arm must be a no-op when no arm is pending.",
+)
+require(
+    "[audioSession applyPendingPlaybackSourceToCurrentEpisode];"
+    in method_body(playback_view, "- (void) _presentFromParentViewController:"),
+    "Presenting the player must consume a pending list arm even when it only resumes playback.",
+)
+
 print("playback source ownership regression checks passed")

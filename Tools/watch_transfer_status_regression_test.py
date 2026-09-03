@@ -68,10 +68,10 @@ require("BOOL totalBytesKnown = NO" in status
         and "if (totalBytesKnown && totalBytes > 0)" in status,
         "The phone must show x/y bytes only when the aggregate total includes every unfinished Watch download.")
 
-require('"Wartet auf Apple Watch…" = "Wartet auf Apple Watch…";' in DE
-        and '"Wartet auf Apple Watch…" = "Waiting for Apple Watch…";' in EN
-        and '"Watch lädt Podcasts…" = "Watch lädt Podcasts…";' in DE
-        and '"Watch lädt Podcasts…" = "Watch is downloading podcasts…";' in EN,
+require('"Wartet auf Apple Watch" = "Wartet auf Apple Watch";' in DE
+        and '"Wartet auf Apple Watch" = "Waiting for Apple Watch";' in EN
+        and '"Watch lädt Podcasts" = "Watch lädt Podcasts…";' in DE
+        and '"Watch lädt Podcasts" = "Watch is downloading podcasts…";' in EN,
         "Both Watch transfer phases need complete German and English labels.")
 
 print("Watch transfer-status regression checks passed")

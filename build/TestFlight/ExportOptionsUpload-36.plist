@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>destination</key>
+	<string>upload</string>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>com.iteconomy.instacastplus</key>
+		<string>InstacastPlus App Store 2026-09-02 build 36</string>
+		<key>com.iteconomy.instacastplus.watchkitapp</key>
+		<string>InstacastPlus Watch App Store 2026-09-02 build 36</string>
+		<key>com.iteconomy.instacastplus.watchkitapp.widgets</key>
+		<string>InstacastPlus Watch Widgets App Store 2026-09-02 build 36</string>
+		<key>com.iteconomy.instacastplus.widgets</key>
+		<string>InstacastPlus Widgets App Store 2026-09-02 build 36</string>
+	</dict>
+	<key>signingCertificate</key>
+	<string>A6155AE28444D60CB44173F039CC712596C0A4E4</string>
+	<key>signingStyle</key>
+	<string>manual</string>
+	<key>teamID</key>
+	<string>L95F4M2LHG</string>
+	<key>uploadSymbols</key>
+	<true/>
+</dict>
+</plist>

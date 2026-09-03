@@ -45,8 +45,12 @@ playback = read("Classes/PlaybackManager.m")
 
 require(
     "#import <AVKit/AVKit.h>" in volume_header
-    and "@interface ICVolumeView : AVRoutePickerView" in volume_header,
-    "The audio-route control must use Apple's public AVRoutePickerView API.",
+    and "AVRoutePickerView* routePickerView" in volume_header
+    and "[[AVRoutePickerView alloc] initWithFrame:" in volume_impl,
+    "The audio-route control must use Apple's public AVRoutePickerView API. It is wrapped in "
+    "a container rather than inherited from, because the picker scales its glyph to its "
+    "bounds and the 84pt tool slot made it twice the size of its neighbours "
+    "(see player_control_icon_regression_test.py).",
 )
 for forbidden in (
     "objc/runtime.h",

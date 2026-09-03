@@ -6,19 +6,6 @@
 	objectVersion = 70;
 	objects = {
 
-/* Begin PBXAggregateTarget section */
-		1B3597321307FCCE000DD41F /* MergeLocalizations */ = {
-			isa = PBXAggregateTarget;
-			buildConfigurationList = 1B3597671307FD2B000DD41F /* Build configuration list for PBXAggregateTarget "MergeLocalizations" */;
-			buildPhases = (
-				1B3597311307FCCE000DD41F /* ShellScript */,
-			);
-			dependencies = (
-			);
-			name = MergeLocalizations;
-			productName = MergeLocalizations;
-		};
-/* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
 		00BDD66A9B111CE9A71D61F2 /* InstacastWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC78BFA5ED5BF6AAFCF8263 /* InstacastWatchApp.swift */; };
@@ -181,11 +168,11 @@
 		1B8AFDE619629F98007E9913 /* ICFeedHeaderViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B8AFDE519629F98007E9913 /* ICFeedHeaderViewController.m */; };
 		1B8C230712DDC77F00589115 /* EpisodeViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B8C230612DDC77F00589115 /* EpisodeViewController.m */; };
 		1B8DAB9D179531EB00DD78F3 /* EpisodePlayComboButton.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B8DAB9C179531EB00DD78F3 /* EpisodePlayComboButton.m */; };
-		1B8DBA07150E406600F6A7CB /* DirectoryViewController.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1B8DB9FF150E406600F6A7CB /* DirectoryViewController.xib */; };
 		1B8DBA0B150E406600F6A7CB /* PlayerController.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1B8DBA03150E406600F6A7CB /* PlayerController.xib */; };
-		1B8DBA0C150E406600F6A7CB /* PlayerInfoController.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1B8DBA04150E406600F6A7CB /* PlayerInfoController.xib */; };
 		1B8F6A7B19D55E6D0098399D /* FXKeychain.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B8F6A7A19D55E6D0098399D /* FXKeychain.m */; };
 		1B915C99146AC5E70036E9A7 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 1B915C97146AC5E70036E9A7 /* Localizable.strings */; };
+		A1B2C3D4E5F6A7B80000005A /* AppShortcuts.strings in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000057 /* AppShortcuts.strings */; };
+		A1B2C3D4E5F6A7B80000005E /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B80000005B /* InfoPlist.strings */; };
 		1B91638F166CB60B0028F358 /* ArbitraryDateParser.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B91638E166CB60B0028F358 /* ArbitraryDateParser.m */; };
 		1B919E6217BF99B100A30BDE /* tv@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 1B919E6017BF99B100A30BDE /* tv@2x.png */; };
 		1B919E6317BF99B100A30BDE /* tv.png in Resources */ = {isa = PBXBuildFile; fileRef = 1B919E6117BF99B100A30BDE /* tv.png */; };
@@ -267,7 +254,7 @@
 		1D60589F0D05DD5A006BFB54 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D30AB110D05D00D00671497 /* Foundation.framework */; };
 		1DF5F4E00D08C38300B7A737 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1DF5F4DF0D08C38300B7A737 /* UIKit.framework */; };
 		1EED0D770558EAE5EFDF8139 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5C51A43A770AC6A975A4DF75 /* Foundation.framework */; };
-		211918C4F91F4222A698C942 /* llama.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 55B48241CC8542159B525C5D /* llama.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		211918C4F91F4222A698C942 /* llama.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 55B48241CC8542159B525C5D /* llama.xcframework */; platformFilters = (ios, ); settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		230AD9362F6768BAECE4F8F7 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 27C03CE231950A5FA4157032 /* SwiftUI.framework */; };
 		27AB83E1F94A3303C22D3425 /* AppleWatchEpisodesViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 6D7680A7EBB0F850D04672C4 /* AppleWatchEpisodesViewController.m */; };
 		27DA8B61F714ADDEC7DD7BF9 /* ICiCloudSyncManager+LocalChanges.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2268D627546FE31082B14DEB /* ICiCloudSyncManager+LocalChanges.swift */; };
@@ -285,7 +272,7 @@
 		54DBA3A9E5FA05FFD075D209 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9C5C4F8A861137F72E8F19A2 /* WidgetKit.framework */; };
 		57D9F457CC96238BEEB70419 /* ICiCloudSyncSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = D5EEF2A8812A8B647C7D9AF6 /* ICiCloudSyncSettingsViewController.m */; };
 		583FA5429C9AB195D2CA972F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 057F44A6199937D988246F7F /* Assets.xcassets */; };
-		5A2E9033549D40E7962DD609 /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 55B48241CC8542159B525C5D /* llama.xcframework */; };
+		5A2E9033549D40E7962DD609 /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 55B48241CC8542159B525C5D /* llama.xcframework */; platformFilters = (ios, ); };
 		5C20094B64F67BF1D6D0C4F1 /* SmartListConfigIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03021CE4557756F44F12E9B /* SmartListConfigIntent.swift */; };
 		60E23B44A8833D26A4AE672D /* WatchStorageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42F79024BFCC38482512F4F /* WatchStorageManager.swift */; };
 		67E9C9F11D2906B0D5935C63 /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F3F453901F91DBE3926AA159 /* WatchConnectivity.framework */; };
@@ -314,7 +301,7 @@
 		935B2A867A5FC26C8FDDB469 /* InstacastWatchWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7E61474F17CD3017CF8E8287 /* InstacastWatchWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9535C53CC4BD2DFAA4A46985 /* SharedConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D294C45DC205F05467440EC /* SharedConstants.swift */; };
 		95A7FECEA2CCB0FFDE27A33A /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9C5C4F8A861137F72E8F19A2 /* WidgetKit.framework */; };
-		9D90BCCD4EF3BA1D08035323 /* InstacastWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 48154178CFD061C4CD5ED6B0 /* InstacastWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9D90BCCD4EF3BA1D08035323 /* InstacastWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 48154178CFD061C4CD5ED6B0 /* InstacastWatch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9EA6F144FB33329DD4241431 /* InstacastBackupImportViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1076F1231B20B9D44BEB0EDB /* InstacastBackupImportViewController.m */; };
 		A06C5A9B9EE34AEE5C2EE3AE /* WatchEpisode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D97762C4DA733C845EACD81 /* WatchEpisode.swift */; };
 		A09342B69F23219DCA42408C /* InstacastBackupData.m in Sources */ = {isa = PBXBuildFile; fileRef = 9B172640A841BB0E33457ED9 /* InstacastBackupData.m */; };
@@ -772,13 +759,15 @@
 		1B8C230612DDC77F00589115 /* EpisodeViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = EpisodeViewController.m; sourceTree = "<group>"; };
 		1B8DAB9B179531EB00DD78F3 /* EpisodePlayComboButton.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = EpisodePlayComboButton.h; sourceTree = "<group>"; };
 		1B8DAB9C179531EB00DD78F3 /* EpisodePlayComboButton.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = EpisodePlayComboButton.m; sourceTree = "<group>"; };
-		1B8DB9FF150E406600F6A7CB /* DirectoryViewController.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; name = DirectoryViewController.xib; path = "../../Resources-iPhone/Nibs/DirectoryViewController.xib"; sourceTree = "<group>"; };
 		1B8DBA03150E406600F6A7CB /* PlayerController.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; name = PlayerController.xib; path = "../../Resources-iPhone/Nibs/PlayerController.xib"; sourceTree = "<group>"; };
-		1B8DBA04150E406600F6A7CB /* PlayerInfoController.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; name = PlayerInfoController.xib; path = "../../Resources-iPhone/Nibs/PlayerInfoController.xib"; sourceTree = "<group>"; };
 		1B8DBA581514E8E100F6A7CB /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 		1B8F6A7919D55E6D0098399D /* FXKeychain.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = FXKeychain.h; sourceTree = "<group>"; };
 		1B8F6A7A19D55E6D0098399D /* FXKeychain.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FXKeychain.m; sourceTree = "<group>"; };
 		1B915C98146AC5E70036E9A7 /* en */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000058 /* en */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/AppShortcuts.strings; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000059 /* de */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/AppShortcuts.strings; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B80000005C /* en */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B80000005D /* de */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		1B91638D166CB60B0028F358 /* ArbitraryDateParser.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ArbitraryDateParser.h; sourceTree = "<group>"; };
 		1B91638E166CB60B0028F358 /* ArbitraryDateParser.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ArbitraryDateParser.m; sourceTree = "<group>"; };
 		1B919E6017BF99B100A30BDE /* tv@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "tv@2x.png"; sourceTree = "<group>"; };
@@ -1002,7 +991,9 @@
 		A1B2C3D4E5F6A7B800000031 /* ICSpotlightIndexer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICSpotlightIndexer.m; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000040 /* CoreSpotlight.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreSpotlight.framework; path = System/Library/Frameworks/CoreSpotlight.framework; sourceTree = SDKROOT; };
 		A1B2C3D4E5F6A7B800000050 /* iOSIntegration/ICSharePlayCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = iOSIntegration/ICSharePlayCoordinator.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F6A7B800000052 /* MediaSuggestions.intentdefinition */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file.intentdefinition; path = MediaSuggestions.intentdefinition; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000054 /* Base */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file.intentdefinition; name = Base; path = Base.lproj/MediaSuggestions.intentdefinition; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000055 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/MediaSuggestions.strings; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000056 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/MediaSuggestions.strings; sourceTree = "<group>"; };
 		A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DonationViewController.m; sourceTree = "<group>"; };
 		AB544047FF0C40A785F5223F /* Model.xcdatamodel */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcdatamodel; path = Model.xcdatamodel; sourceTree = "<group>"; };
 		F600B0A17E2D4B00A10B0001 /* Model6.xcdatamodel */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcdatamodel; path = Model6.xcdatamodel; sourceTree = "<group>"; };
@@ -1118,7 +1109,6 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		92A646EF2CE59B71002268B7 /* InstacastMac */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = InstacastMac; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1330,10 +1320,8 @@
 			isa = PBXGroup;
 			children = (
 				1B9D82C819C31D2F00F03B69 /* LaunchScreen.xib */,
-				1B8DB9FF150E406600F6A7CB /* DirectoryViewController.xib */,
 				1B8DBA03150E406600F6A7CB /* PlayerController.xib */,
 				1B61040C162462C20075541D /* PlayerControlView.xib */,
-				1B8DBA04150E406600F6A7CB /* PlayerInfoController.xib */,
 				1B22D5A015318936003E3E75 /* ToolbarLabelsView.xib */,
 				1B2A468A1924C2F10042C3E5 /* ErrorSheetView.xib */,
 				1BDE2F611993AE9700C42195 /* FullscreenVideoView.xib */,
@@ -1348,6 +1336,8 @@
 				CDA678042C5C13B3003168EA /* DropDownl */,
 				1BA27BE816A450BB00D51D59 /* Defaults.plist */,
 				1B915C97146AC5E70036E9A7 /* Localizable.strings */,
+				A1B2C3D4E5F6A7B800000057 /* AppShortcuts.strings */,
+				A1B2C3D4E5F6A7B80000005B /* InfoPlist.strings */,
 				1B1724CB145598D900B4959D /* Sounds */,
 				1B109A8814F24AB100AF55C6 /* Nibs */,
 				1BA994881680638F0000309B /* Models */,
@@ -2006,7 +1996,6 @@
 				29B97315FDCFA39411CA2CEA /* Other Sources */,
 				1B1724BB1455975100B4959D /* Resources */,
 				29B97317FDCFA39411CA2CEA /* Resources-iPhone */,
-				92A646EF2CE59B71002268B7 /* InstacastMac */,
 				29B97323FDCFA39411CA2CEA /* Frameworks */,
 				19C28FACFE9D520D11CA2CBB /* Products */,
 				83D65DA92F2F6A9000A3CC18 /* EpisodeLoadingManager.h */,
@@ -2450,7 +2439,6 @@
 			projectRoot = "";
 			targets = (
 				1D6058900D05DD3D006BFB54 /* Instacast */,
-				1B3597321307FCCE000DD41F /* MergeLocalizations */,
 				3B6DD94FE7671D4054770663 /* InstacastWidgets */,
 				16B66456E8E39A0787733E71 /* InstacastWatch */,
 				44DE1CD9939156BCE5188C1F /* InstacastWatchWidgets */,
@@ -2474,8 +2462,9 @@
 				1B17257C1459877900B4959D /* Scratch2.caf in Resources */,
 				1B17257D1459877900B4959D /* Shake.caf in Resources */,
 				1B915C99146AC5E70036E9A7 /* Localizable.strings in Resources */,
+				A1B2C3D4E5F6A7B80000005A /* AppShortcuts.strings in Resources */,
+				A1B2C3D4E5F6A7B80000005E /* InfoPlist.strings in Resources */,
 				1B6450AF19B47B5B00589A94 /* DataMigrationView.xib in Resources */,
-				1B8DBA07150E406600F6A7CB /* DirectoryViewController.xib in Resources */,
 				CE3EA6912AA7A952001900EB /* Info-OSX.plist in Resources */,
 				1B9D82C919C31D2F00F03B69 /* LaunchScreen.xib in Resources */,
 				CE3EA6922AA7A952001900EB /* Info-iOS.plist in Resources */,
@@ -2484,7 +2473,6 @@
 				CDA678092C5C13DA003168EA /* Main.storyboard in Resources */,
 				CD7A884E2C60C27F0033C023 /* light_dd_ic.png in Resources */,
 				1B8DBA0B150E406600F6A7CB /* PlayerController.xib in Resources */,
-				1B8DBA0C150E406600F6A7CB /* PlayerInfoController.xib in Resources */,
 				1B2A468B1924C2F10042C3E5 /* ErrorSheetView.xib in Resources */,
 				1B22D5A115318937003E3E75 /* ToolbarLabelsView.xib in Resources */,
 				1B4E6BBB153D59600014DD63 /* DocIcon.png in Resources */,
@@ -2552,20 +2540,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		1B3597311307FCCE000DD41F /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "UTIL=\"${vemedio_tools}/wincent-strings-util\"\nBASE=\"${SRCROOT}/Resources/en.lproj/Localizable.strings\"\nGERMAN=\"${SRCROOT}/Resources/de.lproj/Localizable.strings\"\nJAPANESE=\"${SRCROOT}/Resources/ja.lproj/Localizable.strings\"\nDUTCH=\"${SRCROOT}/Resources/nl.lproj/Localizable.strings\"\nITALIAN=\"${SRCROOT}/Resources/it.lproj/Localizable.strings\"\nFRENCH=\"${SRCROOT}/Resources/fr.lproj/Localizable.strings\"\nRUSSIAN=\"${SRCROOT}/Resources/ru.lproj/Localizable.strings\"\n\necho `${UTIL} -base ${BASE} -merge ${GERMAN} -output ${GERMAN}`\necho `${UTIL} -base ${BASE} -merge ${FRENCH} -output ${FRENCH}`\n#echo `${UTIL} -base ${BASE} -merge ${JAPANESE} -output ${JAPANESE}`\n#echo `${UTIL} -base ${BASE} -merge ${DUTCH} -output ${DUTCH}`\n#echo `${UTIL} -base ${BASE} -merge ${ITALIAN} -output ${ITALIAN}`\n\n#echo `${UTIL} -base ${BASE} -merge ${RUSSIAN} -output ${RUSSIAN}`";
-		};
 		1B74A19D169B2F12005D1DAF /* Strip library headers from Archive */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -2932,6 +2906,34 @@
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
+		A1B2C3D4E5F6A7B80000005B /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				A1B2C3D4E5F6A7B80000005C /* en */,
+				A1B2C3D4E5F6A7B80000005D /* de */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F6A7B800000057 /* AppShortcuts.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				A1B2C3D4E5F6A7B800000058 /* en */,
+				A1B2C3D4E5F6A7B800000059 /* de */,
+			);
+			name = AppShortcuts.strings;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F6A7B800000052 /* MediaSuggestions.intentdefinition */ = {
+			isa = PBXVariantGroup;
+			children = (
+				A1B2C3D4E5F6A7B800000054 /* Base */,
+				A1B2C3D4E5F6A7B800000055 /* en */,
+				A1B2C3D4E5F6A7B800000056 /* de */,
+			);
+			name = MediaSuggestions.intentdefinition;
+			sourceTree = "<group>";
+		};
 		1B915C97146AC5E70036E9A7 /* Localizable.strings */ = {
 			isa = PBXVariantGroup;
 			children = (
@@ -2978,7 +2980,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 37;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatch/Info.plist;
@@ -3060,7 +3062,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 37;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
@@ -3110,25 +3112,6 @@
 			};
 			name = Release;
 		};
-		1B259639130D6FDB009A7D36 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				PRODUCT_NAME = MergeLocalizations;
-			};
-			name = Release;
-		};
-		1B3597331307FCCE000DD41F /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				COPY_PHASE_STRIP = NO;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				PRODUCT_NAME = MergeLocalizations;
-			};
-			name = Debug;
-		};
 		1D6058940D05DD3E006BFB54 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -3144,7 +3127,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 37;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
@@ -3205,7 +3188,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 37;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatch/Info.plist;
@@ -3235,7 +3218,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 37;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatchWidgets/Info.plist;
@@ -3269,7 +3252,7 @@
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 37;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWidgets/Info.plist;
@@ -3346,7 +3329,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 37;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatchWidgets/Info.plist;
@@ -3380,7 +3363,7 @@
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 37;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWidgets/Info.plist;
@@ -3407,15 +3390,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		1B3597671307FD2B000DD41F /* Build configuration list for PBXAggregateTarget "MergeLocalizations" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				1B3597331307FCCE000DD41F /* Debug */,
-				1B259639130D6FDB009A7D36 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
 		1D6058960D05DD3E006BFB54 /* Build configuration list for PBXNativeTarget "Instacast" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

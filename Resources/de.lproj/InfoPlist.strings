@@ -1,0 +1,3 @@
+/* Berechtigungs-Dialoge und andere Info.plist-Texte, die der Nutzer sieht. */
+
+"NSSpeechRecognitionUsageDescription" = "InstacastPlus verwendet Spracherkennung, um Podcast-Folgen zu transkribieren.";

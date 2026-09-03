@@ -411,6 +411,11 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 }
 
 - (void)_submitContinuedBackgroundTask {
+#if TARGET_OS_MACCATALYST
+    // BGContinuedProcessingTaskRequest ist auf Mac Catalyst nicht verfügbar.
+    // Gleicher Weg wie bei fehlender Wildcard-Registrierung: BGProcessingTask.
+    [self _submitProcessingBackgroundTask];
+#else
     if (@available(iOS 26.0, *)) {
         NSString* identifier = [[self _instacastAppDelegate] newTranscriptionContinuedTaskIdentifier];
         if (identifier.length == 0) {
@@ -475,6 +480,7 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
                                      }];
         [self _presentBackgroundExplanationIfNeeded];
     }
+#endif
 }
 
 - (void)_presentBackgroundExplanationIfNeeded {

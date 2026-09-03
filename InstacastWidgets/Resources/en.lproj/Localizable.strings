@@ -6,6 +6,7 @@
 "widget.smartlist.description" = "Shows episodes from a selected list.";
 "List" = "List";
 "Choose which list to display." = "Choose which list to display.";
+"Filter" = "Filter";
 "Compact" = "Compact";
 "Order" = "Order";
 "Columns" = "Columns";

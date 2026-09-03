@@ -2256,7 +2256,27 @@ didReceiveResponse:(NSURLResponse *)response
             CDFeed* feed = episode.feed;
             
             episode.lastPlayed = [NSDate date];
-            [DMANAGER save];//DevD to do crashes            
+            // The feed's itunes:duration is only a promise. With dynamic ad insertion the
+            // delivered media is longer (measured in one customer log: 1442 s for the iPhone
+            // stream vs. 1486 s for the watch download of the same episode). Store the
+            // measured length so the remaining-time label, the progress ring, the "start
+            // over" threshold in _continueOpeningAsset and the end-of-episode check all
+            // agree — otherwise an episode looks finished while the consumed flag, which
+            // uses the asset duration, never gets set.
+            NSTimeInterval measuredDuration = [weakSelf duration];
+            if (measuredDuration > 0 && (int32_t)measuredDuration != episode.duration) {
+                episode.duration = (int32_t)measuredDuration;
+            }
+            // _continueOpeningAsset decided "play again from the start" before the asset was
+            // loaded, i.e. against the stored duration the correction above may just have
+            // shown to be too short. Re-run that verdict with the measured length so an
+            // episode that only looked finished resumes where the user stopped instead of
+            // restarting at 0:00.
+            if (weakSelf.initialPlaybackTime == 0 && episode.position > 0 &&
+                measuredDuration > 0 && (double)episode.position < measuredDuration - 5) {
+                weakSelf.initialPlaybackTime = episode.position;
+            }
+            [DMANAGER save];//DevD to do crashes
             // check if we have moving video
             weakSelf.movingVideo = NO;
             
@@ -2615,6 +2635,22 @@ didReceiveResponse:(NSURLResponse *)response
     [[ICDiagnosticLogger shared] logEvent:@"playback-auto-skip" message:message metadata:metadata];
 }
 
+// Diagnostics for the "episode reached its end" decision. The stored episode values are
+// logged next to the player values because only their combination explains why an episode
+// stays unplayed or restarts at 0:00 (initialPlaybackTime uses episode.duration, the
+// consumed flag uses the player duration).
+- (void)_logPlaybackFinishEvent:(NSString*)message episode:(CDEpisode*)episode currentTime:(NSTimeInterval)currentTime duration:(NSTimeInterval)duration metadata:(NSDictionary*)extraMetadata
+{
+    NSMutableDictionary *metadata = [self _playbackDiagnosticsMetadataForEpisode:episode currentTime:currentTime duration:duration];
+    metadata[@"episodeDuration"] = @(episode.duration);
+    metadata[@"episodePosition"] = @(episode.position);
+    metadata[@"episodeConsumed"] = @(episode.consumed);
+    if (extraMetadata.count > 0) {
+        [metadata addEntriesFromDictionary:extraMetadata];
+    }
+    [[ICDiagnosticLogger shared] logEvent:@"playback-finish" message:message metadata:metadata];
+}
+
 - (NSString *)matchingSkipNameForChapter:(ICMetadataChapter *)chapterObj withNames:(NSArray *)skipNames {
     return [self _matchingSkipNameForChapterTitle:chapterObj.title withNames:skipNames];
 }
@@ -2784,7 +2820,16 @@ didReceiveResponse:(NSURLResponse *)response
 
     // only mark episode as played if we actually finished playing this episode
     // could end prematurely if streaming and internet not available
-    if (episode && [self time] > [self duration] - 10)
+    NSTimeInterval endTime = [self time];
+    NSTimeInterval endDuration = [self duration];
+    BOOL marksConsumed = (episode && endTime > endDuration - 10);
+    [self _logPlaybackFinishEvent:@"Episodenende erreicht"
+                          episode:episode
+                      currentTime:endTime
+                         duration:endDuration
+                         metadata:@{ @"marksConsumed": @(marksConsumed) }];
+
+    if (marksConsumed)
     {
         _changingPosition = YES;
         if (!episode.consumed) {

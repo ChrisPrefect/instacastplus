@@ -1,0 +1,30 @@
+/* Siri phrases for the App Shortcuts in ICAppShortcuts.swift.
+   Every phrase must contain ${applicationName}. */
+
+"Play in ${applicationName}" = "Play in ${applicationName}";
+"Resume ${applicationName}" = "Resume ${applicationName}";
+"Continue playing in ${applicationName}" = "Continue playing in ${applicationName}";
+
+"Pause ${applicationName}" = "Pause ${applicationName}";
+"Pause playback in ${applicationName}" = "Pause playback in ${applicationName}";
+
+"Skip forward in ${applicationName}" = "Skip forward in ${applicationName}";
+"Skip ahead in ${applicationName}" = "Skip ahead in ${applicationName}";
+
+"Skip back in ${applicationName}" = "Skip back in ${applicationName}";
+"Go back in ${applicationName}" = "Go back in ${applicationName}";
+
+"Next episode in ${applicationName}" = "Next episode in ${applicationName}";
+"Play the next episode in ${applicationName}" = "Play the next episode in ${applicationName}";
+
+"Set a sleep timer in ${applicationName}" = "Set a sleep timer in ${applicationName}";
+"Start the sleep timer in ${applicationName}" = "Start the sleep timer in ${applicationName}";
+
+"Mark as played in ${applicationName}" = "Mark as played in ${applicationName}";
+"Mark this episode as played in ${applicationName}" = "Mark this episode as played in ${applicationName}";
+
+"Play ${podcast} in ${applicationName}" = "Play ${podcast} in ${applicationName}";
+"Play the latest episode of ${podcast} in ${applicationName}" = "Play the latest episode of ${podcast} in ${applicationName}";
+
+"Play ${episode} in ${applicationName}" = "Play ${episode} in ${applicationName}";
+"Play episode ${episode} in ${applicationName}" = "Play episode ${episode} in ${applicationName}";

@@ -1,0 +1,65 @@
+/* Play Media */
+"G3J6fP" = "Play Media";
+
+/* A request to play media. */
+"LdrEPN" = "A request to play media.";
+
+/* Play ${mediaContainer} */
+"YYfsKp" = "Play ${mediaContainer}";
+
+/* Items */
+"cfJexL" = "Items";
+
+/* Container */
+"xdnqvn" = "Container";
+
+/* Shuffled */
+"WktFNa" = "Shuffled";
+
+/* shuffled */
+"QqdHiR" = "shuffled";
+
+/* not shuffled */
+"mCAocc" = "not shuffled";
+
+/* Repeat Mode */
+"ErAaNp" = "Repeat Mode";
+
+/* Resume */
+"rvNMpm" = "Resume";
+
+/* resume */
+"No0K9w" = "resume";
+
+/* don't resume */
+"Pk1Fkx" = "don't resume";
+
+/* Expiration Date */
+"gQk2qs" = "Expiration Date";
+
+/* Buckets */
+"RfcKoD" = "Buckets";
+
+/* Queue Location */
+"cV2HLF" = "Queue Location";
+
+/* Playback Speed */
+"RvX3Zd" = "Playback Speed";
+
+/* ${displayName} can't be negative. */
+"N43ja6" = "${displayName} can't be negative.";
+
+/* ${displayName} can't be higher than ${maximumValue}. */
+"RQZH51" = "${displayName} can't be higher than ${maximumValue}.";
+
+/* ${displayName} can't be lower than ${minimumValue}. */
+"0adaqE" = "${displayName} can't be lower than ${minimumValue}.";
+
+/* Media Search */
+"1uT6VF" = "Media Search";
+
+/* Hashed Route UIDs */
+"UhqImT" = "Hashed Route UIDs";
+
+/* Now Playing Info */
+"weqUPn" = "Now Playing Info";

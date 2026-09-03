@@ -75,7 +75,7 @@ require(
 for localization in LOCALIZATIONS:
     for key in (
         "iCloud Data",
-        "Updating iCloud data…",
+        "Updating iCloud data",
         "iCloud data counts could not be updated.",
         "Last checked %@.",
         "iCloud data has not been checked yet.",

@@ -1,0 +1,30 @@
+/* Siri-Sätze für die App Shortcuts aus ICAppShortcuts.swift.
+   Jeder Satz muss ${applicationName} enthalten. */
+
+"Play in ${applicationName}" = "In ${applicationName} abspielen";
+"Resume ${applicationName}" = "${applicationName} fortsetzen";
+"Continue playing in ${applicationName}" = "In ${applicationName} weiterhören";
+
+"Pause ${applicationName}" = "${applicationName} pausieren";
+"Pause playback in ${applicationName}" = "Wiedergabe in ${applicationName} pausieren";
+
+"Skip forward in ${applicationName}" = "In ${applicationName} vorspulen";
+"Skip ahead in ${applicationName}" = "In ${applicationName} vorwärts springen";
+
+"Skip back in ${applicationName}" = "In ${applicationName} zurückspulen";
+"Go back in ${applicationName}" = "In ${applicationName} zurückspringen";
+
+"Next episode in ${applicationName}" = "Nächste Folge in ${applicationName}";
+"Play the next episode in ${applicationName}" = "Nächste Folge in ${applicationName} abspielen";
+
+"Set a sleep timer in ${applicationName}" = "Sleeptimer in ${applicationName} stellen";
+"Start the sleep timer in ${applicationName}" = "Sleeptimer in ${applicationName} starten";
+
+"Mark as played in ${applicationName}" = "In ${applicationName} als gehört markieren";
+"Mark this episode as played in ${applicationName}" = "Diese Folge in ${applicationName} als gehört markieren";
+
+"Play ${podcast} in ${applicationName}" = "${podcast} in ${applicationName} abspielen";
+"Play the latest episode of ${podcast} in ${applicationName}" = "Neueste Folge von ${podcast} in ${applicationName} abspielen";
+
+"Play ${episode} in ${applicationName}" = "${episode} in ${applicationName} abspielen";
+"Play episode ${episode} in ${applicationName}" = "Folge ${episode} in ${applicationName} abspielen";

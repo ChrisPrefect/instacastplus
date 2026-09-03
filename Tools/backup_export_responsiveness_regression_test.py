@@ -133,7 +133,7 @@ require(
 
 for strings, language in [(EN_STRINGS, "English"), (DE_STRINGS, "German")]:
     for key in [
-        "Backup wird exportiert…",
+        "Backup wird exportiert",
         "Das Backup konnte nicht exportiert werden. Prüfe den freien Speicherplatz und versuche es erneut.",
     ]:
         require(f'"{key}" =' in strings, f"{language} localization is missing: {key}")

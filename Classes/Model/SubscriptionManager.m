@@ -2251,7 +2251,11 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
             
             CDEpisode* localEpisode = localEpisodeIndex[remoteEpisode.guid];
             NSInteger remoteDuration = remoteEpisode.duration;
-            if (remoteDuration > 0 && localEpisode.duration != (int32_t)remoteDuration) {
+            // Once the player has opened the episode it stored the measured media length
+            // (PlaybackManager, ready-to-play). The feed's itunes:duration must not
+            // overwrite that again — with dynamic ad insertion it is shorter than what is
+            // actually delivered, and the episode would look finished before its end.
+            if (remoteDuration > 0 && localEpisode.lastPlayed == nil && localEpisode.duration != (int32_t)remoteDuration) {
                 localEpisode.duration = (int32_t)remoteDuration;
             }
             BOOL newer = ([remoteEpisode.pubDate timeIntervalSince1970] > [localEpisode.pubDate timeIntervalSince1970]);

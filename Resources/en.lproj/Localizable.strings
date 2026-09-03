@@ -19,7 +19,6 @@
 /* PlayerController.m */
 "Hide" = "Hide";
 "Media not loaded." = "Media not loaded.";
-"Show Notes" = "Show Notes";
 "KI-Zusammenfassung" = "AI Summary";
 "%@ analysiert Kapitel, Sponsoren und Zusammenfassung aus dem vollständigen Transkript." = "%@ is analyzing chapters, sponsors, and a summary from the full transcript.";
 "Anthropic Kapitelmodell hat die Analyse abgelehnt." = "The Anthropic chapter model refused the analysis.";
@@ -154,7 +153,6 @@
 "20 Minutes" = "20 Minutes";
 "30 Minutes" = "30 Minutes";
 "60 Minutes" = "60 Minutes";
-"Off" = "Off";
 "Are you sure you want to reset all custom subscription settings to default?" = "Are you sure you want to reset all custom subscription settings to default?";
 "Audio Content" = "Audio Content";
 "Amazon Affiliate Program" = "Amazon Affiliate Program";
@@ -167,7 +165,6 @@
 "News Mode keeps only episodes from the newest publishing day as unplayed. Older episodes are marked as played and downloaded files are deleted automatically." = "News Mode keeps only episodes from the newest publishing day as unplayed. Older episodes are marked as played and downloaded files are deleted automatically.";
 "Podcast-Refresh bei App-Start" = "Podcast Refresh on App Start";
 "Enable to show all episodes regardless of whether or not they are still available on the publisher's server." = "Enable to show all episodes regardless of whether or not they are still available on the publisher's server.";
-"Episodes" = "Episodes";
 "Fast (2x)" = "Fast (2x)";
 "Faster (1.1x)" = "Faster (1.1x)";
 "Faster (1.2x)" = "Faster (1.2x)";
@@ -207,7 +204,6 @@
 "Intelligent Sleep Timer" = "Intelligent Sleep Timer";
 "Intelligent Sleep timer (on)" = "Intelligent Sleep timer (on)";
 "Intelligent Sleep timer (off)" = "Intelligent Sleep timer (off)";
-"Smart Sleep Timer" = "Smart Sleep Timer";
 "Sleep Timer Always Active" = "Sleep Timer Always Active";
 "Schwellwert für Bewegung" = "Motion Threshold";
 "Disable Sleep Timer in CarPlay" = "Disable Sleep Timer in CarPlay";
@@ -217,8 +213,6 @@
 
 "If not played after" = "If not played after";
 "Keep only newest" = "Keep only newest";
-"1 Episode" = "1 Episode";
-"%d Episodes" = "%d Episodes";
 "1 Day" = "1 Day";
 "2 Days" = "2 Days";
 "3 Days" = "3 Days";
@@ -238,7 +232,6 @@
 "%ld hours ago" = "%ld hours ago";
 "%ld days ago" = "%ld days ago";
 "podcasts refreshed" = "podcasts refreshed";
-"Waiting for '%@'…" = "Waiting for '%@'…";
 "New episode available in Instacast." = "New episode available in Instacast.";
 "Refreshing finished and %d new episodes are available." = "Refreshing finished and %d new episodes are available.";
 "Refreshing finished and a new episode is available." = "Refreshing finished and a new episode is available.";
@@ -266,7 +259,6 @@
 "Downloads" = "Downloads";
 "Downloads paused" = "Downloads paused";
 "Resume" = "Resume";
-"Pause" = "Pause";
 "Paused" = "Paused";
 "Waiting to download" = "Waiting to download";
 
@@ -388,7 +380,6 @@
 "Publish Date" = "Publish Date";
 "Remove" = "Remove";
 "Save" = "Save";
-"Show" = "Show";
 "Starred" = "Starred";
 "Time Left" = "Time Left";
 "Unfinished" = "Unfinished";
@@ -416,10 +407,8 @@
 "%d Bookmarks" = "%d Bookmarks";
 "%d Episodes" = "%d Episodes";
 "1 Bookmark" = "1 Bookmark";
-"1 Episode" = "1 Episode";
 "Bookmarks from %@" = "Bookmarks from %@";
 "Can not send email. Please add a mail account to the Mail app." = "Can not send email. Please add a mail account to the Mail app.";
-"Cancel" = "Cancel";
 "Mail not configured." = "Mail not configured.";
 "No Bookmarks" = "No Bookmarks";
 "Save to" = "Save to";
@@ -452,7 +441,7 @@
 
 /* BookmarksTableViewController.m */
 "Bookmarks" = "Bookmarks";
-"Bookmarks are being exported…" = "Bookmarks are being exported…";
+"Bookmarks are being exported" = "Bookmarks are being exported…";
 "The bookmarks could not be exported. Check the available storage and try again." = "The bookmarks could not be exported. Check the available storage and try again.";
 "The bookmark database could not be opened for export." = "The bookmark database could not be opened for export.";
 "The bookmark document could not be created." = "The bookmark document could not be created.";
@@ -465,14 +454,12 @@
 "Start Playing" = "Start Playing";
 
 /* DatabaseManager.m */
-"Favorites" = "Favorites";
 "Videos" = "Videos";
 
 /* PlayerInfoViewController_v5.m */
 "Chapters" = "Chapters";
 "Previous Chapters" = "Previous Chapters";
 "Edit Bookmark" = "Edit Bookmark";
-"Up Next" = "Up Next";
 
 /* GeneralSettingsViewController.m */
 "Always use Cellular Data" = "Always use Cellular Data";
@@ -522,7 +509,6 @@
 "Edit" = "Edit";
 
 /* FeedOptionsViewController.m */
-"Subscriptions" = "Subscriptions";
 "Use switch to temporarily disable subscription. Colored disclosure triangles indicate that custom settings apply." = "Use switch to temporarily disable subscription. Colored disclosure triangles indicate that custom settings apply.";
 "Use the switch to temporarily pause a podcast. No new episodes will be fetched and no auto-downloads will occur. Tap a row to change individual podcast settings. Colored disclosure triangles indicate that custom settings apply." = "Use the switch to temporarily pause a podcast. No new episodes will be fetched and no auto-downloads will occur. Tap a row to change individual podcast settings. Colored disclosure triangles indicate that custom settings apply.";
 
@@ -586,7 +572,6 @@
 /* DirectoryFeedViewController.m */
 "Copyright" = "Copyright";
 "Country" = "Country";
-"Genre" = "Genre";
 "Language" = "Language";
 "Load older episodes" = "Load older episodes";
 "MMM d" = "MMM d";
@@ -601,7 +586,6 @@
 "German" = "German";
 
 /* ICNowPlayingActivityControl.m */
-"Now Playing" = "Now Playing";
 "Now Playing - %ld queued" = "Now Playing - %ld queued";
 "Stop Playback" = "Stop Playback";
 "Show Up Next" = "Show Up Next";
@@ -655,7 +639,6 @@
 "Show" = "Show";
 "Remove all episodes from the play next list?" = "Remove all episodes from the play next list?";
 "To add episodes, long-press on any episode and select 'Add to Play Next'" = "To add episodes, long-press on any episode and select 'Add to Play Next'";
-"All" = "All";
 "None Selection" = "None";
 "All Played" = "All Played";
 "All Unplayed" = "All Unplayed";
@@ -667,7 +650,6 @@
 "Deleting" = "Deleting";
 "Deselect" = "Deselect";
 "Do you still want to download the content of this episode right now?" = "Do you still want to download the content of this episode right now?";
-"Download" = "Download";
 "Episode Info" = "Show Notes";
 "Automatic switches between Light and Dark based on your device settings." = "Automatic switches between Light and Dark based on your device settings.";
 "Downloading over cellular has been disabled in 'General' settings." = "Downloading over cellular has been disabled in 'General' settings.";
@@ -686,7 +668,6 @@
 "Keine Folgen mit diesem Filter" = "No Episodes with This Filter";
 "Reload" = "Reload";
 "Reloading" = "Reloading";
-"Settings" = "Settings";
 "Filter" = "Filter";
 "Filter by" = "Filter by";
 "All" = "All";
@@ -706,7 +687,6 @@
 "Open in Safari" = "Open in Safari";
 "Restore Deleted Episodes" = "Restore Deleted Episodes";
 "Try Again" = "Try Again";
-"Restoring…" = "Restoring…";
 "Restore Failed" = "Restore Failed";
 "Some deleted episodes could not be restored. Please try again." = "Some deleted episodes could not be restored. Please try again.";
 "Choose Theme Color" = "Choose Theme Color";
@@ -770,16 +750,6 @@
 
 
 /* Missing .ls keys - progress indicators with ellipsis */
-"Loading…" = "Loading…";
-"Clearing…" = "Clearing…";
-"Deleting…" = "Deleting…";
-"Importing…" = "Importing…";
-"Reloading…" = "Reloading…";
-"Paused…" = "Paused…";
-"Waiting to download…" = "Waiting to download…";
-"Pull to refresh…" = "Pull to refresh…";
-"Looking for new episodes…" = "Looking for new episodes…";
-"Load older episodes…" = "Load older episodes…";
 
 /* ICDurationValueTransformer.m */
 "%d sec" = "%d sec";
@@ -801,7 +771,6 @@
 "Bookmark title" = "Bookmark title";
 
 /* GeneralSettingsViewController.m */
-"Dark mode:" = "Dark mode:";
 "Smart Sleep Timer" = "Smart Sleep Timer";
 
 /* NotificationSettingsViewController.m */
@@ -911,13 +880,13 @@
 "Import / Export" = "Import / Export";
 "Export" = "Export";
 "Subscriptions (OPML)" = "Subscriptions (OPML)";
-"Subscriptions are being exported…" = "Subscriptions are being exported…";
+"Subscriptions are being exported" = "Subscriptions are being exported…";
 "The subscriptions could not be exported. Check the available storage and try again." = "The subscriptions could not be exported. Check the available storage and try again.";
 "The podcast database could not be opened for export." = "The podcast database could not be opened for export.";
 "The OPML document could not be created." = "The OPML document could not be created.";
 "The OPML file could not be written." = "The OPML file could not be written. Check the available storage and try again.";
 "All InstacastPlus Data" = "All InstacastPlus Data";
-"Backup wird exportiert…" = "Exporting backup…";
+"Backup wird exportiert" = "Exporting backup…";
 "Export Error" = "Export Error";
 "Share Unavailable" = "Share Unavailable";
 "The exported file was created, but the share menu could not be opened. Try again from the export settings." = "The exported file was created, but the share menu could not be opened. Try again from the export settings.";
@@ -932,13 +901,11 @@
 /* SmarthomeSettingsViewController */
 "Smart Home" = "Smart Home";
 "Enable MQTT" = "Enable MQTT";
-"Server" = "Server";
 "Port" = "Port";
 "Optional" = "Optional";
 "Username" = "Username";
 "Client Name" = "Client Name";
 "Allow Remote Control" = "Allow Remote Control";
-"Status" = "Status";
 "Disabled" = "Disabled";
 "Disconnect" = "Disconnect";
 "Connect" = "Connect";
@@ -950,11 +917,10 @@
 
 /* SmarthomeManager Status */
 "Connection Status" = "Connection Status";
-"Status" = "Status";
 "Connecting..." = "Connecting...";
 "Connected" = "Connected";
 "Disconnected" = "Disconnected";
-"Waiting for WiFi…" = "Waiting for WiFi…";
+"Waiting for WiFi" = "Waiting for WiFi…";
 "WiFi Only" = "Only connect when on WiFi";
 "Error" = "Error";
 
@@ -1013,7 +979,7 @@
 "%ld episode updates" = "%ld episode updates";
 "%ld new bookmarks" = "%ld new bookmarks";
 "Import Complete" = "Import Complete";
-"Importing Data…" = "Importing Data…";
+"Importing Data" = "Importing Data…";
 "New Podcasts" = "New Podcasts";
 "Successfully imported %ld items." = "Successfully imported %ld items.";
 "Import Error" = "Import Error";
@@ -1045,17 +1011,8 @@
 "Apple Watch changes could not be applied. Try syncing again." = "Apple Watch changes could not be applied. Try syncing again.";
 "Apple Watch could not save the synchronized episodes. Check free storage on the Apple Watch and try again." = "Apple Watch could not save the synchronized episodes. Check free storage on the Apple Watch and try again.";
 "Apple Watch sync data is too large. Reduce the Apple Watch selection and try again." = "Apple Watch sync data is too large. Reduce the Apple Watch selection and try again.";
-"Analyzing backup…" = "Analyzing backup…";
+"Analyzing backup" = "Analyzing backup…";
 "Backup could not be analyzed" = "Backup could not be analyzed";
-"Subscribing new podcasts…" = "Subscribing new podcasts…";
-"Updating episode status…" = "Updating episode status…";
-"Importing podcast settings…" = "Importing podcast settings…";
-"Importing bookmarks…" = "Importing bookmarks…";
-"Importing Up Next…" = "Importing Up Next…";
-"Restoring playback…" = "Restoring playback…";
-"Importing playlists…" = "Importing playlists…";
-"Importing settings…" = "Importing settings…";
-"Importing sort order…" = "Importing sort order…";
 "Playlists" = "Playlists";
 "Re-download Episodes" = "Re-download Episodes";
 "No downloaded episodes" = "No downloaded episodes";
@@ -1065,10 +1022,9 @@
 "Unknown" = "Unknown";
 
 /* ICBackupImportProgressView — new import flow */
-"Subscribing podcasts…" = "Subscribing podcasts…";
-"Loading episodes…" = "Loading episodes…";
-"Importing local data…" = "Importing local data…";
-"Finalizing…" = "Finalizing…";
+"Subscribing podcasts" = "Subscribing podcasts…";
+"Importing local data" = "Importing local data…";
+"Finalizing" = "Finalizing…";
 "Cancel Import" = "Cancel Import";
 "Skip Current Podcast" = "Skip Current Podcast";
 "Cancel Entire Import" = "Cancel Entire Import";
@@ -1089,7 +1045,7 @@
 "Are you sure you want to delete all data and reset the app? This action cannot be undone." = "Are you sure you want to delete all data and reset the app? This action cannot be undone.";
 "Create an immediate local snapshot of database and settings." = "Create an immediate local snapshot of database and settings.";
 "InstacastPlus creates and keeps one local snapshot per day for 7 days. Snapshots include database and app settings." = "InstacastPlus creates and keeps one local snapshot per day for 7 days. Snapshots include database and app settings.";
-"Resetting…" = "Resetting…";
+"Resetting" = "Resetting…";
 "Reset Failed" = "Reset Failed";
 "The app could not be reset. No success was reported." = "The app could not be reset. No success was reported.";
 "Downloaded files could not all be deleted. No other app data was reset. Please try again." = "Downloaded files could not all be deleted. No other app data was reset. Please try again.";
@@ -1128,8 +1084,7 @@
 
 /* Refresh Status */
 "%ld/%ld podcasts updating" = "%ld/%ld podcasts updating";
-"%ld/%ld podcasts updating…" = "%ld/%ld podcasts updating…";
-"Not updated yet (%ld):" = "Not updated yet (%ld):";
+"Not updated yet (%ld)" = "Not updated yet (%ld):";
 "Unknown error" = "Unknown error";
 "Timeout" = "Timeout";
 "Not found" = "Not found";
@@ -1186,20 +1141,14 @@
 "Smart Sleep Timer reset at" = "Smart Sleep Timer reset at";
 
 /* Transcription */
-"Transkription" = "Transcription";
 "Transkription und Kapitel" = "Transcription and Chapters";
-"Transkribieren" = "Transcribe";
 "Transkript löschen" = "Delete Transcript";
 "Generiert" = "Generated";
 "Transcribe" = "Transcribe";
 "TRANSKRIPTION" = "TRANSCRIPTION";
 "AUTOMATISCH" = "AUTOMATIC";
 "KAPITEL & SPONSOREN" = "CHAPTERS & SPONSORS";
-"Sprachmodell" = "Speech Model";
 "Modell" = "Model";
-"Modell herunterladen" = "Download Model";
-"Modell löschen" = "Delete Model";
-"Modell löschen?" = "Delete Model?";
 "Modell wird geladen..." = "Downloading model...";
 "Lädt... %@ / %@" = "Loading... %@ / %@";
 "Apple Intelligence ist nicht aktiviert. Aktiviere es in Einstellungen > Apple Intelligence & Siri." = "Apple Intelligence is not enabled. Enable it in Settings > Apple Intelligence & Siri.";
@@ -1210,8 +1159,6 @@
 "Download abbrechen?" = "Cancel Download?";
 "Weiter laden" = "Continue Download";
 "Das Sprachmodell wird gelöscht und muss erneut geladen werden." = "The speech model will be deleted and must be downloaded again.";
-"Apple Intelligence aktiv" = "Apple Intelligence Active";
-"Apple Intelligence nicht aktiviert" = "Apple Intelligence Not Enabled";
 "Transkription" = "Transcription";
 "Sprachmodell" = "Speech Model";
 "Automatisch" = "Automatic";
@@ -1243,13 +1190,10 @@
 "Kapitel löschen" = "Delete Chapters";
 "Kapitel und Zusammenfassung löschen" = "Delete Chapters and Summary";
 "Generierte Chapters löschen" = "Delete Generated Chapters";
-"Neue Folgen transkribieren" = "Transcribe New Episodes";
-"Neue Folgen Chapters generieren" = "Generate Chapters for New Episodes";
 "Neue Folgen Kapitel generieren" = "Generate Chapters for New Episodes";
 "Neue Folgen analysieren" = "Create Chapters for New Episodes";
 "Voreinstellung für alle Podcasts" = "Default for all podcasts";
 "Erfordert Apple Intelligence" = "Requires Apple Intelligence";
-"Sponsoren überspringen" = "Skip Sponsors";
 "Erkennt und überspringt Werbung automatisch" = "Automatically detects and skips ads";
 "Beste Genauigkeit (98%). Benötigt ca. 500 MB und 8 GB RAM." = "Best accuracy (98%). Requires approx. 500 MB and 8 GB RAM.";
 "Gute Genauigkeit (94%). Benötigt ca. 180 MB und 2 GB RAM." = "Good accuracy (94%). Requires approx. 180 MB and 2 GB RAM.";
@@ -1270,7 +1214,6 @@
 "Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit läuft wegen Core ML/GPU nur im Vordergrund. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt." = "Large V3 Turbo: best accuracy (98%), ~645 MB, 8 GB RAM.\nSmall: good accuracy (94%), ~216 MB, 2 GB RAM.\nWhisperKit runs in the foreground only because it uses Core ML/GPU. Apple Speech Recognition requires no download and can continue in the background when iOS grants time.";
 "Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit kann im Hintergrund nur mit iOS 26 Background GPU Access laufen; ohne diese Systemunterstützung pausiert die App. Apple-Spracherkennung benötigt keinen Download und nutzt den klassischen Hintergrundpfad." = "Large V3 Turbo: best accuracy (98%), ~645 MB, 8 GB RAM.\nSmall: good accuracy (94%), ~216 MB, 2 GB RAM.\nWhisperKit can only run in the background with iOS 26 Background GPU Access; without that system support the app pauses it. Apple Speech Recognition requires no download and uses the classic background path.";
 "%.0f %% abgeschlossen" = "%.0f %% complete";
-"Transkription läuft" = "Transcription Running";
 "WhisperKit verarbeitet Podcasts im Hintergrund." = "WhisperKit is processing podcasts in the background.";
 "Einstellungen" = "Settings";
 "Alle Transkriptionen abbrechen?" = "Cancel all transcriptions?";
@@ -1288,7 +1231,6 @@
 "Sprachmodell wird vorbereitet... %lds" = "Preparing speech model... %lds";
 "Sprachmodell wird geladen... %lds" = "Loading speech model... %lds";
 "Modell kompilieren" = "Compile Model";
-"Bereit" = "Ready";
 "Sprachmodell nicht kompiliert. Bitte in Einstellungen > Transkription kompilieren." = "Speech model not compiled. Please compile in Settings > Transcription.";
 "Transkription wird gestartet..." = "Starting transcription...";
 "Im Hintergrund transkribieren" = "Transcribe in Background";
@@ -1300,7 +1242,6 @@
 "Die Transkription wird im Hintergrund fortgesetzt." = "Transcription will continue in the background.";
 "Transkribiert... %d%%" = "Transcribing... %d%%";
 "Kapitel werden erkannt..." = "Detecting chapters...";
-"Episode wird heruntergeladen..." = "Downloading episode...";
 "Fertig ✓" = "Done ✓";
 "Transkription fertig ✓" = "Transcription complete ✓";
 "Episodenanalyse fertig ✓" = "Episode analysis complete ✓";
@@ -1326,7 +1267,6 @@
 "Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nApple: Gute Genauigkeit, kein Download nötig, benötigt iOS 26." = "Large V3 Turbo: Best accuracy (98%), ~645 MB, 8 GB RAM.\nSmall: Good accuracy (94%), ~216 MB, 2 GB RAM.\nApple: Good accuracy, no download needed, requires iOS 26.";
 "Wird geladen..." = "Loading...";
 "Modell herunterladen" = "Download Model";
-"Bereit" = "Ready";
 "Modell löschen" = "Delete Model";
 "Modell löschen?" = "Delete Model?";
 "Apple Intelligence aktiv" = "Apple Intelligence Active";
@@ -1372,16 +1312,6 @@
 "Kapitel werden aus dem Transkript erstellt." = "Creating chapters from the transcript.";
 "Automatischer Download wurde gestartet." = "Automatic download has started.";
 "Episode wird heruntergeladen. Spracherkennungsmodell wird vorbereitet." = "Downloading episode. Preparing speech recognition model.";
-"Episode wird heruntergeladen." = "Downloading episode.";
-"Episode wird heruntergeladen. Modellvorbereitung fehlgeschlagen." = "Downloading episode. Model preparation failed.";
-"Audioanalyse fehlgeschlagen" = "Audio analysis failed";
-"Verarbeitung wird ohne Audiohinweise fortgesetzt." = "Processing will continue without audio cues.";
-"Audioblock wird geladen." = "Loading audio segment.";
-"Transkription läuft. Warte auf das erste Segment." = "Transcription running. Waiting for the first segment.";
-"OpenAI-Auftrag wird erstellt." = "Creating OpenAI job.";
-"OpenAI-Analyse wartet beim Anbieter." = "OpenAI analysis is queued.";
-"OpenAI analysiert die Episode." = "OpenAI is analyzing the episode.";
-"OpenAI-Ergebnis wird geprüft." = "Checking OpenAI result.";
 "Codex Login fehlt." = "Codex login is missing.";
 "Codex Login konnte nicht erneuert werden." = "Codex login could not be refreshed.";
 "Codex Gerätecode konnte nicht gelesen werden." = "Codex device code could not be read.";
@@ -1418,8 +1348,6 @@
 "Unbekannter Fehler." = "Unknown error.";
 "Betaversion" = "Beta Version";
 "Modelle" = "Models";
-"Voice to Text" = "Voice to Text";
-"Text zu Kapitel" = "Text to Chapters";
 "Transkribieren" = "Transcribe";
 "Lokale Transkription" = "Local Transcription";
 "Serverbasierte Transkription" = "Server-Based Transcription";
@@ -1554,7 +1482,6 @@
 "%@ prüft Sponsor- und Eigenpromo-Segmente." = "%@ checks sponsor and self-promo segments.";
 "%@ wird geladen." = "%@ is loading.";
 "Abmelden" = "Sign Out";
-"Add Keyword…" = "Add Keyword…";
 "Angemeldet" = "Signed In";
 "Anthropic API-Key fehlt." = "Anthropic API key is missing.";
 "Anthropic Kapitelmodell lieferte keine lesbare Antwort." = "Anthropic chapter model returned no readable response.";
@@ -1625,7 +1552,6 @@
 "OpenAI-Modell mit ausgewogenem Verhältnis aus Qualität, Geschwindigkeit und Kosten. Geschätzte Kosten pro 1 h Transkript: USD 0,05–0,20." = "OpenAI model balancing quality, speed, and cost. Estimated cost per 1-hour transcript: USD 0.05–0.20.";
 "Analyse mit aktivem Reasoning. Geschätzte Kosten pro 1 h Transkript: USD 0,10–0,30 mit eigenem API-Key; integrierter Zugang ohne eigene Abrechnung." = "Analysis with reasoning enabled. Estimated cost per 1-hour transcript: USD 0.10–0.30 with a custom API key; built-in access has no separate user billing.";
 "Ausgewogenes Qualitätsmodell. Geschätzte Kosten pro 1 h Transkript: USD 0,05–0,20." = "Balanced quality model. Estimated cost per 1-hour transcript: USD 0.05–0.20.";
-"Smart Sleep Timer reset at:" = "Smart Sleep Timer reset at:";
 "Speichern" = "Save";
 "Sponsor- und Eigenpromo-Segmente werden semantisch geprueft." = "Sponsor and self-promo segments are being checked semantically.";
 "Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert." = "Sponsor chapters can be skipped automatically. Episodes with existing chapters remain unchanged.";
@@ -1653,13 +1579,12 @@
 "Sync Subscriptions" = "Sync Subscriptions";
 "Sync Settings" = "Sync Settings";
 "Sync Now" = "Sync Now";
-"Syncing…" = "Syncing…";
 "Status" = "Status";
 "Devices" = "Devices";
 "Synced Devices" = "Synced Devices";
 "On iCloud" = "On iCloud";
 "iCloud Data" = "iCloud Data";
-"Updating iCloud data…" = "Updating iCloud data…";
+"Updating iCloud data" = "Updating iCloud data…";
 "iCloud data counts could not be updated." = "iCloud data counts could not be updated.";
 "Last checked %@." = "Last checked %@.";
 "iCloud data has not been checked yet." = "iCloud data has not been checked yet.";
@@ -1684,8 +1609,6 @@
 "iCloud prüfen…" = "Checking iCloud…";
 "Synchronisiere…" = "Syncing…";
 "%ld/%ld Elemente" = "%ld/%ld items";
-"Empfange Änderungen…" = "Receiving changes…";
-"Sende Änderungen…" = "Sending changes…";
 "Synchronisiert" = "Synced";
 "Keine Änderungen" = "No changes";
 "Synchronisation läuft, lädt hoch…" = "Syncing, uploading…";
@@ -1785,29 +1708,13 @@
 "Playing “%@”." = "Playing “%@”.";
 "No playable episode found." = "No playable episode found.";
 "Episode not found." = "Episode not found.";
-"Play in \\(.applicationName)" = "Play in \\(.applicationName)";
-"Resume \\(.applicationName)" = "Resume \\(.applicationName)";
-"Continue playing in \\(.applicationName)" = "Continue playing in \\(.applicationName)";
-"Pause \\(.applicationName)" = "Pause \\(.applicationName)";
-"Pause playback in \\(.applicationName)" = "Pause playback in \\(.applicationName)";
-"Skip forward in \\(.applicationName)" = "Skip forward in \\(.applicationName)";
-"Skip ahead in \\(.applicationName)" = "Skip ahead in \\(.applicationName)";
-"Skip back in \\(.applicationName)" = "Skip back in \\(.applicationName)";
-"Go back in \\(.applicationName)" = "Go back in \\(.applicationName)";
-"Next episode in \\(.applicationName)" = "Next episode in \\(.applicationName)";
-"Play the next episode in \\(.applicationName)" = "Play the next episode in \\(.applicationName)";
-"Set a sleep timer in \\(.applicationName)" = "Set a sleep timer in \\(.applicationName)";
-"Start the sleep timer in \\(.applicationName)" = "Start the sleep timer in \\(.applicationName)";
-"Mark as played in \\(.applicationName)" = "Mark as played in \\(.applicationName)";
-"Mark this episode as played in \\(.applicationName)" = "Mark this episode as played in \\(.applicationName)";
-"Play \\(\\.$podcast) in \\(.applicationName)" = "Play \\(\\.$podcast) in \\(.applicationName)";
-"Play the latest episode of \\(\\.$podcast) in \\(.applicationName)" = "Play the latest episode of \\(\\.$podcast) in \\(.applicationName)";
-"Play \\(\\.$episode) in \\(.applicationName)" = "Play \\(\\.$episode) in \\(.applicationName)";
-"Play episode \\(\\.$episode) in \\(.applicationName)" = "Play episode \\(\\.$episode) in \\(.applicationName)";
+"Open Podcast" = "Open Podcast";
+"Open Episode" = "Open Episode";
+"Feed URL" = "Feed URL";
+"Episode GUID" = "Episode GUID";
 "Watch lädt Podcasts (%@/%@)" = "Watch is downloading podcasts (%@/%@)";
 "Watch lädt Podcasts (%@ von %@)" = "Watch is downloading podcasts (%@ of %@)";
-"Watch lädt Podcasts…" = "Watch is downloading podcasts…";
-"Wartet auf Apple Watch…" = "Waiting for Apple Watch…";
+"Watch lädt Podcasts" = "Watch is downloading podcasts…";
 
 /* VoiceOver accessibility labels */
 "Add Podcast" = "Add Podcast";

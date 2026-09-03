@@ -44,6 +44,10 @@ extern NSString* AudioSessionDidRestorePlaybackNotification;
 // set while the playing episode is a member of the list and clears otherwise.
 @property (nonatomic, copy, readonly) NSString* sourceEpisodeListUID;
 - (void) notePlaybackSourceEpisodeList:(CDEpisodeList*)list;
+// Consumes an arm that no playEpisode: picked up because the presentation only resumed the
+// already loaded episode. Without this the arm survives and attaches the list to the NEXT
+// episode started anywhere else.
+- (void) applyPendingPlaybackSourceToCurrentEpisode;
 
 @property (nonatomic, readonly, strong) CDEpisode* episode;
 

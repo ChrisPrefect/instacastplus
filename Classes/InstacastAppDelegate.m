@@ -262,6 +262,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
         [self _handleTranscriptionProcessingTask:(BGProcessingTask*)task];
     }];
 
+#if !TARGET_OS_MACCATALYST  // BGContinuedProcessingTask: not available on Mac Catalyst
     if (@available(iOS 26.0, *)) {
         void (^continuedLaunchHandler)(BGTask*) = ^(BGTask * _Nonnull task) {
             [self _handleTranscriptionContinuedProcessingTask:(BGContinuedProcessingTask*)task];
@@ -281,6 +282,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
                                          @"gpuSupported": @((BGTaskScheduler.supportedResources & BGContinuedProcessingTaskRequestResourcesGPU) != 0),
                                      }];
     }
+#endif
 }
 
 - (BOOL)transcriptionContinuedTasksAvailable {
@@ -309,9 +311,11 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
 
 - (void)_retireDeferredTranscriptionTaskOwnership:(BGTask*)task reason:(NSString*)reason {
     BOOL continuedTask = NO;
+#if !TARGET_OS_MACCATALYST  // BGContinuedProcessingTask: not available on Mac Catalyst
     if (@available(iOS 26.0, *)) {
         continuedTask = [task isKindOfClass:BGContinuedProcessingTask.class];
     }
+#endif
     if (continuedTask) {
         [self _clearActiveContinuedRequestMatchingIdentifier:task.identifier];
     } else {
@@ -539,6 +543,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     }
 }
 
+#if !TARGET_OS_MACCATALYST  // BGContinuedProcessingTask: not available on Mac Catalyst
 - (void)_handleTranscriptionContinuedProcessingTask:(BGContinuedProcessingTask*)continuedTask API_AVAILABLE(ios(26.0)) {
     if ([self _deferTranscriptionTaskUntilDatabaseReady:continuedTask]) {
         return;
@@ -789,6 +794,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
         completeTask(YES, @"queue-empty");
     }
 }
+#endif
 
 
 
@@ -1074,6 +1080,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
         if ([task isKindOfClass:BGProcessingTask.class]) {
             [self _handleTranscriptionProcessingTask:(BGProcessingTask*)task];
         }
+#if !TARGET_OS_MACCATALYST  // BGContinuedProcessingTask: not available on Mac Catalyst
         else if (@available(iOS 26.0, *)) {
             if ([task isKindOfClass:BGContinuedProcessingTask.class]) {
                 [self _handleTranscriptionContinuedProcessingTask:(BGContinuedProcessingTask*)task];
@@ -1082,6 +1089,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
                 [task setTaskCompletedWithSuccess:NO];
             }
         }
+#endif
         else {
             [task setTaskCompletedWithSuccess:NO];
         }

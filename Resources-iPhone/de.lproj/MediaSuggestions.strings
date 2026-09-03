@@ -1,0 +1,65 @@
+/* Play Media */
+"G3J6fP" = "Medien abspielen";
+
+/* A request to play media. */
+"LdrEPN" = "Eine Anfrage, Medien abzuspielen.";
+
+/* Play ${mediaContainer} */
+"YYfsKp" = "${mediaContainer} abspielen";
+
+/* Items */
+"cfJexL" = "Objekte";
+
+/* Container */
+"xdnqvn" = "Container";
+
+/* Shuffled */
+"WktFNa" = "Zufällig";
+
+/* shuffled */
+"QqdHiR" = "zufällig";
+
+/* not shuffled */
+"mCAocc" = "nicht zufällig";
+
+/* Repeat Mode */
+"ErAaNp" = "Wiederholmodus";
+
+/* Resume */
+"rvNMpm" = "Fortsetzen";
+
+/* resume */
+"No0K9w" = "fortsetzen";
+
+/* don't resume */
+"Pk1Fkx" = "nicht fortsetzen";
+
+/* Expiration Date */
+"gQk2qs" = "Ablaufdatum";
+
+/* Buckets */
+"RfcKoD" = "Buckets";
+
+/* Queue Location */
+"cV2HLF" = "Position in der Warteschlange";
+
+/* Playback Speed */
+"RvX3Zd" = "Wiedergabegeschwindigkeit";
+
+/* ${displayName} can't be negative. */
+"N43ja6" = "${displayName} darf nicht negativ sein.";
+
+/* ${displayName} can't be higher than ${maximumValue}. */
+"RQZH51" = "${displayName} darf nicht größer als ${maximumValue} sein.";
+
+/* ${displayName} can't be lower than ${minimumValue}. */
+"0adaqE" = "${displayName} darf nicht kleiner als ${minimumValue} sein.";
+
+/* Media Search */
+"1uT6VF" = "Mediensuche";
+
+/* Hashed Route UIDs */
+"UhqImT" = "Gehashte Routen-UIDs";
+
+/* Now Playing Info */
+"weqUPn" = "Infos zur aktuellen Wiedergabe";

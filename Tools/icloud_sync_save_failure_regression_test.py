@@ -85,4 +85,24 @@ display_status = method_body(METADATA, "func displayStatus(for error:")
 require("lokal gespeichert" in display_status or "auf diesem Gerät gespeichert" in display_status,
         "A local database failure needs actionable wording instead of a generic iCloud error.")
 
+# A record CloudKit rejects permanently (.invalidArguments — e.g. a record type that was
+# never deployed to the production schema) must not stay pending. It used to poison every
+# later send batch: 435 batches failed in a row, no sync cycle ever completed, and every
+# other record type went down with it.
+failed_save = method_body(REMOTE, "func handleFailedRecordSave(")
+require("case .invalidArguments:" in failed_save,
+        "A permanently rejected record save needs its own non-retrying branch.")
+require("dropPermanentlyRejectedRecordSave(failedSave)" in failed_save,
+        "A permanently rejected record must be dropped instead of re-queued.")
+require(failed_save.find("case .invalidArguments:") < failed_save.find("default:"),
+        "The permanent-rejection branch must win over the generic setError default.")
+
+drop_rejected = method_body(REMOTE, "func dropPermanentlyRejectedRecordSave(")
+require("syncEngine?.state.remove(pendingRecordZoneChanges: [.saveRecord(recordID)])" in drop_rejected,
+        "Dropping must actually take the record out of the engine's pending changes.")
+require('metadata["recordType"] = failedSave.record.recordType' in drop_rejected,
+        "The drop must name the rejected record type so the cause stays diagnosable.")
+require("recordInitialUploadRecordsSaved([recordID])" in drop_rejected,
+        "A dropped record must count as resolved so the initial upload cannot stall on it.")
+
 print("iCloud local save failure regression checks passed")

@@ -3052,7 +3052,14 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
 
 @objc class ICDownloadableModelStore: NSObject {
     private static let chapterModelKey = "ChapterGenerationModel"
+#if canImport(llama)
     private static let defaultChapterModelIdentifier = "gemma-4-e2b-it-q4-k"
+#else
+    // Ohne llama (Mac Catalyst: das xcframework hat keine maccatalyst-Slice) gibt es
+    // kein lokales GGUF-Kapitelmodell. Der Default muss dort auf ein tatsächlich
+    // vorhandenes Modell zeigen, sonst trapt der Force-Unwrap in selectedModel(for:).
+    private static let defaultChapterModelIdentifier = "apple-foundation-models"
+#endif
     private static let removedTextModelIdentifiers: Set<String> = ["granite-3.3-2b-instruct-q4-k-m"]
     private static let legacyChapterModelSuccessors: [String: String] = [
         "openai-chatgpt-5.5-oauth": "openai-codex-gpt-5.6-sol-oauth",
@@ -3067,7 +3074,7 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
     private nonisolated(unsafe) static var activeDownloadProgressByModelID: [String: ICModelDownloadProgress] = [:]
     private nonisolated(unsafe) static var didScheduleRemovedTextModelCleanup = false
 
-    private static let models: [ICDownloadableModel] = [
+    private static let definedModels: [ICDownloadableModel] = [
         ICDownloadableModel(
             identifier: "whisperkit-large-v3-turbo",
             title: "WhisperKit Large V3 Turbo",
@@ -3172,6 +3179,18 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             chapterProvider: .appleFoundation
         ),
     ]
+
+    /// Lokale GGUF-Kapitelmodelle brauchen llama.cpp. Fehlt das Framework für die
+    /// gebaute Plattform, dürfen sie nirgends in der UI auftauchen — sonst bietet
+    /// die App einen Download an, der danach nur „Kapitelmodell ist in dieser
+    /// App-Version nicht verfügbar." liefert.
+    private static let models: [ICDownloadableModel] = {
+#if canImport(llama)
+        return definedModels
+#else
+        return definedModels.filter { !($0.role == .textToChapters && $0.chapterProvider == .localGGUF) }
+#endif
+    }()
 
     @objc static func allModels() -> [ICDownloadableModel] {
         cleanupRemovedTextModelsIfNeeded()

@@ -28,7 +28,8 @@ require(
     "Loaded chapter taps must preserve chapter intent by using seekToChapter:, not only a raw time seek.",
 )
 require(
-    "[[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO at:MAX(0.0, chapter.timecode) autostart:YES];" in chapter_selection,
+    "[[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO "
+    "at:MAX(0.0, chapter.timecode) autostart:YES preservingPlaybackSource:YES];" in chapter_selection,
     "When the app was reopened and the player is not loaded, tapping a chapter must start that episode at the chapter time.",
 )
 require(

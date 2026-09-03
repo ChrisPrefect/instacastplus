@@ -532,13 +532,14 @@ actor LocalGGUFModelRunner {
 enum LocalGGUFJSONGrammar {
     case genericJSON
     case chapters
+    case chapterStarts
     case markers
 }
 
 actor LocalGGUFModelRunner {
     static func create(modelURL: URL, contextTokens: Int32 = LocalGGUFModelRunner.recommendedContextTokens()) throws -> LocalGGUFModelRunner {
         throw NSError(domain: "LocalGGUFModelRunner", code: 1,
-                      userInfo: [NSLocalizedDescriptionKey: "Kapitelmodell ist in dieser App-Version nicht verfügbar."])
+                      userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Kapitelmodell ist in dieser App-Version nicht verfügbar.", comment: "")])
     }
 
     static func recommendedContextTokens() -> Int32 { 32_768 }

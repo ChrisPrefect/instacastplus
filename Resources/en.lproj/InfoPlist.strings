@@ -1,0 +1,3 @@
+/* Permission prompts and other Info.plist texts shown to the user. */
+
+"NSSpeechRecognitionUsageDescription" = "InstacastPlus uses speech recognition to transcribe podcast episodes.";

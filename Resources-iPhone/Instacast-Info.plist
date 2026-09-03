@@ -170,7 +170,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>35</string>
+	<string>37</string>
 	<key>INIntentsSupported</key>
 	<array>
 		<string>INPlayMediaIntent</string>
@@ -325,7 +325,7 @@
 		</dict>
 	</array>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Instacast verwendet Spracherkennung um Podcasts zu transkribieren.</string>
+	<string>InstacastPlus uses speech recognition to transcribe podcast episodes.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>com.iteconomy.instacastplus.playback</string>

@@ -16,12 +16,10 @@ def require(source: str, snippet: str, description: str) -> None:
     assert snippet in source, f"Missing {description}: {snippet}"
 
 
-require(CONTROLS, '@"airplayaudio"', "AirPlay SF Symbol")
 require(CONTROLS, '@"bookmark"', "bookmark SF Symbol")
 require(SPEED, '@"gauge.with.dots.needle.50percent"', "normal-speed SF Symbol")
 require(TIMER, '@"moon.zzz"', "sleep-timer SF Symbol")
 
-require(CONTROLS, 'ICPlayerToolSymbol(@"airplayaudio", 26.f)', "26-point AirPlay symbol")
 require(CONTROLS, 'ICPlayerToolSymbol(@"bookmark", 25.f)', "25-point bookmark symbol")
 require(SPEED, "configurationWithPointSize:28.5f", "28.5-point speed symbol")
 require(SPEED, "CGFloat size = 28.5f", "28.5-point speed image rect")
@@ -34,6 +32,16 @@ require(SPEED, "PlaybackSpeedControlNormalSpeed", "normal-speed state branch")
 require(SPEED, "[self setTitle:nil forState:UIControlStateNormal]", "icon-only 1x state")
 require(SPEED, '@"Player Speed Fill"', "legacy non-1x speed box")
 require(SPEED, "titleForSpeedControl", "non-1x speed value")
+
+# AirPlay is a native AVRoutePickerView since the MPVolumeView removal. It has no image
+# API and scales its glyph with its bounds, so it must not be dropped into the raw 84pt
+# tool slot — that rendered a 52.7pt glyph next to ~25pt neighbours (measured).
+VOLUME_VIEW_H = (ROOT / "Classes/ICVolumeView.h").read_text()
+VOLUME_VIEW_M = (ROOT / "Classes/ICVolumeView.m").read_text()
+require(VOLUME_VIEW_H, "@interface ICVolumeView : UIView", "route picker wrapper, not a bare AVRoutePickerView")
+require(VOLUME_VIEW_M, "static CGFloat const ICVolumeRoutePickerSize = 50.f;", "50-point route picker bounds")
+require(VOLUME_VIEW_M, "self.routePickerView.frame = CGRectMake", "picker centred at glyph size inside the tool slot")
+require(VOLUME_VIEW_M, "- (UIView*) hitTest:", "full tool slot stays tappable")
 
 require(CONTROLS, "ICPlayerTransportImageScale = 1.2f", "20-percent-larger play/pause glyph")
 require(CONTROLS, "ICPlayerSkipPointSize = 40.8f", "20-percent-larger seek glyph")

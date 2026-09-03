@@ -238,6 +238,11 @@
             [[PlaybackManager playbackManager] play];
             [self setTimerUpdateOnPlay];
         }
+
+        // No playEpisode: ran in the branches above (the requested episode was already
+        // loaded and only got resumed) — a list screen's source arm would otherwise stay
+        // pending and stick to the next episode started somewhere else.
+        [audioSession applyPendingPlaybackSourceToCurrentEpisode];
         if (self.donatesUserInitiatedPlayback &&
             autostart &&
             self.episode &&
