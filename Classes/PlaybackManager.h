@@ -98,6 +98,13 @@
 - (void) _findAndSetCurrentArtwork;
 
 @property (readonly, strong) NSArray* chapters;
+@property (nonatomic, readonly) BOOL automaticChapterSkippingAudioUnverified;
+@property (nonatomic, readonly) BOOL generatedChapterTimelineUnverified;
+@property (nonatomic, readonly) BOOL generatedAudioVerificationCompleted;
+@property (nonatomic, readonly) BOOL transcriptAudioVerified;
+@property (nonatomic, readonly, copy) NSString *verifiedTranscriptSnapshot;
+@property (nonatomic, readonly, copy) NSString *chapterTimelineIdentifier;
+- (BOOL)generatedArtifactTimingIsCurrent;
 @property (assign) NSInteger currentChapter;
 
 @property (readonly, strong) NSArray* artworks;

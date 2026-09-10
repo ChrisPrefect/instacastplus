@@ -1,0 +1,42 @@
+{
+  "health": {
+    "ok": true,
+    "queued_jobs": 0,
+    "running_jobs": 0,
+    "episodes": 105,
+    "transcription_workers": {
+      "transcript-instacast-worker.service": true,
+      "transcript-instacast-worker-2.service": false
+    },
+    "service_status": null
+  },
+  "global_limit": 250,
+  "client_limit": 25,
+  "active_job_states": [
+    "queued",
+    "running",
+    "paused"
+  ],
+  "rate_limits": {
+    "status_poll_seconds": 15,
+    "read_requests_per_minute": {
+      "client": 250,
+      "ip": 2500,
+      "token": 12000
+    },
+    "cancel_requests_per_minute": {
+      "client": 50,
+      "ip": 500,
+      "token": 500
+    },
+    "submission_requests_per_hour": {
+      "client": 240,
+      "episode_token": 2000,
+      "podcast_token": 300
+    },
+    "isolation": "Reads, submissions and cancellation use independent bounded buckets; exhausting reads or submissions does not disable authenticated cancellation."
+  },
+  "old_episode_status": "canceled",
+  "unknown_request_http_status": 404,
+  "production_jobs_created": 0
+}

@@ -69,6 +69,7 @@ struct WNowPlaying: Codable, Sendable {
     let episode: WEpisode?
     let chapterTitle: String?
     let chapterIndex: Int?
+    var chapterTimelineIdentifier: String? = nil
     let chapterCount: Int?
     let chapterArtPath: String?         // local path for chapter artwork in WidgetImages/
     let chapters: [WChapter]?           // chapter list for large widget
@@ -103,6 +104,7 @@ struct WNowPlaying: Codable, Sendable {
     /// Create a copy with a different episode (used for projected timeline entries)
     func withEpisode(_ newEpisode: WEpisode) -> WNowPlaying {
         WNowPlaying(episode: newEpisode, chapterTitle: chapterTitle, chapterIndex: chapterIndex,
+                    chapterTimelineIdentifier: chapterTimelineIdentifier,
                     chapterCount: chapterCount, chapterArtPath: chapterArtPath, chapters: chapters,
                     isPaused: isPaused, sleepTimerRemaining: sleepTimerRemaining,
                     sleepTimerStopDate: sleepTimerStopDate, skipForwardSeconds: skipForwardSeconds,

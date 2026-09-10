@@ -138,7 +138,8 @@ schedule_background = function_body(
 require(
     "hasPendingOpenAIBackgroundCancellationWork" in schedule_background
     and "earliestAutomaticBackgroundWorkDate" in schedule_background
-    and "request.requiresNetworkConnectivity = hasCancellationWork" in schedule_background,
+    and "let requiresNetwork = hasCancellationWork ||" in schedule_background
+    and "request.requiresNetworkConnectivity = requiresNetwork" in schedule_background,
     "A persisted cancellation retry cannot request the existing network BGProcessing lifecycle when the episode queue is empty.",
 )
 

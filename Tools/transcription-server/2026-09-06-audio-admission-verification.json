@@ -1,0 +1,82 @@
+{
+  "date": "2026-09-06",
+  "schema_revision": "2026-09-06.3",
+  "backend_deploy": {
+    "deployed_files": 10,
+    "backup": "/home/instacast/domains/transcript.instacast.ch/var/backups/audio-admission-20260906",
+    "schema_columns_verified": true,
+    "api_and_worker_active": true
+  },
+  "device_install": {
+    "info": {
+      "arguments": [
+        "devicectl",
+        "device",
+        "install",
+        "app",
+        "--device",
+        "943DD226-88E3-57DD-B2B2-E128005AC50D",
+        "/Users/Chris/Library/Developer/Xcode/DerivedData/Instacast-cgtqgggsjixnfbdsmznxtbkjogvj/Build/Products/Release-iphoneos/InstacastPlus.app",
+        "--json-output",
+        "/tmp/instacast-pre-asr-install.json"
+      ],
+      "commandType": "devicectl.device.install.app",
+      "environment": {
+        "TERM": "dumb"
+      },
+      "jsonVersion": 3,
+      "outcome": "success",
+      "version": "518.33"
+    },
+    "result": {
+      "deviceIdentifier": "943DD226-88E3-57DD-B2B2-E128005AC50D",
+      "installedApplications": [
+        {
+          "bundleID": "com.iteconomy.instacastplus",
+          "databaseSequenceNumber": 2952,
+          "databaseUUID": "9B8D6318-DC70-4B8D-9016-C96202840012",
+          "installationURL": "file:///private/var/containers/Bundle/Application/8E50CFA9-AB85-4415-BFA4-5AC6ED3E660F/InstacastPlus.app/",
+          "launchServicesIdentifier": "unknown",
+          "options": {}
+        }
+      ]
+    }
+  },
+  "public_schema": {
+    "schema_revision": "2026-09-06.3",
+    "submission_required_fields": [
+      "episode_url",
+      "title",
+      "client_duration_seconds",
+      "client_audio_sha256",
+      "wait_seconds",
+      "force"
+    ]
+  },
+  "tests": {
+    "source_admission_sqlite": 9,
+    "source_admission_mariadb": 9,
+    "lifecycle": 56,
+    "real_download_mismatch": {
+      "passed": true,
+      "asr_invocations": 0,
+      "production_database_written": false
+    },
+    "player_scroll_initial_and_updated_layout": [
+      "pending",
+      "failed",
+      "ready"
+    ],
+    "client_native_harness": [
+      "no POST without complete audio",
+      "no POST after source replacement",
+      "hash persisted before POST",
+      "lost acknowledgement",
+      "same UUID replay",
+      "relaunch",
+      "cancellation",
+      "shared duration warning cannot override exact identity"
+    ]
+  },
+  "device_final_foreground_verification": "pending; app backgrounded before restoration; connection interrupted"
+}

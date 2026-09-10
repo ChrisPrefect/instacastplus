@@ -107,7 +107,7 @@ require(
 )
 sponsor_validation = function_body(
     CHAPTERS,
-    "@objc func validateSponsorSegments(_ sponsorSegments:",
+    "@objc nonisolated func validateSponsorSegments(_ sponsorSegments:",
 )
 require(
     "expectedEvidenceIndices == Array(segmentStartCueIndex...segmentEndCueIndex)" in sponsor_validation,

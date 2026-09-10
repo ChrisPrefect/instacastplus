@@ -386,7 +386,7 @@ struct NowPlayingWidgetView: View {
                !chapters.isEmpty,
                let currentIdx = resolvedCurrentChapterIndex(data: data, episode: episode) {
                 Divider()
-                chapterListView(chapters: chapters, currentIndex: currentIdx, episodeDuration: episode.duration)
+                chapterListView(chapters: chapters, currentIndex: currentIdx, episodeDuration: episode.duration, timelineIdentifier: data.chapterTimelineIdentifier ?? "")
             }
 
             Spacer(minLength: 0)
@@ -396,7 +396,7 @@ struct NowPlayingWidgetView: View {
 
     // MARK: - Chapter List (Large widget)
 
-    private func chapterListView(chapters: [WChapter], currentIndex: Int, episodeDuration: Int32) -> some View {
+    private func chapterListView(chapters: [WChapter], currentIndex: Int, episodeDuration: Int32, timelineIdentifier: String) -> some View {
         // Show previous chapter + current + next chapters (max 5 visible, centered on current)
         let maxVisible = 5
         let startIdx: Int
@@ -417,7 +417,7 @@ struct NowPlayingWidgetView: View {
                 let chapter = chapters[idx]
                 let isCurrent = idx == currentIndex
 
-                Button(intent: SkipToChapterIntent(chapterIndex: idx)) {
+                Button(intent: SkipToChapterIntent(chapterIndex: idx, chapterTimelineIdentifier: timelineIdentifier)) {
                     HStack(spacing: 8) {
                         // Chapter indicator
                         if isCurrent {
@@ -451,6 +451,7 @@ struct NowPlayingWidgetView: View {
                     .cornerRadius(5)
                 }
                 .buttonStyle(.plain)
+                .disabled(timelineIdentifier.isEmpty)
             }
         }
     }

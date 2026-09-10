@@ -184,6 +184,24 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
     }
 }
 
+- (void) updateItemWithTag:(NSInteger)tag
+{
+    [self.items enumerateObjectsUsingBlock:^(NSArray* sectionItems, NSUInteger section, BOOL *stopSection) {
+        [sectionItems enumerateObjectsUsingBlock:^(MainSidebarItem* item, NSUInteger row, BOOL *stopRow) {
+            if (item.tag != tag) return;
+            MainSidebarTableCell* cell = [self.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:row inSection:section]];
+            NSString* subtitle = item.subtitle ? item.subtitle() : nil;
+            if (![cell.subtitleLabel.text isEqualToString:subtitle]) {
+                cell.subtitleLabel.text = subtitle;
+                cell.subtitleLabel.hidden = subtitle.length == 0;
+                [cell setNeedsLayout];
+            }
+            *stopRow = YES;
+            *stopSection = YES;
+        }];
+    }];
+}
+
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     NSArray* sectionItems = self.items[indexPath.section];

@@ -155,6 +155,7 @@ private struct AnalysisFile: Codable {
     let transcriptRevision: String
     let openAIBackgroundJobKey: String?
     let openAIBackgroundResponseID: String?
+    let sourceAudioSHA256: String?
 
     struct ChapterEntry: Codable {
         let start: Double
@@ -662,12 +663,12 @@ private struct RemoteJSONObjectResult {
     /// Stable IDs for putting transcript evidence into a model prompt. The IDs
     /// are positional on purpose; `transcriptRevision` prevents them from being
     /// accepted against a changed transcript.
-    @objc func evidenceCueIDs(for cues: [ICTranscriptCue]) -> [String] {
+    @objc nonisolated func evidenceCueIDs(for cues: [ICTranscriptCue]) -> [String] {
         cues.indices.map { "cue-\($0)" }
     }
 
     /// SHA-256 over the exact ordered cue timeline and text.
-    @objc func transcriptRevision(for cues: [ICTranscriptCue]) -> String {
+    @objc nonisolated func transcriptRevision(for cues: [ICTranscriptCue]) -> String {
         Self.makeTranscriptRevision(for: cues)
     }
 
@@ -918,7 +919,7 @@ private struct RemoteJSONObjectResult {
         return chapters
     }
 
-    private static func isValidSponsorChapterTitle(_ title: String) -> Bool {
+    nonisolated private static func isValidSponsorChapterTitle(_ title: String) -> Bool {
         let prefix = "Sponsor: "
         guard title.hasPrefix(prefix) else { return false }
         return !title.dropFirst(prefix.count)
@@ -967,7 +968,7 @@ private struct RemoteJSONObjectResult {
 
     /// Rejects stale, fabricated, unsorted, overlapping, or evidence-free
     /// sponsor segments before they can become automatic playback skip ranges.
-    @objc func validateSponsorSegments(_ sponsorSegments: [ICSponsorSegment],
+    @objc nonisolated func validateSponsorSegments(_ sponsorSegments: [ICSponsorSegment],
                                        transcriptCues cues: [ICTranscriptCue],
                                        transcriptRevision: String) throws -> [ICSponsorSegment] {
         let currentRevision = Self.makeTranscriptRevision(for: cues)
@@ -1091,7 +1092,7 @@ private struct RemoteJSONObjectResult {
     /// Creates the single analysis value that the queue persists. Sponsor
     /// intervals are validated first and then deterministically overlaid onto
     /// the publisher-provided or generated base chapters.
-    @objc func makeAnalysisResult(existingChapters: [ICGeneratedChapter],
+    @objc nonisolated func makeAnalysisResult(existingChapters: [ICGeneratedChapter],
                                   sponsorSegments: [ICSponsorSegment],
                                   summary: String,
                                   transcriptRevision: String,
@@ -1122,7 +1123,7 @@ private struct RemoteJSONObjectResult {
     /// Creates a verified server result using the same validation and overlay
     /// path as on-device analysis. Server sponsor bounds must already be exact
     /// canonical SRT cue bounds; imprecise ranges are rejected.
-    func makeServerAnalysis(_ existingChapters: [ICGeneratedChapter],
+    nonisolated func makeServerAnalysis(_ existingChapters: [ICGeneratedChapter],
                             sponsorSegments: [ICSponsorSegment],
                             summary: String,
                             transcriptCues cues: [ICTranscriptCue]) throws -> EpisodeAnalysisResult {
@@ -1169,7 +1170,7 @@ private struct RemoteJSONObjectResult {
         try saveAnalysisResult(result, for: episodeHash)
     }
 
-    private static func sameCanonicalMillisecond(_ lhs: Double, _ rhs: Double) -> Bool {
+    nonisolated private static func sameCanonicalMillisecond(_ lhs: Double, _ rhs: Double) -> Bool {
         let maximumTime = Double(Int64.max) / 1_000
         guard lhs.isFinite, rhs.isFinite,
               lhs >= 0, rhs >= 0,
@@ -1177,7 +1178,7 @@ private struct RemoteJSONObjectResult {
         return Int64((lhs * 1_000).rounded()) == Int64((rhs * 1_000).rounded())
     }
 
-    private static func makeTranscriptRevision(for cues: [ICTranscriptCue]) -> String {
+    nonisolated private static func makeTranscriptRevision(for cues: [ICTranscriptCue]) -> String {
         var canonical = Data("instacast-transcript-revision-v1".utf8)
         appendUInt64(UInt64(cues.count), to: &canonical)
         for cue in cues {
@@ -1190,14 +1191,14 @@ private struct RemoteJSONObjectResult {
         return SHA256.hash(data: canonical).map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func appendUInt64(_ value: UInt64, to data: inout Data) {
+    nonisolated private static func appendUInt64(_ value: UInt64, to data: inout Data) {
         var bigEndianValue = value.bigEndian
         Swift.withUnsafeBytes(of: &bigEndianValue) { bytes in
             data.append(contentsOf: bytes)
         }
     }
 
-    private static func sponsorValidationError(code: Int, description: String) -> NSError {
+    nonisolated private static func sponsorValidationError(code: Int, description: String) -> NSError {
         NSError(domain: "ChapterGenerator.SponsorValidation",
                 code: code,
                 userInfo: [NSLocalizedDescriptionKey: NSLocalizedString(description, comment: "")])
@@ -6086,6 +6087,10 @@ private struct RemoteJSONObjectResult {
     private var _chaptersCache: [String: Bool] = [:]
     private var _loadedChaptersCache: [String: [ICGeneratedChapter]] = [:]
     private var _summaryCache: [String: String] = [:]
+    private var _analysisAudioSHA256Cache: [String: String] = [:]
+    private var _analysisTranscriptSnapshotCache: [String: String] = [:]
+    private var _analysisSnapshotCache: [String: String] = [:]
+    private var audioVerificationTask: Task<Void, Never>?
 
     private func validateAnalysisTranscriptRevision(_ file: AnalysisFile,
                                                      episodeHash: String) throws {
@@ -6204,8 +6209,10 @@ private struct RemoteJSONObjectResult {
             summary: summary,
             transcriptRevision: result.transcriptRevision,
             openAIBackgroundJobKey: result.openAIBackgroundJobKey,
-            openAIBackgroundResponseID: result.openAIBackgroundResponseID
+            openAIBackgroundResponseID: result.openAIBackgroundResponseID,
+            sourceAudioSHA256: TranscriptionEngine.shared.transcriptSourceAudioSHA256(for: episodeHash)
         )
+        try validateAnalysisTranscriptRevision(file, episodeHash: episodeHash)
         let url = ICTranscriptionPaths.analysisJSONURL(for: episodeHash)
         let data = try JSONEncoder().encode(file)
         do {
@@ -6213,6 +6220,11 @@ private struct RemoteJSONObjectResult {
             _chaptersCache[episodeHash] = true
             _loadedChaptersCache[episodeHash] = result.chapters
             _summaryCache[episodeHash] = summary
+            _analysisAudioSHA256Cache[episodeHash] = file.sourceAudioSHA256
+            _analysisSnapshotCache[episodeHash] = TranscriptionEngine.artifactSnapshotIdentifier(at: url)
+            _analysisTranscriptSnapshotCache[episodeHash] = TranscriptionEngine.shared.transcriptSnapshotIdentifier(for: episodeHash)
+            NotificationCenter.default.post(name: Notification.Name("ICTranscriptArtifactsDidChangeNotification"),
+                                            object: nil, userInfo: ["episodeHash": episodeHash])
 
             // The atomic analysis file has priority when loading. Remove an old
             // chapter-only file after the commit so a process kill can expose
@@ -6295,7 +6307,10 @@ private struct RemoteJSONObjectResult {
 
     @objc func invalidateAnalysisCache(for episodeHash: String) {
         _summaryCache.removeValue(forKey: episodeHash)
+        _analysisAudioSHA256Cache.removeValue(forKey: episodeHash)
         invalidateChaptersCache(for: episodeHash)
+        NotificationCenter.default.post(name: Notification.Name("ICTranscriptArtifactsDidChangeNotification"),
+                                        object: nil, userInfo: ["episodeHash": episodeHash])
     }
 
     func hasPersistedDurableRemoteAnalysisIdentity(for episodeHash: String) -> Bool {
@@ -6511,10 +6526,26 @@ private struct RemoteJSONObjectResult {
         removeGeneratedAnalysisArtifacts(for: episodeHash)
     }
 
+    private static func validatePersistedChapterIntervals(_ chapters: [ICGeneratedChapter]) throws {
+        var previousEnd = 0.0
+        for chapter in chapters {
+            guard chapter.start.isFinite, chapter.end.isFinite,
+                  chapter.start >= previousEnd, chapter.end > chapter.start,
+                  chapter.end <= Double(Int64.max) / Double(NSEC_PER_SEC) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            previousEnd = chapter.end
+        }
+    }
+
     @objc func loadChapters(for episodeHash: String) -> [ICGeneratedChapter]? {
-        if let cached = _loadedChaptersCache[episodeHash] {
+        let snapshot = TranscriptionEngine.artifactSnapshotIdentifier(at: ICTranscriptionPaths.analysisJSONURL(for: episodeHash))
+        if let cached = _loadedChaptersCache[episodeHash],
+           snapshot != nil, snapshot == _analysisSnapshotCache[episodeHash],
+           _analysisTranscriptSnapshotCache[episodeHash] == TranscriptionEngine.shared.transcriptSnapshotIdentifier(for: episodeHash) {
             return cached
         }
+        invalidateChaptersCache(for: episodeHash)
 
         let analysisURL = ICTranscriptionPaths.analysisJSONURL(for: episodeHash)
         if FileManager.default.fileExists(atPath: analysisURL.path) {
@@ -6539,7 +6570,14 @@ private struct RemoteJSONObjectResult {
                                   code: 73,
                                   userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Episodenanalyse enthält keine Kapitel.", comment: "")])
                 }
+                try Self.validatePersistedChapterIntervals(chapters)
+                guard snapshot == TranscriptionEngine.artifactSnapshotIdentifier(at: analysisURL) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
                 _loadedChaptersCache[episodeHash] = chapters
+                _analysisSnapshotCache[episodeHash] = snapshot
+                _analysisTranscriptSnapshotCache[episodeHash] = TranscriptionEngine.shared.transcriptSnapshotIdentifier(for: episodeHash)
+                _analysisAudioSHA256Cache[episodeHash] = file.sourceAudioSHA256
                 _chaptersCache[episodeHash] = true
                 _summaryCache[episodeHash] = summary
                 ICDiagnosticLogger.shared.logFileEvent("file-read",
@@ -6611,8 +6649,71 @@ private struct RemoteJSONObjectResult {
         return exists
     }
 
+    /// Only the complete bytes currently used by playback can authorize generated time jumps.
+    @objc(verifyGeneratedAudioForEpisodeHash:audioURL:completion:)
+    func verifyGeneratedAudio(forEpisodeHash episodeHash: String,
+                              audioURL: URL?,
+                              completion: @escaping (Bool) -> Void) {
+        verifyPlaybackAudio(forEpisodeHash: episodeHash, audioURL: audioURL) { analysis, _ in completion(analysis) }
+    }
+
+    @objc(verifyPlaybackAudioForEpisodeHash:audioURL:completion:)
+    func verifyPlaybackAudio(forEpisodeHash episodeHash: String,
+                             audioURL: URL?,
+                             completion: @escaping (Bool, Bool) -> Void) {
+        cancelGeneratedAudioVerification()
+        let expectedAnalysis = _analysisAudioSHA256Cache[episodeHash]
+        let expectedAnalysisSnapshot = _analysisSnapshotCache[episodeHash]
+        let expectedTranscriptSnapshot = TranscriptionEngine.shared.transcriptSnapshotIdentifier(for: episodeHash)
+        let expectedTranscript = TranscriptionEngine.shared.transcriptSourceAudioSHA256(for: episodeHash)
+        guard expectedAnalysis != nil || expectedTranscript != nil,
+              let audioURL, audioURL.isFileURL else {
+            ICDiagnosticLogger.shared.logEvent("audio-identity", message: "Audio-Prüfung ohne vollständige Quelle",
+                                               metadata: ["episodeHash": episodeHash,
+                                                          "hasAnalysisIdentity": expectedAnalysis != nil,
+                                                          "hasTranscriptIdentity": expectedTranscript != nil,
+                                                          "hasLocalAudio": audioURL?.isFileURL == true] as NSDictionary)
+            completion(false, false)
+            return
+        }
+        audioVerificationTask = Task {
+            var actual: String?
+            var readError: String?
+            do {
+                actual = try await ICAudioIdentity.sha256(of: audioURL)
+            } catch {
+                let error = error as NSError
+                readError = "\(error.domain):\(error.code)"
+            }
+            guard !Task.isCancelled else { return }
+            let analysisCurrent = expectedAnalysisSnapshot != nil &&
+                expectedAnalysisSnapshot == self._analysisSnapshotCache[episodeHash] &&
+                self._analysisTranscriptSnapshotCache[episodeHash] == TranscriptionEngine.shared.transcriptSnapshotIdentifier(for: episodeHash) &&
+                expectedAnalysisSnapshot == TranscriptionEngine.artifactSnapshotIdentifier(at: ICTranscriptionPaths.analysisJSONURL(for: episodeHash))
+            let transcriptCurrent = expectedTranscriptSnapshot != nil &&
+                expectedTranscriptSnapshot == TranscriptionEngine.shared.transcriptSnapshotIdentifier(for: episodeHash)
+            ICDiagnosticLogger.shared.logEvent("audio-identity", message: "Audio- und Artefaktidentität geprüft",
+                                               metadata: ["episodeHash": episodeHash,
+                                                          "analysisCurrent": analysisCurrent,
+                                                          "transcriptCurrent": transcriptCurrent,
+                                                          "analysisAudioMatches": actual != nil && actual == expectedAnalysis,
+                                                          "transcriptAudioMatches": actual != nil && actual == expectedTranscript,
+                                                          "readError": readError ?? ""] as NSDictionary)
+            completion(analysisCurrent && actual != nil && actual == expectedAnalysis,
+                       transcriptCurrent && actual != nil && actual == expectedTranscript)
+        }
+    }
+
+    @objc func cancelGeneratedAudioVerification() {
+        audioVerificationTask?.cancel()
+        audioVerificationTask = nil
+    }
+
     /// Invalidate cached hasChapters result.
     @objc func invalidateChaptersCache(for episodeHash: String) {
+        _analysisTranscriptSnapshotCache.removeValue(forKey: episodeHash)
+        _analysisSnapshotCache.removeValue(forKey: episodeHash)
+        _analysisAudioSHA256Cache.removeValue(forKey: episodeHash)
         _chaptersCache.removeValue(forKey: episodeHash)
         _loadedChaptersCache.removeValue(forKey: episodeHash)
     }
@@ -6655,9 +6756,8 @@ private struct RemoteJSONObjectResult {
                                                        ] as NSDictionary)
             }
         }
+        invalidateAnalysisCache(for: episodeHash)
         _chaptersCache[episodeHash] = false
-        _loadedChaptersCache.removeValue(forKey: episodeHash)
-        _summaryCache.removeValue(forKey: episodeHash)
         cancelOpenAIBackgroundAnalysis(for: episodeHash)
         removeChapterDebug(for: episodeHash)
         ICDiagnosticLogger.shared.logEpisodeArtifacts(episodeHash: episodeHash, reason: "chapters-removed")
@@ -6710,7 +6810,7 @@ private struct RemoteJSONObjectResult {
     /// starts/ends remain boundaries, and split content retains its exact title.
     /// Invalid or out-of-range sponsor intervals can therefore never create
     /// zero-duration chapters or skip beyond the episode timeline.
-    @objc func chaptersByOverlayingSponsors(_ sponsors: [ICGeneratedChapter],
+    @objc nonisolated func chaptersByOverlayingSponsors(_ sponsors: [ICGeneratedChapter],
                                             into chapters: [ICGeneratedChapter]) -> [ICGeneratedChapter] {
         let validChapters = chapters
             .filter { $0.start.isFinite && $0.end.isFinite && $0.end > $0.start }
@@ -6762,7 +6862,7 @@ private struct RemoteJSONObjectResult {
     /// A detected sponsor interval can be split at publisher boundaries. Join
     /// those pieces and matching publisher chapters already tagged "Sponsor: ";
     /// adjacent ads with different titles remain separate sponsor chapters.
-    private static func coalescedSponsorOverlayChapters(
+    nonisolated private static func coalescedSponsorOverlayChapters(
         _ chapters: [ICGeneratedChapter]
     ) -> [ICGeneratedChapter] {
         var coalesced: [ICGeneratedChapter] = []
@@ -6801,7 +6901,7 @@ private struct RemoteJSONObjectResult {
         return coalesced
     }
 
-    private static func mergedSponsorIntervals(_ sponsors: [ICGeneratedChapter],
+    nonisolated private static func mergedSponsorIntervals(_ sponsors: [ICGeneratedChapter],
                                                timelineStart: Double?,
                                                timelineEnd: Double?) -> [ICGeneratedChapter] {
         let sorted = sponsors.compactMap { sponsor -> ICGeneratedChapter? in

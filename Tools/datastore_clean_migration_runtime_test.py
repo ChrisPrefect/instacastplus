@@ -23,6 +23,13 @@ struct ProofFailure: Error, CustomStringConvertible {
     let description: String
 }
 
+struct PlaybackState {
+    let consumed: Bool
+    let position: Int32
+    let lastPlayed: Date?
+    let duration: Int32 = 3_180
+}
+
 func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
     if !condition() {
         throw ProofFailure(description: message)
@@ -150,7 +157,8 @@ func insertUserFixture(
     into context: NSManagedObjectContext,
     model: NSManagedObjectModel,
     label: String,
-    includeBinaryRows: Bool
+    includeBinaryRows: Bool,
+    playbackState: PlaybackState
 ) throws -> Data? {
     func insert(_ entityName: String) throws -> NSManagedObject {
         guard let entity = model.entitiesByName[entityName] else {
@@ -171,8 +179,10 @@ func insertUserFixture(
     episode.setValue("hash-\(label)", forKey: "objectHash")
     episode.setValue("Episode \(label)", forKey: "title")
     episode.setValue(String(repeating: "Volltext-\(label)-", count: 8_192), forKey: "fulltext")
-    episode.setValue(3_601, forKey: "duration")
-    episode.setValue(911, forKey: "position")
+    episode.setValue(playbackState.duration, forKey: "duration")
+    episode.setValue(playbackState.position, forKey: "position")
+    episode.setValue(playbackState.consumed, forKey: "consumed")
+    episode.setValue(playbackState.lastPlayed, forKey: "lastPlayed")
     episode.setValue(Date(timeIntervalSince1970: 1_700_000_000), forKey: "pubDate")
     episode.setValue(feed, forKey: "feed")
 
@@ -235,7 +245,8 @@ func insertUserFixture(
 func validateUserFixture(
     in context: NSManagedObjectContext,
     label: String,
-    expectedPayload: Data?
+    expectedPayload: Data?,
+    playbackState: PlaybackState
 ) throws {
     let episodeRequest = NSFetchRequest<NSManagedObject>(entityName: "Episode")
     episodeRequest.predicate = NSPredicate(format: "objectHash == %@", "hash-\(label)")
@@ -243,6 +254,10 @@ func validateUserFixture(
         throw ProofFailure(description: "\(label) episode was lost")
     }
     try require(episode.value(forKey: "title") as? String == "Episode \(label)", "\(label) episode attributes changed")
+    try require(episode.value(forKey: "consumed") as? Bool == playbackState.consumed, "\(label) heard status changed during upgrade")
+    try require(episode.value(forKey: "position") as? Int32 == playbackState.position, "\(label) playback position changed during upgrade")
+    try require(episode.value(forKey: "duration") as? Int32 == playbackState.duration, "\(label) duration changed during upgrade")
+    try require(episode.value(forKey: "lastPlayed") as? Date == playbackState.lastPlayed, "\(label) lastPlayed changed during upgrade")
     try require((episode.value(forKey: "fulltext") as? String)?.count ?? 0 > 100_000, "\(label) large text was truncated")
 
     guard let feed = episode.value(forKey: "feed") as? NSManagedObject else {
@@ -312,7 +327,8 @@ func runFixture(
     sourceModelPath: String,
     currentModelPath: String,
     directory: URL,
-    includeBinaryRows: Bool
+    includeBinaryRows: Bool,
+    playbackState: PlaybackState
 ) throws {
     let sourceURL = directory.appendingPathComponent("\(label)-source.sqlite")
     let targetURL = directory.appendingPathComponent("\(label)-DataStore6.sqlite")
@@ -335,7 +351,8 @@ func runFixture(
             into: sourceContext,
             model: sourceModel,
             label: label,
-            includeBinaryRows: includeBinaryRows
+            includeBinaryRows: includeBinaryRows,
+            playbackState: playbackState
         )
     }
     try executeSQL(
@@ -401,7 +418,7 @@ func runFixture(
         try require(targetCounts[entityName] == expectedCount, "\(label) count changed for \(entityName): \(expectedCount) → \(targetCounts[entityName] ?? -1)")
     }
     try reopenContext.performAndWait {
-        try validateUserFixture(in: reopenContext, label: label, expectedPayload: expectedPayload)
+        try validateUserFixture(in: reopenContext, label: label, expectedPayload: expectedPayload, playbackState: playbackState)
     }
     try reopenCoordinator.remove(reopenedStore)
 
@@ -424,27 +441,32 @@ guard let model4Path = environment["PUBLISHED_MODEL4_MOM"],
     fatalError("Missing clean migration proof paths")
 }
 let directory = URL(fileURLWithPath: storeDirectory, isDirectory: true)
-try runFixture(
-    label: "published-model4",
-    sourceModelPath: model4Path,
-    currentModelPath: model9Path,
-    directory: directory,
-    includeBinaryRows: false
-)
-try runFixture(
-    label: "predecessor-model8",
-    sourceModelPath: model8Path,
-    currentModelPath: model9Path,
-    directory: directory,
-    includeBinaryRows: true
-)
-try runFixture(
-    label: "current-model9",
-    sourceModelPath: model9Path,
-    currentModelPath: model9Path,
-    directory: directory,
-    includeBinaryRows: true
-)
+let states: [PlaybackState] = [
+    // Natural completion and explicit "mark as played" can both have position zero.
+    PlaybackState(consumed: true, position: 0, lastPlayed: nil),
+    PlaybackState(consumed: true, position: 3_180, lastPlayed: Date(timeIntervalSince1970: 1_700_000_001)),
+    PlaybackState(consumed: false, position: 911, lastPlayed: Date(timeIntervalSince1970: 1_700_000_001)),
+    PlaybackState(consumed: false, position: 0, lastPlayed: nil),
+    // End position is ambiguous: manual unplayed state or an old, too-short duration.
+    PlaybackState(consumed: false, position: 3_180, lastPlayed: nil),
+    PlaybackState(consumed: false, position: 3_180, lastPlayed: Date(timeIntervalSince1970: 1_700_000_001)),
+]
+for (index, state) in states.enumerated() {
+    for (label, modelPath, binaryRows) in [
+        ("published-model4", model4Path, false),
+        ("predecessor-model8", model8Path, true),
+        ("current-model9", model9Path, true),
+    ] {
+        try runFixture(
+            label: "\(label)-playback-\(index)",
+            sourceModelPath: modelPath,
+            currentModelPath: model9Path,
+            directory: directory,
+            includeBinaryRows: binaryRows,
+            playbackState: state
+        )
+    }
+}
 print("DataStore clean migration runtime proof passed")
 '''
 

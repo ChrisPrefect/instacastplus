@@ -194,7 +194,8 @@ typedef NS_ENUM(NSInteger, ICTranscriptionStatus) {
     ICTranscriptionStatusTranscribing,
     ICTranscriptionStatusGeneratingChapters,
     ICTranscriptionStatusCompleted,
-    ICTranscriptionStatusFailed
+    ICTranscriptionStatusFailed,
+    ICTranscriptionStatusCanceled
 };
 
 // Notifications

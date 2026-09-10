@@ -39,7 +39,7 @@ def function_body(source: str, signature: str) -> str:
 # A sponsor read from 90-150 crosses the publisher boundary at 120. Overlaying
 # it produces two pieces, but the player chapter list must contain one sponsor
 # chapter spanning the whole read. Different adjacent sponsor titles stay split.
-overlay = function_body(CHAPTERS, "@objc func chaptersByOverlayingSponsors(")
+overlay = function_body(CHAPTERS, "@objc nonisolated func chaptersByOverlayingSponsors(")
 coalescer = function_body(CHAPTERS, "private static func coalescedSponsorOverlayChapters(")
 require(
     "coalescedSponsorOverlayChapters(result)" in overlay

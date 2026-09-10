@@ -1,0 +1,56 @@
+--- a/app/codex_provider.py
++++ b/app/codex_provider.py
+@@ -88,6 +88,10 @@
+                 raise CodexProviderError('timeout')
+             try:
+                 out, err = process.communicate(input=stdin, timeout=min(1, remaining))
++                # A service stop can terminate the CLI while communicate is waiting.
++                # Classify that shutdown before interpreting its nonzero exit as an outage.
++                if cancelled and cancelled():
++                    raise CodexProviderError('cancelled')
+                 return process.returncode, out, err
+             except subprocess.TimeoutExpired:
+                 stdin = None
+--- a/tools/codex_provider_regression.py
++++ b/tools/codex_provider_regression.py
+@@ -1,9 +1,10 @@
+ #!/usr/bin/env python3
+ import json
++import signal
+ import sys
+ import tempfile
+ import unittest
+-from unittest.mock import patch
++from unittest.mock import patch, Mock
+ from pathlib import Path
+ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+ from app.codex_provider import CodexProviderError, generate_json, provider_readiness, text_only_catalog, _result
+@@ -72,4 +73,28 @@
+   with self.assertRaises(CodexProviderError) as c:self.call()
+   self.assertEqual(c.exception.code,'quota');self.assertNotIn('PRIVATE_SECRET',str(c.exception))
+ 
++ def test_shutdown_during_communicate_is_not_a_provider_failure(self):
++  stopped=False
++  process=Mock(returncode=-signal.SIGTERM)
++  process.poll.return_value=-signal.SIGTERM
++  def completed(**kwargs):
++   nonlocal stopped
++   stopped=True
++   return '', ''
++  process.communicate.side_effect=completed
++  with patch('app.codex_provider.subprocess.Popen',return_value=process):
++   with self.assertRaises(CodexProviderError) as caught:self.call(cancelled=lambda:stopped)
++  self.assertEqual('cancelled',caught.exception.code)
++
++ def test_real_worker_and_cli_sigterm_is_cancellation(self):
++  from app import worker
++  self.cli.write_text('#!/usr/bin/env python3\nimport os,sys,signal\nsys.stdin.read()\nos.kill(os.getppid(),signal.SIGTERM)\nos.killpg(os.getpgrp(),signal.SIGTERM)\n')
++  previous=signal.signal(signal.SIGTERM,worker.stop_handler)
++  try:
++   with patch.object(worker,'STOP',False):
++    with self.assertRaises(CodexProviderError) as caught:self.call(cancelled=lambda:worker.STOP)
++    self.assertTrue(worker.STOP)
++    self.assertEqual('cancelled',caught.exception.code)
++  finally:signal.signal(signal.SIGTERM,previous)
++
+ if __name__=='__main__':unittest.main()

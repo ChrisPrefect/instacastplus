@@ -41,6 +41,7 @@ static NSString* kFeedPropertyPreferredTranscriptURL = @"preferredTranscriptURL"
 @property (nonatomic) NSTimeInterval duration;
 @property (nonatomic) NSTimeInterval timecode;
 @property (nonatomic, strong) NSURL* linkURL;
+@property (nonatomic, strong) ICMetadataChapter* sourceChapter;
 @end
 
 @implementation ICPlayerChapterDisplayItem
@@ -347,7 +348,7 @@ static NSTimeInterval ICTranscriptTimeFromJSONValue(id value)
 
 static NSString* ICTranscriptStringFromJSONDictionary(NSDictionary* dict)
 {
-    NSArray* keys = @[ @"text", @"value", @"line", @"cue", @"utterance", @"transcript" ];
+    NSArray* keys = @[ @"text", @"value", @"line", @"cue", @"utterance", @"transcript", @"body" ];
     for (NSString* key in keys) {
         id value = dict[key];
         if ([value isKindOfClass:[NSString class]] && [(NSString*)value length] > 0) {
@@ -469,6 +470,8 @@ enum {
 
 @property (nonatomic) NSTimeInterval duration;
 @property (nonatomic, strong) NSArray* chapters;
+@property (nonatomic, copy) NSString* displayedAudioIdentityNotice;
+@property (nonatomic) NSUInteger transcriptLoadGeneration;
 @property (nonatomic) NSInteger	currentChapterIndex;
 @property (nonatomic, strong) NSArray* bookmarks;
 @property (nonatomic, strong) NSMutableDictionary<NSValue*, UIColor*>* averageColorCache;
@@ -595,6 +598,17 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             weakSelf.chapters = [weakSelf _displayChaptersForEpisode:pman.playingEpisode playbackManager:pman];
             weakSelf.duration = pman.duration;
         }];
+        [pman addTaskObserver:self forKeyPath:@"generatedChapterTimelineUnverified" task:^(id obj, NSDictionary *change) {
+            [weakSelf _updateAudioIdentityNotice];
+        }];
+        [pman addTaskObserver:self forKeyPath:@"generatedAudioVerificationCompleted" task:^(id obj, NSDictionary *change) {
+            [weakSelf _updateAudioIdentityNotice];
+        }];
+        [pman addTaskObserver:self forKeyPath:@"transcriptAudioVerified" task:^(id obj, NSDictionary *change) {
+            [weakSelf _refreshTranscriptState];
+            [weakSelf _updateTranscriptSyncTimerState];
+            [weakSelf _updateAudioIdentityNotice];
+        }];
 
         [pman addTaskObserver:self forKeyPath:@"artworks" task:^(id obj, NSDictionary *change) {
             PlaybackManager* pman = [PlaybackManager playbackManager];
@@ -650,6 +664,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerDidClearCacheNotification object:nil];
         [nc addObserver:self selector:@selector(_playbackDidUpdateForTranscriptFollow:) name:PlaybackManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(_transcriptDidChange:) name:@"ICTranscriptionDidChangeNotification" object:nil];
+        [nc addObserver:self selector:@selector(_transcriptDidChange:) name:@"ICTranscriptArtifactsDidChangeNotification" object:nil];
 
         _observing = YES;
     }
@@ -657,6 +672,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     {
         [pman removeTaskObserver:self forKeyPath:@"playingEpisode.duration"];
         [pman removeTaskObserver:self forKeyPath:@"chapters"];
+        [pman removeTaskObserver:self forKeyPath:@"generatedChapterTimelineUnverified"];
+        [pman removeTaskObserver:self forKeyPath:@"generatedAudioVerificationCompleted"];
+        [pman removeTaskObserver:self forKeyPath:@"transcriptAudioVerified"];
         [pman removeTaskObserver:self forKeyPath:@"artworks"];
         [pman removeTaskObserver:self forKeyPath:@"currentArtwork"];
         [pman removeTaskObserver:self forKeyPath:@"time"];
@@ -775,6 +793,12 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
     CDEpisode* currentEpisode = [PlaybackManager playbackManager].playingEpisode;
     if (!currentEpisode || ![hash isEqualToString:currentEpisode.objectHash]) return;
+    self.transcriptLoadGeneration += 1;
+    self.transcriptLoadedEpisodeHash = nil;
+    [self.transcriptTask cancel];
+    self.transcriptTask = nil;
+    _transcriptLoadingURL = nil;
+    [self _cancelTranscriptPrefetchTasks];
 
     // Reload transcript sources even when the window isn't visible, so a later
     // presentation doesn't render stale cues that no longer have a backing file.
@@ -786,6 +810,12 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [self _applyTranscriptVisibility];
     }
     [self _updateTranscriptPickerButton];
+
+    NSDictionary *preferred = [self _preferredTranscriptDescriptorFromSources:self.transcriptSources];
+    NSArray *candidates = [self _orderedTranscriptCandidatesFromSources:self.transcriptSources preferred:preferred];
+    if (candidates.count > 0) [self _loadTranscriptCandidates:candidates index:0];
+    [self _updateTranscriptSyncTimerState];
+    [self _updateAudioIdentityNotice];
 
     // PlaybackManager owns the effective chapter source order and reloads its chapters
     // from this notification. Keep showing that timeline until its chapters KVO delivers
@@ -1371,6 +1401,10 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (NSData*)_cachedTranscriptDataForEpisodeHash:(NSString*)episodeHash resolvedURL:(NSString*)resolvedURL
 {
+    NSURL *sourceURL = [NSURL URLWithString:resolvedURL];
+    if (sourceURL.isFileURL && [sourceURL isEqual:[ICTranscriptionPaths srtURLFor:episodeHash]]) {
+        return [NSData dataWithContentsOfURL:sourceURL];
+    }
     NSURL* cacheFileURL = [self _transcriptCacheFileURLForEpisodeHash:episodeHash resolvedURL:resolvedURL createDirectory:NO];
     if (!cacheFileURL) {
         return nil;
@@ -1511,6 +1545,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                              attempts:(NSArray<NSString*>*)attempts
                              urlIndex:(NSInteger)urlIndex
 {
+    if ([descriptor[@"isGenerated"] boolValue] && ![self _generatedTranscriptMayLoadForEpisodeHash:episode.objectHash]) return;
     if (!episode || episode.consumed) {
         return;
     }
@@ -1575,6 +1610,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                                    attempts:(NSArray<NSString*>*)attempts
                                    urlIndex:(NSInteger)urlIndex
 {
+    if ([descriptor[@"isGenerated"] boolValue] && ![self _generatedTranscriptMayLoadForEpisodeHash:episode.objectHash]) return;
     if (!episode || episode.consumed || urlIndex >= (NSInteger)attempts.count) {
         return;
     }
@@ -1682,12 +1718,14 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
 
     CDEpisode* loadedEpisode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    if (![self _transcriptDescriptorIsCurrent:descriptor episodeHash:loadedEpisode.objectHash]) return;
     self.transcriptLoadedEpisodeHash = loadedEpisode.objectHash;
 
     NSMutableDictionary* resolvedDescriptor = [descriptor mutableCopy];
     resolvedDescriptor[@"resolvedURL"] = resolvedURL;
     self.selectedTranscriptDescriptor = resolvedDescriptor;
     self.transcriptCues = cues;
+    [self _updateAudioIdentityNotice];
 
     // Save to static in-memory cache for instant restore on player reopen
     s_transcriptCachedEpisodeHash = loadedEpisode.objectHash;
@@ -1719,7 +1757,11 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)_updateTranscriptSyncTimerState
 {
-    BOOL shouldRun = (self.isViewLoaded && self.view.window != nil && self.transcriptVisible && self.transcriptCues.count > 0);
+    BOOL shouldRun = (self.isViewLoaded && self.view.window != nil && self.transcriptVisible && self.transcriptCues.count > 0 && [self _transcriptTimingVerified]);
+    if (![self _transcriptTimingVerified] && self.activeTranscriptCueIndex != NSNotFound) {
+        self.activeTranscriptCueIndex = NSNotFound;
+        [self _updateTranscriptLabelAppearance];
+    }
     if (shouldRun && !self.transcriptSyncTimer) {
         self.transcriptSyncTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
                                                                      target:self
@@ -2205,6 +2247,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)_transcriptTextViewTapped:(UITapGestureRecognizer*)gesture
 {
+    if (![self _transcriptTimingVerified]) return;
     if (gesture.state != UIGestureRecognizerStateEnded || self.transcriptCueRanges.count == 0) {
         return;
     }
@@ -2270,6 +2313,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)_updateTranscriptCueForPlaybackTime:(NSTimeInterval)time animated:(BOOL)animated
 {
+    if (![self _transcriptTimingVerified]) return;
     if (self.transcriptCues.count == 0) {
         return;
     }
@@ -2450,6 +2494,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                           attempts:(NSArray<NSString*>*)attempts
                           urlIndex:(NSInteger)urlIndex
 {
+    NSUInteger loadGeneration = ++self.transcriptLoadGeneration;
     if (urlIndex >= (NSInteger)attempts.count) {
         [self _loadTranscriptCandidates:candidates index:candidateIndex + 1];
         return;
@@ -2471,6 +2516,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
     CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
     NSString* episodeHash = episode.objectHash;
+    if ([descriptor[@"isGenerated"] boolValue] && ![self _generatedTranscriptMayLoadForEpisodeHash:episodeHash]) return;
     _transcriptTaskEpisodeHash = episodeHash;
     [[ICDiagnosticLogger shared] logEvent:@"transcript-load"
                                   message:@"Transcript-Ladeversuch gestartet"
@@ -2488,10 +2534,14 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if (episodeHash.length > 0) {
         descriptorForParsing[@"episodeHash"] = episodeHash;
     }
+    NSString *transcriptSnapshot = [[TranscriptionEngine shared] transcriptSnapshotIdentifierFor:episodeHash];
+    if ([descriptor[@"isGenerated"] boolValue] && transcriptSnapshot) {
+        descriptorForParsing[@"transcriptSnapshot"] = transcriptSnapshot;
+    }
     __weak typeof(self) weakSelf = self;
     [self _readCachedTranscriptDataForEpisodeHash:episodeHash resolvedURL:urlString completion:^(NSData* cachedData) {
         __strong typeof(weakSelf) self = weakSelf;
-        if (!self || ![self->_transcriptLoadingURL isEqualToString:urlString]) return;
+        if (!self || loadGeneration != self.transcriptLoadGeneration || ![self->_transcriptLoadingURL isEqualToString:urlString]) return;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
             __strong typeof(weakSelf) strongSelf = weakSelf;
             if (!strongSelf) return;
@@ -2509,10 +2559,10 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             }
             dispatch_async(dispatch_get_main_queue(), ^{
                 __strong typeof(weakSelf) self = weakSelf;
-                if (!self || ![self->_transcriptLoadingURL isEqualToString:urlString]) return;
+                if (!self || loadGeneration != self.transcriptLoadGeneration || ![self->_transcriptLoadingURL isEqualToString:urlString]) return;
 
                 if (cachedCues.count > 0) {
-                    [self _applyLoadedTranscriptCues:cachedCues descriptor:descriptor resolvedURL:urlString];
+                    [self _applyLoadedTranscriptCues:cachedCues descriptor:descriptorForParsing resolvedURL:urlString];
                     return;
                 }
 
@@ -2536,6 +2586,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                                      urlIndex:(NSInteger)urlIndex
                                   episodeHash:(NSString*)episodeHash
 {
+    if ([descriptor[@"isGenerated"] boolValue] && ![self _generatedTranscriptMayLoadForEpisodeHash:episodeHash]) return;
+    NSUInteger loadGeneration = self.transcriptLoadGeneration;
     NSString* urlString = attempts[urlIndex];
     NSURL* url = [NSURL URLWithInsecureString:urlString];
     if (!url) {
@@ -2608,6 +2660,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         dispatch_async(dispatch_get_main_queue(), ^{
             __strong typeof(weakSelf) self = weakSelf;
             if (!self) return;
+            if (loadGeneration != self.transcriptLoadGeneration) return;
             if (self.transcriptTask != task) return;
             if (![self->_transcriptLoadingURL isEqualToString:urlString]) return;
 
@@ -2673,7 +2726,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     // 1) Same VC instance already has cues for this episode
     if (self.transcriptCues.count > 0 &&
         self.transcriptLoadedEpisodeHash.length > 0 &&
-        [currentEpisode.objectHash isEqualToString:self.transcriptLoadedEpisodeHash]) {
+        [currentEpisode.objectHash isEqualToString:self.transcriptLoadedEpisodeHash] &&
+        [self _transcriptDescriptorIsCurrent:self.selectedTranscriptDescriptor episodeHash:currentEpisode.objectHash]) {
         [self _updateTranscriptSyncTimerState];
         return;
     }
@@ -2681,7 +2735,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     // 2) Static in-memory cache has cues for this episode — set state flags only, defer all UITextView work
     if (s_transcriptCachedCues.count > 0 &&
         s_transcriptCachedEpisodeHash.length > 0 &&
-        [currentEpisode.objectHash isEqualToString:s_transcriptCachedEpisodeHash]) {
+        [currentEpisode.objectHash isEqualToString:s_transcriptCachedEpisodeHash] &&
+        [self _transcriptDescriptorIsCurrent:s_transcriptCachedDescriptor episodeHash:currentEpisode.objectHash]) {
 
         // Restore everything synchronously — with scrollEnabled=YES, attributedText is instant (lazy layout)
         self.transcriptLoadedEpisodeHash = s_transcriptCachedEpisodeHash;
@@ -2713,6 +2768,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
 
     // 3) Full reset + async load
+    self.transcriptLoadGeneration += 1;
     [self.transcriptTask cancel];
     [self _cancelTranscriptPrefetchTasks];
     _transcriptTaskEpisodeHash = nil;
@@ -2999,10 +3055,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
         chevronIndicatorView.tintColor = ICMutedTextColor;
 
-        // Without content below the image the table view must not be scrollable —
-        // otherwise the bottomScrollInset (controls pane height) would let the user
-        // push the artwork up even though there is nothing to scroll to.
-        self.tableView.scrollEnabled = hasContent;
+        self.tableView.scrollEnabled = YES;
 
         if (self.chapterImagesCollection.superview != self.chapterView) {
             [self.chapterView addSubview:self.chapterImagesCollection];
@@ -3086,7 +3139,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     chevronIndicatorView.hidden = !hasContent;
     chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
 
-    self.tableView.scrollEnabled = hasContent;
+    self.tableView.scrollEnabled = YES;
 
     [self.chapterImagesCollection reloadData];
     [self _syncChapterImageCollectionToCurrentArtwork];
@@ -3184,6 +3237,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         item.timecode = CMTimeGetSeconds(chapter.start);
         item.duration = [chapter durationWithTrackDuration:pman.duration];
         item.linkURL = chapter.link;
+        item.sourceChapter = chapter;
         [displayChapters addObject:item];
     }];
     return displayChapters;
@@ -3388,7 +3442,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 }
 
 - (BOOL) _hasContentBelowImage {
-    return [self _hasChapters] || [self _hasBookmarks] || [self _hasUpNext];
+    return [self _hasChapters] || [self _hasBookmarks] || [self _hasUpNext] || [self _audioIdentityNotice].length > 0;
 }
 
 - (NSInteger) _chaptersSection {
@@ -3766,6 +3820,102 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [self setEditing:NO animated:YES];
 }
 
+- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
+{
+    return section == [self _chaptersSection] ? [self _audioIdentityNotice] : nil;
+}
+
+- (void)_configureAudioIdentityFooter:(UITableViewHeaderFooterView *)footer
+{
+    UIListContentConfiguration *configuration = [UIListContentConfiguration plainFooterConfiguration];
+    configuration.text = [self _audioIdentityNotice];
+    configuration.textProperties.numberOfLines = 0;
+    configuration.textProperties.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    configuration.textProperties.color = ICMutedTextColor;
+    configuration.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(12, 16, 12, 16);
+    footer.contentConfiguration = configuration;
+}
+
+- (UIView *)tableView:(UITableView *)tableView viewForFooterInSection:(NSInteger)section
+{
+    if (section != [self _chaptersSection] || [self _audioIdentityNotice].length == 0) return nil;
+    UITableViewHeaderFooterView *footer = [[UITableViewHeaderFooterView alloc] initWithReuseIdentifier:nil];
+    [self _configureAudioIdentityFooter:footer];
+    return footer;
+}
+
+- (BOOL)_transcriptDescriptorIsCurrent:(NSDictionary*)descriptor episodeHash:(NSString*)episodeHash
+{
+    if (![descriptor[@"isGenerated"] boolValue]) return YES;
+    NSString *snapshot = descriptor[@"transcriptSnapshot"];
+    return [self _generatedTranscriptMayLoadForEpisodeHash:episodeHash] &&
+        [snapshot isEqualToString:[PlaybackManager playbackManager].verifiedTranscriptSnapshot];
+}
+
+- (BOOL)_generatedTranscriptMayLoadForEpisodeHash:(NSString*)episodeHash
+{
+    PlaybackManager *pman = [PlaybackManager playbackManager];
+    return episodeHash.length > 0 && [episodeHash isEqualToString:pman.playingEpisode.objectHash] &&
+        [pman generatedArtifactTimingIsCurrent] && pman.transcriptAudioVerified &&
+        pman.verifiedTranscriptSnapshot.length > 0 &&
+        [pman.verifiedTranscriptSnapshot isEqualToString:[[TranscriptionEngine shared] transcriptSnapshotIdentifierFor:episodeHash]];
+}
+
+- (BOOL)_transcriptTimingVerified
+{
+    PlaybackManager *pman = [PlaybackManager playbackManager];
+    return [pman generatedArtifactTimingIsCurrent] && pman.transcriptAudioVerified && [self.selectedTranscriptDescriptor[@"isGenerated"] boolValue] &&
+        [self.selectedTranscriptDescriptor[@"transcriptSnapshot"] isEqualToString:pman.verifiedTranscriptSnapshot] &&
+        [self _transcriptDescriptorIsCurrent:self.selectedTranscriptDescriptor episodeHash:self.transcriptLoadedEpisodeHash] &&
+        self.transcriptLoadedEpisodeHash.length > 0 &&
+        [self.transcriptLoadedEpisodeHash isEqualToString:pman.playingEpisode.objectHash];
+}
+
+- (NSString*)_audioIdentityNotice
+{
+    PlaybackManager *pman = [PlaybackManager playbackManager];
+    if (!pman.generatedAudioVerificationCompleted) return nil;
+    if (pman.generatedChapterTimelineUnverified) {
+        return NSLocalizedString(@"Chapters could not be loaded.", nil);
+    }
+    if ([self.selectedTranscriptDescriptor[@"isGenerated"] boolValue] &&
+        self.transcriptCues.count > 0 && ![self _transcriptTimingVerified]) {
+        return NSLocalizedString(@"Jumping to transcript passages is unavailable.", nil);
+    }
+    return nil;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
+{
+    return [self tableView:tableView titleForFooterInSection:section] ? UITableViewAutomaticDimension : 0.01;
+}
+
+- (void)_updateAudioIdentityNotice
+{
+    if (!self.isViewLoaded || !self.view.window) return;
+    NSString *notice = [self _audioIdentityNotice];
+    if (self.displayedAudioIdentityNotice == notice || [self.displayedAudioIdentityNotice isEqualToString:notice]) return;
+    if (self.tableView.numberOfSections != [self numberOfSectionsInTableView:self.tableView]) return;
+    for (NSInteger section = 0; section < self.tableView.numberOfSections; section++) {
+        if ([self.tableView numberOfRowsInSection:section] != [self tableView:self.tableView numberOfRowsInSection:section]) return;
+    }
+    NSInteger section = [self _chaptersSection];
+    self.displayedAudioIdentityNotice = notice;
+    [self _configureAudioIdentityFooter:[self.tableView footerViewForSection:section]];
+    PlaybackManager *pman = [PlaybackManager playbackManager];
+    for (NSIndexPath *indexPath in self.tableView.indexPathsForVisibleRows) {
+        if (indexPath.section != section || indexPath.row >= self.chapters.count) continue;
+        UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
+        if (!cell.textLabel.attributedText) continue;
+        NSMutableAttributedString *title = [cell.textLabel.attributedText mutableCopy];
+        BOOL skip = [pman autoSkipsChapterTitle:title.string forFeed:pman.playingEpisode.feed];
+        [title addAttribute:NSStrikethroughStyleAttributeName value:@(skip ? NSUnderlineStyleSingle : NSUnderlineStyleNone) range:NSMakeRange(0, title.length)];
+        cell.textLabel.attributedText = title;
+    }
+    [self.tableView beginUpdates];
+    [self.tableView endUpdates];
+}
+
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section
 {
     if ([self _hasChapters] && section == [self _chaptersSection]) {
@@ -3788,20 +3938,25 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     
     if ([self _hasChapters] && indexPath.section == [self _chaptersSection])
     {
+        if (indexPath.row >= self.chapters.count) return;
         CDChapter* chapter = [self.chapters objectAtIndex:indexPath.row];
         CDEpisode* episodeToPlay = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
         NSString* loadedEpisodeHash = pman.playingEpisode.objectHash;
         NSString* targetEpisodeHash = episodeToPlay.objectHash;
         BOOL sameEpisodeLoaded = (loadedEpisodeHash.length > 0 && targetEpisodeHash.length > 0 && [loadedEpisodeHash isEqualToString:targetEpisodeHash]);
+        if ([chapter isKindOfClass:[ICPlayerChapterDisplayItem class]]) {
+            ICMetadataChapter *sourceChapter = [(ICPlayerChapterDisplayItem*)chapter sourceChapter];
+            if (!sameEpisodeLoaded || ![pman.chapters containsObject:sourceChapter]) return;
+        }
         
         pman.currentChapter = indexPath.row;
         [self _updateVisibleCells];
         if (sameEpisodeLoaded) {
             NSArray* playbackChapters = pman.chapters;
-            NSInteger playbackChapterIndex = chapter.index;
-            if (playbackChapterIndex >= 0 && playbackChapterIndex < (NSInteger)playbackChapters.count) {
-                ICMetadataChapter* playbackChapter = playbackChapters[playbackChapterIndex];
-                [pman seekToChapter:playbackChapter];
+            if ([chapter isKindOfClass:[ICPlayerChapterDisplayItem class]]) {
+                ICMetadataChapter *sourceChapter = [(ICPlayerChapterDisplayItem*)chapter sourceChapter];
+                if (![playbackChapters containsObject:sourceChapter]) return;
+                [pman seekToChapter:sourceChapter];
             }
             else {
                 [pman seekToTime:chapter.timecode tolerance:NO];

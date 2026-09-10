@@ -318,6 +318,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     // Rebuild sidebar when transcription queue changes
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_transcriptionQueueDidChange) name:@"ICTranscriptionQueueDidChangeNotification" object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_transcriptionQueueDidChange) name:ICTranscriptionSettingsDidChangeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_transcriptionQueueCapacityDidChange:) name:@"ICTranscriptionQueueCapacityDidChangeNotification" object:nil];
 
     self.sidebarController = [[MainSidebarController alloc] initWithStyle:UITableViewStylePlain];
 
@@ -681,8 +682,40 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 
 - (void) _transcriptionQueueDidChange
 {
-    [self _rebuildSidebarItems];
-    [self.sidebarController.tableView reloadData];
+    BOOL hasTranscriptionItem = NO;
+    for (NSArray* section in self.sidebarController.items) {
+        for (MainSidebarItem* item in section) {
+            if (item.tag == kMainSidebarItemTranscription) hasTranscriptionItem = YES;
+        }
+    }
+    BOOL shouldShowTranscriptionItem = ICAITranscriptionFeaturesEnabled() && [TranscriptionQueue shared].hasVisibleItems;
+    if (hasTranscriptionItem != shouldShowTranscriptionItem) {
+        [self _rebuildSidebarItems];
+        [self.sidebarController.tableView reloadData];
+    } else {
+        [self.sidebarController updateItemWithTag:kMainSidebarItemTranscription];
+    }
+}
+
+- (void) _transcriptionQueueCapacityDidChange:(NSNotification*)notification
+{
+    [self _transcriptionQueueDidChange];
+    if ([notification.userInfo[@"automatic"] boolValue]) return;
+    TranscriptionQueue* queue = [TranscriptionQueue shared];
+    NSString* message = [NSString stringWithFormat:NSLocalizedString(@"The queue already contains %ld open jobs (limit: %ld). Wait for a job to finish or remove an entry.", nil), (long)queue.activeItemCount, (long)[TranscriptionQueue maximumActiveItemCount]];
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Transcription queue limit reached", nil) message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+    UIViewController* presenter = self;
+    while (presenter.presentedViewController) presenter = presenter.presentedViewController;
+    if ([presenter isKindOfClass:[UIAlertController class]]) {
+        // A retry action can reject admission while its confirmation is closing.
+        UIViewController* owner = presenter.presentingViewController;
+        [presenter dismissViewControllerAnimated:YES completion:^{
+            [owner presentViewController:alert animated:YES completion:nil];
+        }];
+        return;
+    }
+    [presenter presentViewController:alert animated:YES completion:nil];
 }
 
 - (void) _appleWatchStateDidChange:(NSNotification*)notification

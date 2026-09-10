@@ -24,8 +24,15 @@ require(
 )
 require(
     "NSArray* playbackChapters = pman.chapters;" in chapter_selection
-    and "[pman seekToChapter:playbackChapter];" in chapter_selection,
+    and "ICMetadataChapter *sourceChapter" in chapter_selection
+    and "[pman seekToChapter:sourceChapter];" in chapter_selection,
     "Loaded chapter taps must preserve chapter intent by using seekToChapter:, not only a raw time seek.",
+)
+require(
+    "!sameEpisodeLoaded || ![pman.chapters containsObject:sourceChapter]" in chapter_selection
+    and chapter_selection.index("!sameEpisodeLoaded || ![pman.chapters containsObject:sourceChapter]")
+        < chapter_selection.index("pman.currentChapter = indexPath.row;"),
+    "A displayed chapter must still belong to the loaded timeline before its tap can change chapter intent or seek.",
 )
 require(
     "[[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO "

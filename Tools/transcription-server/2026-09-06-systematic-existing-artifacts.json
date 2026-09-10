@@ -1,0 +1,9 @@
+{
+  "checked_at": "2026-09-05T23:50:10.600476+00:00",
+  "read_only": true,
+  "ready_episodes": 28,
+  "valid": 28,
+  "invalid": [],
+  "validator": "app/artifact_contract.py with size and SRT-duration boundaries",
+  "note": "No generation or mutation; existing production artifacts only."
+}

@@ -83,7 +83,21 @@ for signature, task_completion in (
         and body.index("queue.queuePersistenceError") < body.index(task_completion),
         f"{signature} reports success to iOS even when the final queue snapshot failed.",
     )
-    observer_body = body.split('addObserverForName:@"ICTranscriptionQueueDidChangeNotification"', 1)[1]
+    observer_body = method_body(body, "void (^queueDidChange)(NSNotification*)")
+    for notification in (
+        "ICTranscriptionQueueDidChangeNotification",
+        "ICServerTranscriptionProcessingDidChangeNotification",
+    ):
+        registration = body.split(f'addObserverForName:@"{notification}"', 1)[1].split("];", 1)[0]
+        require(
+            "usingBlock:queueDidChange" in registration,
+            f"{signature} does not connect {notification} to deferred completion.",
+        )
+    require(
+        "removeObserver:queueObserver" in body
+        and "removeObserver:serverProcessingObserver" in body,
+        f"{signature} leaves a completion observer alive after its task ends.",
+    )
     require(
         "if (completionRequested)" in observer_body
         and "completeTask(requestedSuccess, requestedReason);" in observer_body,

@@ -1,0 +1,39 @@
+{
+  "files_verified": 18,
+  "global_limit": 250,
+  "client_limit": 25,
+  "audio_sha256_column": true,
+  "max_duration_seconds": 86400.0,
+  "schema_changed": true,
+  "exact_url_indexes": {
+    "episodes": "uniq_episodes_full_url",
+    "episode_aliases": "uniq_episode_aliases_full_url",
+    "podcasts": "uniq_podcasts_full_url"
+  },
+  "old_rows_byte_equivalent": true,
+  "feed_timeout_seconds": 60.0,
+  "max_artifact_bytes": 26214400,
+  "jobs_unchanged": true,
+  "jobs": [
+    {
+      "job_type": "feed_scan",
+      "status": "canceled",
+      "count": 1
+    },
+    {
+      "job_type": "feed_scan",
+      "status": "done",
+      "count": 2291
+    },
+    {
+      "job_type": "transcribe",
+      "status": "canceled",
+      "count": 77
+    },
+    {
+      "job_type": "transcribe",
+      "status": "done",
+      "count": 47
+    }
+  ]
+}

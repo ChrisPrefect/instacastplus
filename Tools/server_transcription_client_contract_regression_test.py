@@ -54,21 +54,26 @@ require(
 
 # All payloads must be decoded and cross-validated before the transcript is persisted.
 artifact_import = body(MANAGER, "private func importArtifacts(")
-for marker in (
-    "validateServerSRTData",
-    "validateServerArtifacts",
-    "makeServerAnalysis",
-    "saveValidatedServerSRTData",
-    "saveAnalysisResult",
-):
+artifact_decode = body(MANAGER, "private func validateDownloadedArtifacts(")
+analysis_prepare = body(MANAGER, "private func buildServerAnalysis(")
+for marker in ("validateServerSRTData", "validateServerTranscriptBounds", "validateServerArtifacts"):
+    require(marker in artifact_decode, f"Server utility validation is missing {marker}.")
+require("makeServerAnalysis" in analysis_prepare, "Server analysis preparation is missing the shared semantic validator.")
+for marker in ("await validateDownloadedArtifacts", "await buildServerAnalysis", "saveValidatedServerSRTData", "saveAnalysisResult"):
     require(marker in artifact_import, f"Server import is missing the {marker} stage.")
 require(
-    artifact_import.index("validateServerArtifacts")
+    artifact_import.index("await validateDownloadedArtifacts")
+    < artifact_import.index("await buildServerAnalysis")
     < artifact_import.index("saveValidatedServerSRTData")
-    and artifact_import.index("makeServerAnalysis")
-    < artifact_import.index("saveValidatedServerSRTData"),
-    "The SRT is persisted before the JSON artifacts and combined analysis are valid.",
+    < artifact_import.index("saveAnalysisResult"),
+    "The SRT is persisted before awaited JSON/artifact validation and semantic analysis finish.",
 )
+for marker in ("await validateDownloadedArtifacts", "await buildServerAnalysis"):
+    after_await = artifact_import[artifact_import.index(marker):]
+    require(after_await.index("try checkCurrentAttempt(item, requestID: requestID)") < after_await.index("saveValidatedServerSRTData"),
+            "Ownership must be rechecked after each utility stage before publication.")
+require(artifact_import.index("guard !episode.isDeleted") < artifact_import.index("saveValidatedServerSRTData"),
+        "A deleted episode must not publish results after asynchronous preparation.")
 require(
     'let transcriptRevision = "sha256:\\(srtArtifact.sha256)"' in artifact_import
     and "artifact.transcriptRevision == transcriptRevision" in artifact_import
@@ -103,10 +108,11 @@ require(
     "Running server responses are not scheduled for their next poll explicitly.",
 )
 schedule_poll = body(MANAGER, "private func schedulePoll(")
+valid_poll = schedule_poll[schedule_poll.index("item.nextRetryAt = Date()."):]
 require(
-    "item.status = .queued" not in schedule_poll
-    and "item.progress =" not in schedule_poll
-    and "item.statusDetail =" not in schedule_poll,
+    "item.status = .queued" not in valid_poll
+    and "item.progress =" not in valid_poll
+    and "item.statusDetail =" not in valid_poll,
     "Scheduling a poll still destroys the visible server phase or progress.",
 )
 request_error_handling = body(MANAGER, "private func handle(error:")
@@ -122,7 +128,7 @@ require(
 )
 process_next = body(MANAGER, "private func processNext()")
 require(
-    "$0.status == .queued || $0.status == .transcribing" in process_next,
+    "candidate.status == .queued || candidate.status == .transcribing" in process_next,
     "A live server item cannot resume polling while retaining its visible running status.",
 )
 require(

@@ -175,6 +175,11 @@
 @property (nonatomic) BOOL backgroundTaskActive;
 @property (nonatomic) BOOL swipeInteractionActive;
 @property (nonatomic) BOOL pendingReloadAfterSwipe;
+@property (nonatomic, copy) NSArray<ICTranscriptionQueueItem*>* displayedItems;
+@property (nonatomic, strong) UILabel* capacitySummaryLabel;
+@property (nonatomic, strong) UIButton* dismissCapacityNoticeButton;
+@property (nonatomic, strong) UIButton* retryServerCancellationButton;
+@property (nonatomic, strong) UIButton* retryQueueStorageButton;
 @property (nonatomic, copy) NSDictionary<NSString*, CDEpisode*>* episodeCache;
 @property (nonatomic, copy) NSSet<NSString*>* episodeCacheHashes;
 - (NSString*)_updateCellStatus:(DownloadsTableViewCell*)cell withItem:(ICTranscriptionQueueItem*)item;
@@ -203,6 +208,28 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     self.tableView.backgroundColor = ICBackgroundColor;
     self.episodeCache = @{};
     self.episodeCacheHashes = [NSSet set];
+    self.displayedItems = [TranscriptionQueue shared].displayItems;
+    self.capacitySummaryLabel = [[UILabel alloc] init];
+    self.capacitySummaryLabel.numberOfLines = 0;
+    self.capacitySummaryLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
+    self.capacitySummaryLabel.textColor = ICMutedTextColor;
+    self.tableView.tableHeaderView = [[UIView alloc] init];
+    [self.tableView.tableHeaderView addSubview:self.capacitySummaryLabel];
+    self.dismissCapacityNoticeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.dismissCapacityNoticeButton setTitle:NSLocalizedString(@"Dismiss notice", nil) forState:UIControlStateNormal];
+    self.dismissCapacityNoticeButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
+    [self.dismissCapacityNoticeButton addTarget:self action:@selector(_dismissCapacityNotice) forControlEvents:UIControlEventTouchUpInside];
+    [self.tableView.tableHeaderView addSubview:self.dismissCapacityNoticeButton];
+    self.retryServerCancellationButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.retryServerCancellationButton setTitle:NSLocalizedString(@"Retry server cancellations", nil) forState:UIControlStateNormal];
+    self.retryServerCancellationButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
+    [self.retryServerCancellationButton addTarget:self action:@selector(_retryServerCancellations) forControlEvents:UIControlEventTouchUpInside];
+    [self.tableView.tableHeaderView addSubview:self.retryServerCancellationButton];
+    self.retryQueueStorageButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.retryQueueStorageButton setTitle:NSLocalizedString(@"Retry storage access", nil) forState:UIControlStateNormal];
+    self.retryQueueStorageButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
+    [self.retryQueueStorageButton addTarget:self action:@selector(_retryQueueStorage) forControlEvents:UIControlEventTouchUpInside];
+    [self.tableView.tableHeaderView addSubview:self.retryQueueStorageButton];
 
     // Toolbar — same pattern as Downloads (Pause + Cancel)
     self.cancelItem = [[UIBarButtonItem alloc] initWithTitle:NSLocalizedString(@"Alle abbrechen", nil)
@@ -219,6 +246,8 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_queueChanged)
                                                  name:@"ICTranscriptionQueueDidChangeNotification" object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_queueChanged)
+                                                 name:@"ICTranscriptionQueueCapacityDidChangeNotification" object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_progressUpdated)
                                                  name:@"ICTranscriptionDidProgressNotification" object:nil];
     // CacheManagerDidUpdateNotification fires on every download-byte update (dozens per
@@ -234,7 +263,7 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     [super viewWillAppear:animated];
 
     [self _rebuildEpisodeCacheForCurrentItems];
-    [self _syncBackgroundButtonState];
+    [self _queueChanged];
 
     // Restart elapsed timer if an item is currently loading or starting
     [self _restartElapsedTimerIfNeeded];
@@ -266,18 +295,56 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     }
     [self _syncBackgroundButtonState];
     [self _restartElapsedTimerIfNeeded];
-    // Debounce: coalesce rapid queue changes into a single reload
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_debouncedReload) object:nil];
-    [self performSelector:@selector(_debouncedReload) withObject:nil afterDelay:0.3];
+    [self _updateCapacitySummary];
+    NSArray<ICTranscriptionQueueItem*>* items = [TranscriptionQueue shared].displayItems;
+    if (![self.displayedItems isEqualToArray:items]) {
+        self.displayedItems = items;
+        [self.tableView reloadData];
+    } else {
+        [self _progressUpdated];
+    }
 }
 
-- (void)_debouncedReload {
-    if (self.suppressReload || self.swipeInteractionActive) {
-        self.pendingReloadAfterSwipe = YES;
-        return;
-    }
-    self.pendingReloadAfterSwipe = NO;
-    [self.tableView reloadData];
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    if (!self.swipeInteractionActive && !self.suppressReload) [self _updateCapacitySummary];
+}
+
+- (void)_updateCapacitySummary {
+    NSString* summary = [TranscriptionQueue shared].queueCapacitySummary;
+    BOOL showsNotice = [TranscriptionQueue shared].capacitySkippedCount > 0;
+    BOOL showsCancellationRetry = [ServerTranscriptionManager shared].cancellationError.length > 0;
+    BOOL showsStorageRetry = [TranscriptionQueue shared].queueStorageError != nil || [ServerTranscriptionManager shared].queueStorageError != nil;
+    CGFloat width = CGRectGetWidth(self.tableView.bounds);
+    if ([self.capacitySummaryLabel.text isEqualToString:summary] &&
+        CGRectGetWidth(self.tableView.tableHeaderView.frame) == width) return;
+    self.capacitySummaryLabel.text = summary;
+    CGSize size = [self.capacitySummaryLabel sizeThatFits:CGSizeMake(MAX(1, width - 32), CGFLOAT_MAX)];
+    self.capacitySummaryLabel.frame = CGRectMake(16, 12, MAX(1, width - 32), ceil(size.height));
+    self.dismissCapacityNoticeButton.hidden = !showsNotice;
+    self.dismissCapacityNoticeButton.frame = CGRectMake(16, CGRectGetMaxY(self.capacitySummaryLabel.frame) + 4, MAX(1, width - 32), 44);
+    self.retryServerCancellationButton.hidden = !showsCancellationRetry;
+    self.retryServerCancellationButton.frame = CGRectMake(16, CGRectGetMaxY(self.capacitySummaryLabel.frame) + 4 + (showsNotice ? 48 : 0), MAX(1, width - 32), 44);
+    self.retryQueueStorageButton.hidden = !showsStorageRetry;
+    self.retryQueueStorageButton.frame = CGRectMake(16, CGRectGetMaxY(self.capacitySummaryLabel.frame) + 4 + (showsNotice ? 48 : 0) + (showsCancellationRetry ? 48 : 0), MAX(1, width - 32), 44);
+    UIView* header = self.tableView.tableHeaderView;
+    header.frame = CGRectMake(0, 0, width, ceil(size.height) + 24 + (showsNotice ? 48 : 0) + (showsCancellationRetry ? 48 : 0) + (showsStorageRetry ? 48 : 0));
+    self.tableView.tableHeaderView = header;
+}
+
+- (void)_retryQueueStorage {
+    [[ServerTranscriptionManager shared] retryQueueStorage];
+    [[TranscriptionQueue shared] retryQueueStorage];
+    [self _queueChanged];
+}
+
+- (void)_retryServerCancellations {
+    [[ServerTranscriptionManager shared] retryPendingCancellations];
+}
+
+- (void)_dismissCapacityNotice {
+    [[TranscriptionQueue shared] acknowledgeCapacityNotice];
+    [self _queueChanged];
 }
 
 - (void)_progressUpdated {
@@ -287,9 +354,9 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     BOOL needsHeightUpdate = NO;
     for (UITableViewCell* cell in self.tableView.visibleCells) {
         NSIndexPath* indexPath = [self.tableView indexPathForCell:cell];
-        if (!indexPath || indexPath.row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) continue;
+        if (!indexPath || indexPath.row >= (NSInteger)self.displayedItems.count) continue;
         DownloadsTableViewCell* dlCell = (DownloadsTableViewCell*)cell;
-        ICTranscriptionQueueItem* item = [TranscriptionQueue shared].displayItems[indexPath.row];
+        ICTranscriptionQueueItem* item = self.displayedItems[indexPath.row];
         [self _updateCellStatus:dlCell withItem:item];
         CGFloat requiredHeight = [self tableView:self.tableView heightForRowAtIndexPath:indexPath];
         if (fabs(requiredHeight - CGRectGetHeight(cell.bounds)) > 0.5) {
@@ -584,12 +651,12 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return [TranscriptionQueue shared].displayItems.count;
+    return self.displayedItems.count;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) return 80;
-    ICTranscriptionQueueItem* item = [TranscriptionQueue shared].displayItems[indexPath.row];
+    if (indexPath.row >= (NSInteger)self.displayedItems.count) return 80;
+    ICTranscriptionQueueItem* item = self.displayedItems[indexPath.row];
     NSString* statusText = [self _updateCellStatus:nil withItem:item];
     UIFont* statusFont = [UIFont systemFontOfSize:ICFontSize(11)];
     UIFont* titleFont = [UIFont systemFontOfSize:ICFontSize(13)];
@@ -625,12 +692,12 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     // Remove play button and reclaim its space.
     [cell.playAccessoryButton removeFromSuperview];
 
-    // Bounds check — items array could change between numberOfRows and cellForRow
-    if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) {
+    // Use the same snapshot as the row count, including while a swipe is open.
+    if (indexPath.row >= (NSInteger)self.displayedItems.count) {
         return cell;
     }
 
-    ICTranscriptionQueueItem *item = [TranscriptionQueue shared].displayItems[indexPath.row];
+    ICTranscriptionQueueItem *item = self.displayedItems[indexPath.row];
     cell.tag = indexPath.row;
     cell.accessibilityIdentifier = item.episodeHash;
     // (i) accessory opens the detailed log (durations, sizes, char/chapter counts).
@@ -692,14 +759,15 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     if (item.usesServerTranscription) {
         switch (item.status) {
             case ICTranscriptionStatusQueued:
-                headline = item.nextRetryAt ? NSLocalizedString(@"Server-Verarbeitung läuft weiter", nil) : NSLocalizedString(@"Wartet auf Server", nil);
+                headline = detail;
+                detail = nil;
                 cell.progressView.hidden = YES;
                 cell.timeLabel.text = @"";
                 break;
             case ICTranscriptionStatusTranscribing:
-                headline = NSLocalizedString(@"Server verarbeitet", nil);
-                cell.progressView.progress = item.progress;
-                cell.progressView.hidden = item.progress <= 0 || item.progress >= 1;
+                headline = detail;
+                detail = nil;
+                cell.progressView.hidden = YES;
                 cell.timeLabel.text = elapsedText ?: @"";
                 break;
             case ICTranscriptionStatusGeneratingChapters:
@@ -715,9 +783,15 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
                 cell.timeLabel.text = @"";
                 break;
             case ICTranscriptionStatusFailed:
-                headline = NSLocalizedString(@"Fehler", nil);
+                headline = [[ServerTranscriptionManager shared] wasAdmissionRejectedForEpisodeHash:item.episodeHash]
+                    ? NSLocalizedString(@"Not added", nil) : NSLocalizedString(@"Fehler", nil);
                 detail = item.error ?: NSLocalizedString(@"Fehler ✗", nil);
                 cell.sizeLabel.textColor = [UIColor systemRedColor];
+                cell.progressView.hidden = YES;
+                cell.timeLabel.text = @"";
+                break;
+            case ICTranscriptionStatusCanceled:
+                headline = NSLocalizedString(@"Canceled", nil);
                 cell.progressView.hidden = YES;
                 cell.timeLabel.text = @"";
                 break;
@@ -887,10 +961,10 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) return;
-    ICTranscriptionQueueItem *item = [TranscriptionQueue shared].displayItems[indexPath.row];
+    if (indexPath.row >= (NSInteger)self.displayedItems.count) return;
+    ICTranscriptionQueueItem *item = self.displayedItems[indexPath.row];
 
-    if (item.status == ICTranscriptionStatusQueued || item.status == ICTranscriptionStatusFailed) {
+    if (item.status == ICTranscriptionStatusQueued || item.status == ICTranscriptionStatusFailed || item.status == ICTranscriptionStatusCanceled) {
         [self _presentRecoveryActionsForItem:item];
         return;
     }
@@ -980,7 +1054,10 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 }
 
 - (void)_showLogFromAccessoryButton:(UIButton*)button {
-    [self _showLogForRow:button.tag];
+    UIView* view = button;
+    while (view && ![view isKindOfClass:[UITableViewCell class]]) view = view.superview;
+    NSIndexPath* indexPath = [self.tableView indexPathForCell:(UITableViewCell*)view];
+    if (indexPath) [self _showLogForRow:indexPath.row];
 }
 
 - (void)tableView:(UITableView *)tableView accessoryButtonTappedForRowWithIndexPath:(NSIndexPath *)indexPath {
@@ -988,8 +1065,8 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 }
 
 - (void)_showLogForRow:(NSInteger)row {
-    if (row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) return;
-    ICTranscriptionQueueItem* item = [TranscriptionQueue shared].displayItems[row];
+    if (row >= (NSInteger)self.displayedItems.count) return;
+    ICTranscriptionQueueItem* item = self.displayedItems[row];
     TranscriptionLogDetailViewController* vc = [[TranscriptionLogDetailViewController alloc] initWithStyle:UITableViewStylePlain];
     vc.episodeHash = item.episodeHash;
     CDEpisode* episode = [self _episodeForHash:item.episodeHash];
@@ -1005,7 +1082,6 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 
 - (void)tableView:(UITableView *)tableView willBeginEditingRowAtIndexPath:(NSIndexPath *)indexPath {
     self.swipeInteractionActive = YES;
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_debouncedReload) object:nil];
 }
 
 - (void)tableView:(UITableView *)tableView didEndEditingRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -1021,11 +1097,13 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     [self _syncBackgroundButtonState];
     if (self.pendingReloadAfterSwipe) {
         self.pendingReloadAfterSwipe = NO;
+        self.displayedItems = [TranscriptionQueue shared].displayItems;
         [self.tableView reloadData];
         [self _restartElapsedTimerIfNeeded];
     } else {
         [self _progressUpdated];
     }
+    [self _updateCapacitySummary];
 }
 
 - (void)_finishSwipeDeletionUpdate {
@@ -1035,12 +1113,19 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
     if (editingStyle == UITableViewCellEditingStyleDelete) {
-        if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) return;
-        ICTranscriptionQueueItem *item = [TranscriptionQueue shared].displayItems[indexPath.row];
+        if (indexPath.row >= (NSInteger)self.displayedItems.count) return;
+        ICTranscriptionQueueItem *item = self.displayedItems[indexPath.row];
+        if ([[TranscriptionQueue shared].displayItems indexOfObjectIdenticalTo:item] == NSNotFound) {
+            [self _endSwipeInteractionAndFlushDeferredUpdate];
+            return;
+        }
+        NSMutableArray* remainingItems = [self.displayedItems mutableCopy];
+        [remainingItems removeObjectAtIndex:indexPath.row];
         self.suppressReload = YES;
         if (item.usesServerTranscription) [[ServerTranscriptionManager shared] dequeueEpisodeHash:item.episodeHash];
         else [[TranscriptionQueue shared] dequeueWithEpisodeHash:item.episodeHash];
-        self.pendingReloadAfterSwipe = NO;
+        self.displayedItems = remainingItems;
+        self.pendingReloadAfterSwipe = ![remainingItems isEqualToArray:[TranscriptionQueue shared].displayItems];
         [tableView performBatchUpdates:^{
             [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
         } completion:^(__unused BOOL finished) {
@@ -1050,19 +1135,20 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 }
 
 - (void)tableView:(UITableView *)tableView moveRowAtIndexPath:(NSIndexPath *)src toIndexPath:(NSIndexPath *)dst {
-    NSMutableArray *items = [[TranscriptionQueue shared].displayItems mutableCopy];
+    NSMutableArray *items = [self.displayedItems mutableCopy];
     ICTranscriptionQueueItem *moved = items[src.row];
     [items removeObjectAtIndex:src.row];
     [items insertObject:moved atIndex:dst.row];
+    self.displayedItems = items;
     [[TranscriptionQueue shared] reorderItems:items];
 }
 
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.section != 0 || indexPath.row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) {
+    if (indexPath.section != 0 || indexPath.row >= (NSInteger)self.displayedItems.count) {
         return nil;
     }
     self.swipeInteractionActive = YES;
-    ICTranscriptionQueueItem* item = [TranscriptionQueue shared].displayItems[indexPath.row];
+    ICTranscriptionQueueItem* item = self.displayedItems[indexPath.row];
     NSString* episodeHash = [item.episodeHash copy];
     BOOL usesServerTranscription = item.usesServerTranscription;
     UIContextualAction *action = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
@@ -1079,13 +1165,14 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
                                   currentRow == (NSUInteger)indexPath.row &&
                                   [tableView numberOfRowsInSection:0] == (NSInteger)currentItems.count;
         // Suppress queue-change notifications while we manually delete the row so the
-        // debounced reload doesn't reset the tableView state half-way through the animation.
+        // queue update does not reset the table during the deletion animation.
         self.suppressReload = YES;
         if (usesServerTranscription) [[ServerTranscriptionManager shared] dequeueEpisodeHash:episodeHash];
         else [[TranscriptionQueue shared] dequeueWithEpisodeHash:episodeHash];
         NSInteger updatedCount = (NSInteger)[TranscriptionQueue shared].displayItems.count;
         if (canAnimateDeletion && updatedCount + 1 == (NSInteger)currentItems.count) {
             self.pendingReloadAfterSwipe = NO;
+            self.displayedItems = [TranscriptionQueue shared].displayItems;
             [tableView performBatchUpdates:^{
                 [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
             } completion:^(__unused BOOL finished) {
@@ -1102,10 +1189,10 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 }
 
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.section != 0 || indexPath.row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) {
+    if (indexPath.section != 0 || indexPath.row >= (NSInteger)self.displayedItems.count) {
         return nil;
     }
-    ICTranscriptionQueueItem* item = [TranscriptionQueue shared].displayItems[indexPath.row];
+    ICTranscriptionQueueItem* item = self.displayedItems[indexPath.row];
     CDEpisode* episode = [self _episodeForHash:item.episodeHash];
     if (!episode) return nil;
 
@@ -1128,7 +1215,8 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
         if (item.statusStartedAt != nil &&
             item.status != ICTranscriptionStatusQueued &&
             item.status != ICTranscriptionStatusCompleted &&
-            item.status != ICTranscriptionStatusFailed) {
+            item.status != ICTranscriptionStatusFailed &&
+            item.status != ICTranscriptionStatusCanceled) {
             if (!self.elapsedTimer || !self.elapsedTimer.isValid) {
                 WEAK_SELF
                 self.elapsedTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer* t) {
@@ -1253,13 +1341,15 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 }
 
 - (void)_presentRecoveryActionsForItem:(ICTranscriptionQueueItem*)item {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Job neu starten?", nil)
-                                                                  message:nil
+    BOOL checksExistingRequest = item.usesServerTranscription && item.requiresExplicitRetryAfterCrash;
+    NSString* title = checksExistingRequest ? NSLocalizedString(@"Check server status again", nil) : NSLocalizedString(@"Job neu starten?", nil);
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
+                                                                  message:checksExistingRequest ? (item.statusDetail ?: item.error) : nil
                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Neustarten", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    [alert addAction:[UIAlertAction actionWithTitle:(checksExistingRequest ? NSLocalizedString(@"Check again", nil) : NSLocalizedString(@"Neustarten", nil)) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         if (item.usesServerTranscription) [[ServerTranscriptionManager shared] retryEpisodeHash:item.episodeHash];
         else [self _retryWithEpisodeHash:item.episodeHash];
-        [self.tableView reloadData];
+        [self _queueChanged];
     }]];
     [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Aus Liste löschen", nil) style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         [self _deleteFailedOrInterruptedItem:item];
@@ -1272,8 +1362,7 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     if (item.episodeHash.length == 0) return;
     if (item.usesServerTranscription) [[ServerTranscriptionManager shared] dequeueEpisodeHash:item.episodeHash];
     else [[TranscriptionQueue shared] dequeueWithEpisodeHash:item.episodeHash];
-    [self _syncBackgroundButtonState];
-    [self.tableView reloadData];
+    [self _queueChanged];
 }
 
 - (void)_retryWithEpisodeHash:(NSString*)episodeHash {
@@ -1282,7 +1371,7 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     NSAssert([queue respondsToSelector:@selector(retryWithEpisodeHash:)], @"TranscriptionQueue must implement retryWithEpisodeHash:");
     if (![queue respondsToSelector:@selector(retryWithEpisodeHash:)]) return;
     [queue retryWithEpisodeHash:episodeHash];
-    [self.tableView reloadData];
+    [self _queueChanged];
 }
 
 @end

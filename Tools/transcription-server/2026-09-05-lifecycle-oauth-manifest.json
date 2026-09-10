@@ -1,0 +1,70 @@
+{
+  "INSTACASTPLUS-API.md": {
+    "before": "fcf4b34fdcefafb24e0aee4e50ba481083678f27d5a38927383d7ffd2023d56a",
+    "after": "cc688aef1b6730bf27f7cb35251a3c43592acfb154dd021115fa474747d680da"
+  },
+  "app/codex_provider.py": {
+    "before": null,
+    "after": "e7c86b3d12847ac431c8d6f81108d953e7c3c49bdc13244dc556dd071c2d9cf4"
+  },
+  "app/db.py": {
+    "before": "8078475618c09a607e4e4ca0ae46c737251eb7ecac2f4a20eb55f3c5e918acc1",
+    "after": "80ddb38db9a92266039a7d5c601bbf0dd18934506829f58f6e3358a069735e54"
+  },
+  "app/main.py": {
+    "before": "0628331f550612198c6615d94b8812449d029b7a5b42873473f8fec4bf894e33",
+    "after": "3b12b5066550d5ca6a7f31f789045dc89416f26d9c38f7556532a77aa2f46e6c"
+  },
+  "app/service.py": {
+    "before": "b1987843f76f51008309937f0777dcd53737e6ba667403dc315215077489292d",
+    "after": "ae276ca978ff609803edf2898ebe3096a7d36c94f7cfc7e122811ec78a17f508"
+  },
+  "app/settings.py": {
+    "before": "ed8c9d612748855e3e9e1b9de1a671a67231cb5d58b6f39e607acc2b3cdc595c",
+    "after": "3c1cb6d452c70d1c5ea6a3e0bcc071d00d95592cf2e13a809811132755ff802e"
+  },
+  "app/worker.py": {
+    "before": "1a63e3e60d21a1ffdf8a9d61be25de71f3ffada693ff025c142862d4222b6e49",
+    "after": "5151625f5e3752cc39d5f8e799ff323afbf571fb6a20de62056c7def7f5ea28e"
+  },
+  "tools/ai_budget_regression.py": {
+    "before": null,
+    "after": "073c3df74d785af601ef36c88b8103598031eb5df39c9cf5287969e5ab1754f6"
+  },
+  "tools/ai_usage_accounting_regression.py": {
+    "before": null,
+    "after": "7315a08641422ba6365abd6b4a9175ce3c4583171bbb2a537bd15db608475a7c"
+  },
+  "tools/atomic_publication_regression.py": {
+    "before": "6834fef7dc88d0440945381c1907bbb453302640269f2ac88a4122790d62b421",
+    "after": "a4abfec3e9c1d61c86373d5cb312de13c8045c7a0d18e40dcc89e4ec776c52ce"
+  },
+  "tools/codex_provider_regression.py": {
+    "before": null,
+    "after": "590ec28de58164849171b70f275f0187902bf49f4dafc42a92cff4cf3efcc7ff"
+  },
+  "tools/codex_tool_inventory_regression.py": {
+    "before": null,
+    "after": "f870b49fb05c05186dc40a9f0cfb0d859e78d7aedc9c0c23d9dfe8e5ac9c8afe"
+  },
+  "tools/lifecycle_regression.py": {
+    "before": null,
+    "after": "dfe165427c0c384586d968f35e0eb8d1f2a96b47d0a066a76d373a7a80c8c80a"
+  },
+  "tools/provider_polling_regression.py": {
+    "before": null,
+    "after": "27c8bb2dafaf69b9a5dade64934fc68c3205e697f054f784c87430b7f98862d1"
+  },
+  "tools/queue_admission_mysql_regression.py": {
+    "before": "ad856ba89dec47e27a45a50c7b3e8fc66a86e22189e8e9a8f433866805933670",
+    "after": "c672276b97fa556c1dd8f8762493a2839e83e5e2ae636fac8133cf99d2a60d6b"
+  },
+  "tools/queue_admission_regression.py": {
+    "before": "e31a6c6360169b07c46aa346c94017914528d034a626700612a2396ec901ffda",
+    "after": "309126a51e1ab613e038ff7458128bbbf75e2575c111bcdfeddc8b84273519a2"
+  },
+  "tools/server_model_regression.py": {
+    "before": "b4091b42d1d705687dccbfceb949aafc9534f639164e5fe9f9807f4214a25f2f",
+    "after": "42db026b60d6ff55ce190791d3e39b923b2bcb44385b60d02051e606dd64377e"
+  }
+}

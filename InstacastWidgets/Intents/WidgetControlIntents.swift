@@ -24,7 +24,7 @@ enum DarwinNotificationHelper {
 enum PendingWidgetActionStore {
     private static let filename = "widget_pending_action.json"
 
-    static func enqueue(action: String, chapterIndex: Int? = nil) {
+    static func enqueue(action: String, chapterIndex: Int? = nil, chapterTimelineIdentifier: String? = nil) {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: ICWidgetConstants.appGroupID
         ) else {
@@ -37,6 +37,9 @@ enum PendingWidgetActionStore {
         ]
         if let chapterIndex {
             payload["chapterIndex"] = chapterIndex
+        }
+        if let chapterTimelineIdentifier {
+            payload["chapterTimelineIdentifier"] = chapterTimelineIdentifier
         }
 
         guard JSONSerialization.isValidJSONObject(payload),
@@ -163,24 +166,24 @@ struct SkipToChapterIntent: AppIntent {
     static let title: LocalizedStringResource = "Skip to Chapter"
     static let description = IntentDescription("Jump directly to a specific chapter.")
     static var openAppWhenRun: Bool { false }
+    static var isDiscoverable: Bool { false }
 
     @Parameter(title: "Chapter Index")
     var chapterIndex: Int
 
     init() {}
-    init(chapterIndex: Int) { self.chapterIndex = chapterIndex }
+    @Parameter(title: "Chapter Timeline")
+    var chapterTimelineIdentifier: String?
+
+    init(chapterIndex: Int, chapterTimelineIdentifier: String) {
+        self.chapterIndex = chapterIndex
+        self.chapterTimelineIdentifier = chapterTimelineIdentifier
+    }
 
     func perform() async throws -> some IntentResult {
-        PendingWidgetActionStore.enqueue(action: "skipchapter", chapterIndex: chapterIndex)
+        PendingWidgetActionStore.enqueue(action: "skipchapter", chapterIndex: chapterIndex,
+                                        chapterTimelineIdentifier: chapterTimelineIdentifier)
 
-        // Write the target chapter index to the shared container so the main app can read it
-        if let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: ICWidgetConstants.appGroupID
-        ) {
-            let data = "\(chapterIndex)".data(using: .utf8)
-            let fileURL = container.appendingPathComponent("widget_skip_chapter.txt")
-            try? data?.write(to: fileURL)
-        }
         DarwinNotificationHelper.post("skipchapter")
         return .result()
     }

@@ -152,6 +152,8 @@
                 buttonAction:(void (^)(void))buttonAction
                     duration:(NSTimeInterval)duration
 {
+    static __weak UIView* previousToast;
+    [previousToast removeFromSuperview];
     UIWindow* window = App.ic_keyWindow;
     if (!window) return;
 
@@ -159,9 +161,11 @@
     blurView.layer.cornerRadius = 12;
     blurView.clipsToBounds = YES;
     blurView.alpha = 0;
+    previousToast = blurView;
 
     UILabel* label = [[UILabel alloc] init];
     label.text = text;
+    label.numberOfLines = 0;
     label.textColor = [UIColor whiteColor];
     label.font = [UIFont systemFontOfSize:ICFontSize(14)];
 
@@ -188,6 +192,7 @@
     [window addSubview:blurView];
     [NSLayoutConstraint activateConstraints:@[
         [blurView.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
+        [blurView.widthAnchor constraintLessThanOrEqualToAnchor:window.widthAnchor constant:-32],
         [blurView.bottomAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.bottomAnchor constant:-100],
     ]];
 
@@ -309,12 +314,13 @@
 + (BOOL)_serverTranscribeEpisode:(CDEpisode*)episode
 {
     if (!ICAITranscriptionFeaturesAvailable() || ![USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) return NO;
-    if ([[ServerTranscriptionManager shared] enqueueEpisode:episode]) {
-        PlaySoundFile(@"AffirmIn", NO);
-        [self _showTranscriptionToastWithText:NSLocalizedString(@"Transkription gestartet", nil)];
-    } else {
-        PlayHapticFeedback(ICHapticFeedbackLight);
-        [self _showTranscriptionToastWithText:NSLocalizedString(@"Server-Transkription läuft bereits", nil)];
+    BOOL staged = [[ServerTranscriptionManager shared] enqueueEpisode:episode completion:^(BOOL accepted, NSString* message) {
+        if (accepted) PlaySoundFile(@"AffirmIn", NO);
+        [self _showTranscriptionToastWithText:message];
+    }];
+    if (staged) [self _showTranscriptionToastWithText:NSLocalizedString(@"Sending transcription request.", nil)];
+    if (!staged && [[ServerTranscriptionManager shared] hasActiveItemForEpisodeHash:episode.objectHash]) {
+        [self _showTranscriptionToastWithText:NSLocalizedString(@"A server request for this episode is already being checked or processed.", nil)];
     }
     return YES;
 }

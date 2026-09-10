@@ -1,0 +1,1780 @@
+--- a/API.md
++++ b/API.md
+@@ -1,7 +1,7 @@
+ # Instacast Transcript API
+ 
+-Stand: 4. August 2026  
+-Schema-Revision: `2026-08-04.1`  
++Stand: 6. September 2026  
++Schema-Revision: `2026-09-06.1`  
+ Produktionsbasis: `https://transcript.instacast.ch/api/v1`
+ 
+ Der einzige öffentliche Clientvertrag ist vollständig in [INSTACASTPLUS-API.md](INSTACASTPLUS-API.md) beschrieben und wird maschinenlesbar durch authentifiziertes `GET /api/v1/schema` veröffentlicht.
+--- a/INSTACASTPLUS-API.md
++++ b/INSTACASTPLUS-API.md
+@@ -1,7 +1,7 @@
+ # InstacastPlus Transcript API
+ 
+-Stand: 12. August 2026  
+-Schema-Revision: `2026-08-04.1`  
++Stand: 6. September 2026  
++Schema-Revision: `2026-09-06.1`  
+ Produktionsbasis: `https://transcript.instacast.ch/api/v1`
+ 
+ Diese Dokumentation beschreibt ausschliesslich den öffentlichen Vertrag für die iOS-App. Modellwahl, Provider, Prompts, Worker, Queue und interne Artefakte sind serverintern und werden vom Client weder gesteuert noch ausgewertet.
+@@ -506,3 +506,17 @@
+ Der MariaDB-Test benötigt Administratorzugriff und erstellt eine zufällig benannte temporäre Datenbank, die im `finally`-Pfad entfernt wird. Er darf nicht gegen eine Produktionsdatenbank umkonfiguriert werden.
+ 
+ Administrativer Batch-Abbruch nach geprüftem Backup und einmaliger Migration: IDs aus der bestätigten Liste verwenden und innerhalb **einer** `queue_admission_transaction()` für jede Episode `cancel_episode_jobs(con, episode_id)` aufrufen. Der Helper migriert Legacyinteressen, setzt dauerhafte Endzustände und entzieht laufenden Claims ihre Berechtigung. Keine Tabellen oder Request-Tombstones löschen. Danach Status und Anzahl der abgeglichenen Episode-IDs lesen, bevor Worker wieder gestartet werden.
++
++
++## Zuverlässigkeitsvertrag — Revision2026-09-06.1
++
++- Client-ID und Request-UUID bilden gemeinsam den Besitzer eines Auftrags. Die App speichert beides zusammen mit Aufträgen und Abbruch-Outbox atomar. Ein unlesbarer oder beschädigter Speicher ist kein leerer Speicher und darf nicht überschrieben werden.
++- Legacy-Abbrüche bleiben auch nach gewöhnlichen Episode-/Podcast-POSTs terminal. Globale Fehlzustände bleiben für automatische Feed-Scans und gewöhnliche Aufnahme terminal; ein ausdrücklicher neuer Nutzerversuch benötigt eine neue UUID und `force:true`. Der terminale Fehlergrund überlebt die Retention der Jobhistorie.
++- Transiente Ausführungsfehler besitzen einen dauerhaft gespeicherten nächsten Versuch und behalten ihr Versuchbudget. Neustart und andere Eintrittspfade dürfen den nächsten Versuch nicht vorziehen oder das Budget zurücksetzen. Polling-Hinweise `retry_after_seconds`/`Retry-After` sind positive ganze Sekunden bis maximal86400; dies ist kein Lebenszeitlimit eines angenommenen Auftrags. Ungültige Hinweise sind Vertragsfehler und dürfen die Besitzerkennung nicht verwerfen.
++- Eine Jobgeneration bindet ihre akzeptierte Audio-URL unveränderlich. Erneuerte URLs können für einen ausdrücklich neuen Versuch verwendet werden; eine Alias-Zuordnung beweist keine identischen Audiobytes. Vollständige ASR-/KI-Checkpoints benötigen Quellen-, Eingabe-, Modell-/Options- und Implementationsherkunft. Historische fehlende Herkunft wird nicht erfunden.
++- Fertiger/fehlgeschlagener Zustand und zugehöriger Webhook-Outbox-Eintrag werden gemeinsam committed. Netzwerkzustellung bleibt wiederholbar; Empfänger müssen ihre Ereignisse deduplizieren. Diese technische Zustellung ist keine Garantie genau einmaliger externer Provider-Abrechnung.
++- Ein Feed ist auf25MiB decodierten Inhalt und60s für den gesamten Abruf einschließlich DNS, Redirects, Discovery und Parsing begrenzt. Übergrösse liefert `413 feed_too_large`, `retryable:false`. Abbruch/Timeout räumt den Hilfsprozess auf.
++- Jedes der vier öffentlichen Ergebnisartefakte ist auf25MiB begrenzt, vor Parser/Publikation. SRT-Cues dürfen die gemessene, auf Millisekunden kanonisierte Audiodauer nicht überschreiten. App-Übertragungen begrenzen Envelopes auf1MiB, Artefakte auf25MiB und jede Übertragung auf120s Gesamtzeit; vollständige SHA-/Grössen-/MIME-/Revisionsprüfung bleibt erforderlich.
++- Generated-Kapitel, Sponsor-Sprünge und Transkript-Seeks brauchen die tatsächlich abgespielte Audiofassung und die exakte geladene Artefaktgeneration. Dateiersatz widerruft bereits veröffentlichte Prüfungen. Ein alter Widget-Kapitelindex darf nur mit derselben veröffentlichten Timeline-ID aufgelöst werden.
++
++Migration: API und Worker stoppen, vollständige Datenbanksicherung erstellen, `init_db()` ausführen und vor Neustart prüfen. Ergänzt werden `episodes.terminal_error/latest_source_url`, `jobs.source_url/next_attempt_at` sowie vollständig indizierte SHA256-URL-Spalten für Episoden, Aliasse und Podcasts. Die bisherige Unique-Präfixlänge512 ist kein gültiger Identitätsvertrag für erlaubte2048-Zeichen-URLs. Bestehende Daten bleiben erhalten; alte Präfix-Indizes nicht blind wiederherstellen, nachdem neue lange URLs aufgenommen wurden.
+--- a/app/artifact_contract.py
++++ b/app/artifact_contract.py
+@@ -10,6 +10,8 @@
+ from typing import Any
+ 
+ import regex as unicode_regex
++
++from . import config
+ 
+ 
+ TIME_DECIMALS = 3
+@@ -169,6 +171,8 @@
+         path = paths[kind]
+         if not path.is_file() or path.stat().st_size <= 0:
+             issues.append(f"{kind} is missing or empty")
++        elif path.stat().st_size > config.MAX_ARTIFACT_BYTES:
++            issues.append(f"{kind} exceeds the {config.MAX_ARTIFACT_BYTES} byte limit")
+     if issues:
+         return ArtifactValidation(tuple(issues))
+ 
+@@ -190,6 +194,8 @@
+             f"maximum is {allowed_continuations}"
+         )
+     for index, cue in enumerate(cues, 1):
++        if duration is not None and cue["end"] > duration:
++            issues.append(f"transcript_srt cue {index} exceeds audio duration")
+         words = re.findall(r"\b[^\W_]+(?:['’-][^\W_]+)*\b", str(cue["text"]), flags=re.UNICODE)
+         if len(words) == 1 and not SENTENCE_END_RE.search(str(cue["text"]).strip()):
+             issues.append(f"transcript_srt cue {index} is an incomplete one-word fragment")
+--- /dev/null
++++ b/app/checkpoint_provenance.py
+@@ -0,0 +1,26 @@
++"""Explicit source/configuration identity shared by ASR producer and consumer."""
++import hashlib
++import json
++from pathlib import Path
++
++ASR_DEFAULTS = {
++    "model":"small", "compute_type":"int8", "beam_size":5, "best_of":1,
++    "batched":True, "batch_size":4, "vad":True, "word_timestamps":False,
++    "language":"auto", "initial_prompt":None, "hotwords":None,
++    "chunk_seconds":600, "chunk_overlap_seconds":60, "min_chunk_seconds":5,
++    "boundary_search_seconds":60, "silence_noise_db":-35,
++    "silence_min_seconds":0.3, "preferred_silence_seconds":0.8,
++    "silence_boundaries":True,
++}
++
++def digest(value):
++    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",",":"), allow_nan=False).encode()).hexdigest()
++
++def asr_provenance(audio_sha256, options):
++    root = Path(__file__).resolve().parents[1]
++    implementation = {name:hashlib.sha256((root/"tools"/name).read_bytes()).hexdigest()
++                      for name in ("transcribe_podcast_parallel.py", "transcribe_podcast.py", "caption_contract.py")}
++    # Normalize CLI numeric parsing (600 versus 600.0) without losing options.
++    settings = {key:(float(options.get(key, value)) if isinstance(value, (int,float)) and not isinstance(value,bool)
++                     else options.get(key,value)) for key,value in ASR_DEFAULTS.items()}
++    return {"audio_sha256":audio_sha256, **settings, "implementation":implementation}
+--- a/app/config.py
++++ b/app/config.py
+@@ -36,6 +36,10 @@
+ LOGIN_FAILURE_LIMIT_PER_15M = int(os.environ.get("INSTACAST_LOGIN_FAILURE_LIMIT_PER_15M", "6"))
+ MAX_URL_LENGTH = int(os.environ.get("INSTACAST_MAX_URL_LENGTH", "2048"))
+ MAX_FEED_BYTES = int(os.environ.get("INSTACAST_MAX_FEED_BYTES", str(25 * 1024 * 1024)))
++MAX_ARTIFACT_BYTES = 25 * 1024 * 1024
++FEED_FETCH_TIMEOUT_SECONDS = float(os.environ.get("INSTACAST_FEED_FETCH_TIMEOUT_SECONDS", "60"))
++if not math.isfinite(FEED_FETCH_TIMEOUT_SECONDS) or FEED_FETCH_TIMEOUT_SECONDS <= 0 or MAX_FEED_BYTES <= 0:
++    raise ValueError("Feed size and operation limits must be finite and positive")
+ MAX_AUDIO_BYTES = int(os.environ.get("INSTACAST_MAX_AUDIO_BYTES", str(750 * 1024 * 1024)))
+ MAX_AUDIO_DURATION_SECONDS = float(os.environ.get("INSTACAST_MAX_AUDIO_DURATION_SECONDS", "86400"))
+ AUDIO_DOWNLOAD_TIMEOUT_SECONDS = float(os.environ.get("INSTACAST_AUDIO_DOWNLOAD_TIMEOUT_SECONDS", "3600"))
+--- a/app/db.py
++++ b/app/db.py
+@@ -664,6 +664,8 @@
+     if is_mysql():
+         with connect() as con:
+             con.executescript(MYSQL_SCHEMA)
++            ensure_state_columns(con)
++            ensure_exact_url_indexes(con)
+             ensure_column(con, "jobs", "claim_token", "VARCHAR(64)")
+             ensure_column(con, "jobs", "checkpoint_claim_token", "VARCHAR(64)")
+             ensure_column(con, "episodes", "last_client_audio_bytes", "BIGINT")
+@@ -679,6 +681,7 @@
+         return
+     with connect() as con:
+         con.executescript(SQLITE_SCHEMA)
++        ensure_state_columns(con)
+         ensure_column(con, "jobs", "claim_token", "TEXT")
+         ensure_column(con, "jobs", "checkpoint_claim_token", "TEXT")
+         ensure_column(con, "episodes", "last_client_audio_bytes", "INTEGER")
+@@ -691,6 +694,38 @@
+         ensure_column(con, "episodes", "processing_progress", "REAL")
+         ensure_column(con, "client_requests", "client_audio_bytes", "INTEGER")
+         ensure_column(con, "client_requests", "content_length_delta_bytes", "INTEGER")
++
++
++def exact_url_predicate(column: str) -> str:
++    # Callers use fixed schema identifiers; values remain bound parameters.
++    if column not in {"episode_url", "episode_aliases.url", "url"}:
++        raise ValueError("Unsupported URL lookup column")
++    return f"{column}_sha256=SHA2(?,256)" if is_mysql() else f"{column}=?"
++
++
++def ensure_state_columns(con: Any) -> None:
++    for table, column in (("episodes","terminal_error"),("episodes","latest_source_url"),
++                          ("jobs","source_url"),("jobs","next_attempt_at")):
++        ensure_column(con,table,column,"TEXT")
++    con.execute("UPDATE episodes SET latest_source_url=episode_url WHERE latest_source_url IS NULL")
++    con.execute("UPDATE jobs SET source_url=(SELECT episode_url FROM episodes WHERE episodes.id=jobs.episode_id) WHERE job_type='transcribe' AND source_url IS NULL")
++    con.execute("""UPDATE episodes SET terminal_error=(SELECT error FROM jobs WHERE jobs.episode_id=episodes.id
++        AND jobs.status='failed' ORDER BY jobs.id DESC LIMIT 1) WHERE episodes.status='failed' AND terminal_error IS NULL""")
++
++
++def ensure_exact_url_indexes(con: Any) -> None:
++    # Run with admission/workers stopped. Install the exact identity before
++    # removing the old512-character uniqueness constraint; reruns are idempotent.
++    for table, column, old_index in (("episodes","episode_url","uniq_episodes_episode_url"),
++                                     ("episode_aliases","url","uniq_episode_aliases_url"),
++                                     ("podcasts","feed_url","uniq_podcasts_feed_url")):
++        digest_column = column + "_sha256"
++        ensure_column(con,table,digest_column,f"CHAR(64) GENERATED ALWAYS AS (SHA2({column},256)) STORED")
++        index = "uniq_" + table + "_full_url"
++        if not con.execute(f"SHOW INDEX FROM {table} WHERE Key_name=?",(index,)).fetchone():
++            con.execute(f"CREATE UNIQUE INDEX {index} ON {table}({digest_column})")
++        if con.execute(f"SHOW INDEX FROM {table} WHERE Key_name=?",(old_index,)).fetchone():
++            con.execute(f"ALTER TABLE {table} DROP INDEX {old_index}")
+ 
+ 
+ VALID_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+--- a/app/main.py
++++ b/app/main.py
+@@ -18,7 +18,7 @@
+ from starlette.exceptions import HTTPException as StarletteHTTPException
+ 
+ from . import config
+-from .db import connect, init_db, loads, now_iso, tx
++from .db import exact_url_predicate, connect, init_db, loads, now_iso, tx
+ from .rss import fetch_feed
+ from .security import (
+     check_login_allowed, api_request_class, enforce_api_request_rate,
+@@ -512,7 +512,7 @@
+ 
+ 
+ def find_episode_row_by_url(con: Any, episode_url: str) -> Any:
+-    row = con.execute("SELECT * FROM episodes WHERE episode_url=?", (episode_url,)).fetchone()
++    row = con.execute("SELECT * FROM episodes WHERE " + exact_url_predicate("episode_url"), (episode_url,)).fetchone()
+     if row:
+         return row
+     return con.execute(
+@@ -520,8 +520,7 @@
+         SELECT episodes.*
+         FROM episode_aliases
+         JOIN episodes ON episodes.id=episode_aliases.episode_id
+-        WHERE episode_aliases.url=?
+-        """,
++        WHERE """ + exact_url_predicate("episode_aliases.url"),
+         (episode_url,),
+     ).fetchone()
+ 
+@@ -685,12 +684,7 @@
+     if episode["status"] == "ready":
+         return not has_required_client_artifacts(con, episode_id)
+     if episode["status"] == "failed":
+-        failed_job = con.execute(
+-            "SELECT * FROM jobs WHERE episode_id=? AND status='failed' ORDER BY id DESC LIMIT 1",
+-            (episode_id,),
+-        ).fetchone()
+-        failure = job_error(dict(failed_job)) if failed_job else None
+-        return failure is None or bool(failure["retryable"])
++        return False
+     return True
+ 
+ 
+@@ -744,7 +738,7 @@
+     return {
+         "api_version": "v1",
+         "$schema": "https://json-schema.org/draft/2020-12/schema",
+-        "schema_revision": "2026-08-04.1",
++        "schema_revision": "2026-09-06.1",
+         "base_url": f"{config.PUBLIC_BASE_URL.rstrip('/')}/api/v1",
+         "request_lifecycle_contract": {
+             "identity": "Full SHA-256 client identity plus durable request UUID; request URLs have an immutable SHA-256 fingerprint.",
+@@ -771,6 +765,7 @@
+         },
+         "audio_processing_contract": {
+             "max_audio_bytes":config.MAX_AUDIO_BYTES,
++            "max_artifact_bytes":config.MAX_ARTIFACT_BYTES,
+             "max_duration_seconds":config.MAX_AUDIO_DURATION_SECONDS,
+             "duration_authority":"Finite positive duration measured from the downloaded audio; client/feed duration is advisory.",
+             "download_timeout_seconds":config.AUDIO_DOWNLOAD_TIMEOUT_SECONDS,
+@@ -963,7 +958,7 @@
+                 "properties": {
+                     "api_version": {"const": "v1"},
+                     "episode": {"$ref": "#/schemas/Episode"},
+-                    "retry_after_seconds": {"type": ["integer", "null"], "minimum": 1},
++                    "retry_after_seconds": {"type": ["integer", "null"], "minimum": 1, "maximum": 86400},
+                 },
+                 "allOf": [
+                     {
+@@ -975,7 +970,7 @@
+                                 }
+                             }
+                         },
+-                        "then": {"properties": {"retry_after_seconds": {"type": "integer", "minimum": 1}}},
++                        "then": {"properties": {"retry_after_seconds": {"type": "integer", "minimum": 1, "maximum": 86400}}},
+                     },
+                     {
+                         "if": {
+@@ -1218,7 +1213,7 @@
+                     "code": {"type": "string"},
+                     "message": {"type": "string"},
+                     "retryable": {"type": "boolean"},
+-                    "retry_after_seconds": {"type": "integer", "minimum": 0},
++                    "retry_after_seconds": {"type": "integer", "minimum": 0, "maximum": 86400},
+                     "retry_endpoint": {"type": "string", "pattern": "^https?://"},
+                     "max_audio_bytes":{"type":"integer","minimum":1},
+                     "max_duration_seconds":{"type":"number","exclusiveMinimum":0},
+@@ -1251,7 +1246,7 @@
+                     "message": {"type": "string"},
+                     "retryable": {"type": "boolean"},
+                     "admitted": {"type":"boolean","description":"False only when this request was definitively not admitted; omitted for uncertain outcomes."},
+-                    "retry_after_seconds": {"type": "integer", "minimum": 0},
++                    "retry_after_seconds": {"type": "integer", "minimum": 0, "maximum": 86400},
+                     "retry_endpoint": {"type": "string", "pattern": "^https?://"},
+                     "details": {},
+                 },
+@@ -1263,7 +1258,7 @@
+                 "properties": {
+                     "api_version": {"const": "v1"},
+                     "error": {"$ref": "#/schemas/Error"},
+-                    "retry_after_seconds": {"type": "integer", "minimum": 0},
++                    "retry_after_seconds": {"type": "integer", "minimum": 0, "maximum": 86400},
+                 },
+             },
+             "ChaptersArtifact": {
+@@ -1375,12 +1370,12 @@
+                     "processing_episode_ids": {"type": "array", "items": {"type": "integer"}, "uniqueItems": True},
+                     "episode_ids": {"type": "array", "items": {"type": "integer"}, "uniqueItems": True},
+                     "episodes": {"type": "array", "items": {"$ref": "#/schemas/Episode"}},
+-                    "retry_after_seconds": {"type": ["integer", "null"], "minimum": 1},
++                    "retry_after_seconds": {"type": ["integer", "null"], "minimum": 1, "maximum": 86400},
+                 },
+                 "allOf": [
+                     {
+                         "if": {"properties": {"processing_episode_ids": {"minItems": 1}}},
+-                        "then": {"properties": {"retry_after_seconds": {"type": "integer", "minimum": 1}}},
++                        "then": {"properties": {"retry_after_seconds": {"type": "integer", "minimum": 1, "maximum": 86400}}},
+                         "else": {"properties": {"retry_after_seconds": {"type": "null"}}},
+                     }
+                 ],
+@@ -1402,12 +1397,12 @@
+                     "episode_ids": {"type": "array", "items": {"type": "integer"}, "uniqueItems": True},
+                     "processing_episode_ids": {"type": "array", "items": {"type": "integer"}, "uniqueItems": True},
+                     "episodes": {"type": "array", "items": {"$ref": "#/schemas/Episode"}},
+-                    "retry_after_seconds": {"type": ["integer", "null"], "minimum": 1},
++                    "retry_after_seconds": {"type": ["integer", "null"], "minimum": 1, "maximum": 86400},
+                 },
+                 "allOf": [
+                     {
+                         "if": {"properties": {"processing_episode_ids": {"minItems": 1}}},
+-                        "then": {"properties": {"retry_after_seconds": {"type": "integer", "minimum": 1}}},
++                        "then": {"properties": {"retry_after_seconds": {"type": "integer", "minimum": 1, "maximum": 86400}}},
+                         "else": {"properties": {"retry_after_seconds": {"type": "null"}}},
+                     }
+                 ],
+@@ -1483,8 +1478,6 @@
+     client_label = note_api_client(request, client_uuid)
+     enforce_submit_limit(request, token_id, "episode", client_uuid)
+     validate_public_url(payload.episode_url, "episode_url")
+-    if payload.podcast_url:
+-        validate_public_url(payload.podcast_url, "podcast_url")
+     client_hash = hash_token(client_uuid) if client_uuid else None
+     request_id = str(uuid.UUID(payload.client_request_id)) if payload.client_request_id else None
+     url_hash = hashlib.sha256(payload.episode_url.encode()).hexdigest()
+@@ -1557,6 +1550,7 @@
+                         episode_id=reused_episode_id,
+                         podcast_id=existing["podcast_id"],
+                         payload={"source": "api_episode_recovery"},
++                        source_url=payload.episode_url,
+                         priority=80,
+                     )
+                     con.execute(
+@@ -1652,7 +1646,7 @@
+             reject_terminal_request({"state":episode["status"]})
+         has_client_artifacts = has_required_client_artifacts(con, episode_id)
+         active_job = active_transcribe_job(con, episode_id)
+-        should_enqueue = not active_job and (payload.force or episode["status"] != "ready" or not has_client_artifacts)
++        should_enqueue = not active_job and (payload.force or episode["status"] not in {"ready","failed"} or (episode["status"] == "ready" and not has_client_artifacts))
+         if should_enqueue or active_job:
+             ensure_client_queue_capacity(con, client_label, episode_id, hash_token(client_uuid))
+         if should_enqueue:
+@@ -1663,6 +1657,7 @@
+                 episode_id=episode_id,
+                 podcast_id=podcast_id,
+                 payload={"source": "api_episode"},
++                source_url=payload.episode_url,
+                 priority=80,
+             )
+             con.execute(
+@@ -1715,7 +1710,6 @@
+     client_uuid = request_client_id(request)
+     client_label = note_api_client(request, client_uuid)
+     enforce_submit_limit(request, token_id, "podcast", client_uuid)
+-    validate_public_url(payload.feed_url, "feed_url")
+     feed = fetch_feed(payload.feed_url)
+     latest_limit = clamp_latest_limit(payload.latest_limit)
+     with queue_admission_transaction() as con:
+@@ -1855,10 +1849,10 @@
+ def get_episode_by_url(episode_url: str, token_id: int = Depends(require_api_token), request: Request = None) -> dict[str, Any]:
+     episode_url = validate_lookup_episode_url(episode_url)
+     with connect() as con:
+-        row = con.execute("SELECT id FROM episodes WHERE episode_url=?", (episode_url,)).fetchone()
++        row = con.execute("SELECT id FROM episodes WHERE " + exact_url_predicate("episode_url"), (episode_url,)).fetchone()
+         if not row:
+             row = con.execute(
+-                "SELECT episode_id AS id FROM episode_aliases WHERE url=?",
++                "SELECT episode_id AS id FROM episode_aliases WHERE " + exact_url_predicate("url"),
+                 (episode_url,),
+             ).fetchone()
+     if not row:
+@@ -1922,7 +1916,7 @@
+                     "SELECT * FROM jobs WHERE episode_id=? AND status='failed' ORDER BY id DESC LIMIT 1",
+                     (episode_id,),
+                 ).fetchone()
+-                failure = job_error(dict(failed_job)) if failed_job else None
++                failure = job_error({"error":episode["terminal_error"]}) if episode["terminal_error"] else job_error(dict(failed_job)) if failed_job else None
+                 if failure and not failure["retryable"]:
+                     raise HTTPException(
+                         status_code=409,
+@@ -2853,7 +2847,6 @@
+     enqueue_latest: str | None = Form(default=None),
+     user: dict[str, Any] = Depends(require_admin),
+ ) -> RedirectResponse:
+-    validate_public_url(feed_url, "feed_url")
+     latest_limit = clamp_latest_limit(latest_limit)
+     feed = fetch_feed(feed_url)
+     with queue_admission_transaction() as con:
+@@ -2936,7 +2929,7 @@
+             ensure_transcribe_queue_capacity(con, requested=0 if active_transcribe_job(con, job["episode_id"]) else 1)
+             con.execute("UPDATE jobs SET status='canceled',claim_token=NULL,locked_by=NULL,lease_until=NULL,updated_at=? WHERE episode_id=? AND id!=? AND status IN ('queued','running','paused')", (now_iso(),job["episode_id"],job_id))
+             con.execute(
+-                "UPDATE jobs SET status='queued', error=NULL, lease_until=NULL, locked_by=NULL, updated_at=? WHERE id=?",
++                "UPDATE jobs SET status='queued', error=NULL, next_attempt_at=NULL, lease_until=NULL, locked_by=NULL, updated_at=? WHERE id=?",
+                 (now_iso(), job_id),
+             )
+             if job["episode_id"]:
+@@ -2969,7 +2962,7 @@
+             con.execute(
+                 """
+                 UPDATE jobs
+-                SET status='queued', error=NULL, lease_until=NULL, locked_by=NULL, updated_at=?
++                SET status='queued', error=NULL, next_attempt_at=NULL, lease_until=NULL, locked_by=NULL, updated_at=?
+                 WHERE id=?
+                 """,
+                 (now_iso(), job_id),
+--- a/app/rss.py
++++ b/app/rss.py
+@@ -1,14 +1,19 @@
+ from __future__ import annotations
+ 
+ import email.utils
++import json
++import subprocess
++import sys
++import time
+ import re
+ import xml.etree.ElementTree as ET
+ from html.parser import HTMLParser
+ from datetime import datetime, timezone
+-from typing import Any
+-from urllib.parse import urljoin, urlparse
++from typing import Any, Callable
++from urllib.parse import urljoin, urlparse, urlencode
+ 
+ import requests
++from fastapi import HTTPException
+ 
+ from . import config
+ from .security import guarded_get, validate_public_url
+@@ -57,21 +62,33 @@
+     return None
+ 
+ 
++class FeedTooLargeError(ValueError):
++    pass
++
++
+ def fetch_response(url: str) -> requests.Response:
+     response = guarded_get(
+         url,
+         purpose="Feed URL",
+         timeout=30,
+         headers={"User-Agent": config.USER_AGENT},
++        stream=True,
+     )
+-    content_length = response.headers.get("content-length")
+-    if content_length and int(content_length) > config.MAX_FEED_BYTES:
++    try:
++        content_length = response.headers.get("content-length")
++        if content_length and int(content_length) > config.MAX_FEED_BYTES:
++            raise FeedTooLargeError("Feed ist zu gross.")
++        content = bytearray()
++        # iter_content yields decoded bytes; compressed bodies cannot bypass the cap.
++        for chunk in response.iter_content(chunk_size=64 * 1024):
++            if len(content) + len(chunk) > config.MAX_FEED_BYTES:
++                raise FeedTooLargeError("Feed ist zu gross.")
++            content.extend(chunk)
++        response._content = bytes(content)
++        response._content_consumed = True
++        return response
++    finally:
+         response.close()
+-        raise ValueError("Feed ist zu gross.")
+-    if len(response.content) > config.MAX_FEED_BYTES:
+-        response.close()
+-        raise ValueError("Feed ist zu gross.")
+-    return response
+ 
+ 
+ def apple_podcast_id(url: str) -> str | None:
+@@ -87,13 +104,7 @@
+     podcast_id = apple_podcast_id(url)
+     if not podcast_id:
+         return None
+-    response = requests.get(
+-        "https://itunes.apple.com/lookup",
+-        params={"id": podcast_id},
+-        timeout=20,
+-        headers={"User-Agent": config.USER_AGENT},
+-    )
+-    response.raise_for_status()
++    response = fetch_response("https://itunes.apple.com/lookup?" + urlencode({"id": podcast_id}))
+     data = response.json()
+     for result in data.get("results", []):
+         feed_url = result.get("feedUrl")
+@@ -122,7 +133,7 @@
+         raise ValueError("Kein RSS- oder Atom-Feed gefunden.")
+ 
+ 
+-def fetch_feed(feed_url: str) -> dict[str, Any]:
++def _fetch_feed(feed_url: str) -> dict[str, Any]:
+     resolved_url, root = parse_xml_or_discover(feed_url)
+     channel = root.find("channel") if root.tag.lower().endswith("rss") else root
+     if channel is None:
+@@ -168,3 +179,77 @@
+         return seconds
+     except ValueError:
+         return None
++
++
++def fetch_feed(feed_url: str, *, check_cancelled: Callable[[], None] | None = None) -> dict[str, Any]:
++    """Bound DNS, redirects, discovery, body decoding and XML parsing together.
++
++    A fresh interpreter avoids forking API threads or their database connections.
++    The supervisor always reaps it, including cancellation and timeout paths.
++    """
++    if check_cancelled:
++        check_cancelled()
++    deadline = time.monotonic() + config.FEED_FETCH_TIMEOUT_SECONDS
++    child = subprocess.Popen(
++        [sys.executable, "-m", "app.rss"], cwd=str(config.ROOT),
++        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
++    )
++    payload = json.dumps({"url": feed_url, "max_bytes": config.MAX_FEED_BYTES}).encode()
++    try:
++        while True:
++            if check_cancelled:
++                check_cancelled()
++            remaining = deadline - time.monotonic()
++            if remaining <= 0:
++                raise requests.Timeout("Der Podcast-Feed überschritt das Gesamtzeitlimit.")
++            try:
++                output, _ = child.communicate(input=payload, timeout=min(.2, remaining))
++                break
++            except subprocess.TimeoutExpired:
++                payload = None
++        if check_cancelled:
++            check_cancelled()
++        if time.monotonic() >= deadline:
++            raise requests.Timeout("Der Podcast-Feed überschritt das Gesamtzeitlimit.")
++        if child.returncode != 0:
++            raise RuntimeError("Der Podcast-Feed konnte nicht verarbeitet werden.")
++        result = json.loads(output)
++        if "feed" in result:
++            return result["feed"]
++        if result.get("kind") == "http":
++            raise HTTPException(status_code=result["status"], detail=result["detail"])
++        if result.get("kind") == "timeout":
++            raise requests.Timeout(result["message"])
++        raise ValueError(result["message"])
++    finally:
++        if child.poll() is None:
++            child.kill()
++        child.communicate()
++
++
++def _main() -> None:
++    request = json.load(sys.stdin)
++    config.MAX_FEED_BYTES = int(request["max_bytes"])
++    try:
++        result = {"feed": _fetch_feed(request["url"])}
++    except HTTPException as exc:
++        result = {"kind": "http", "status": exc.status_code, "detail": exc.detail}
++    except requests.HTTPError as exc:
++        status = exc.response.status_code if exc.response is not None else 502
++        result = {"kind": "http", "status": status,
++                  "detail": f"Der Podcast-Feed antwortete mit HTTP {status}."}
++    except FeedTooLargeError:
++        result = {"kind": "http", "status": 413, "detail": {
++            "code": "feed_too_large", "retryable": False,
++            "message": "Der Podcast-Feed überschreitet die zulässige Dateigrösse.",
++            "max_feed_bytes": config.MAX_FEED_BYTES,
++        }}
++    except requests.Timeout:
++        result = {"kind": "timeout", "message": "Der Podcast-Feed antwortete nicht rechtzeitig."}
++    except Exception:
++        result = {"kind": "invalid", "message": "Der Podcast-Feed konnte nicht gelesen oder verarbeitet werden."}
++    print(json.dumps(result, ensure_ascii=False))
++
++
++if __name__ == "__main__":
++    _main()
+--- a/app/service.py
++++ b/app/service.py
+@@ -11,7 +11,7 @@
+ 
+ import requests
+ from fastapi import HTTPException
+-from contextlib import contextmanager
++from contextlib import contextmanager, nullcontext
+ from functools import lru_cache
+ from pathlib import Path
+ from typing import Any, Iterator
+@@ -19,7 +19,7 @@
+ 
+ from . import config
+ from .artifact_contract import ArtifactValidation, canonical_number, canonical_seconds, validate_required_artifacts
+-from .db import connect, dumps, is_mysql, loads, now_iso
++from .db import exact_url_predicate, connect, dumps, is_mysql, loads, now_iso
+ from .storage import episode_dir, slug_from_url, slugify
+ from .security import guarded_get, hash_token
+ from .settings import ai_monthly_spend, get_ai_settings, get_setting, set_setting
+@@ -242,6 +242,8 @@
+ 
+ def store_client_request(con: Any, client_hash: str, request_id: str, episode_id: int | None,
+                          state: str, url_hash: str | None = None) -> Any:
++    if state in {"active", "unconfirmed"}:
++        reject_terminal_request(request_record(con,client_hash,request_id))
+     now = now_iso()
+     con.execute(
+         """INSERT INTO transcription_requests(client_hash,request_id,episode_id,url_hash,state,created_at,updated_at)
+@@ -316,8 +318,9 @@
+ ) -> int:
+     if feed_url:
+         variants = feed_url_variants(feed_url)
+-        placeholders = ",".join("?" for _ in variants)
+-        row = con.execute(f"SELECT id, feed_url FROM podcasts WHERE feed_url IN ({placeholders})", variants).fetchone()
++        placeholders = ",".join("SHA2(?,256)" if is_mysql() else "?" for _ in variants)
++        column = "feed_url_sha256" if is_mysql() else "feed_url"
++        row = con.execute(f"SELECT id, feed_url FROM podcasts WHERE {column} IN ({placeholders})", variants).fetchone()
+         if row:
+             preferred_feed_url = feed_url if urlparse(feed_url).scheme == "https" else None
+             con.execute(
+@@ -417,18 +420,18 @@
+                 client_audio_etag,
+                 now,
+             )
++            con.execute("UPDATE episodes SET latest_source_url=? WHERE id=?",(episode_url,int(row["id"])))
+             add_episode_alias(con, int(row["id"]), episode_url, "feed")
+             return int(row["id"])
+ 
+-    row = con.execute("SELECT id, request_count FROM episodes WHERE episode_url=?", (episode_url,)).fetchone()
++    row = con.execute("SELECT id, request_count FROM episodes WHERE " + exact_url_predicate("episode_url"), (episode_url,)).fetchone()
+     if not row:
+         row = con.execute(
+             """
+             SELECT episodes.id, episodes.request_count
+             FROM episode_aliases
+             JOIN episodes ON episodes.id=episode_aliases.episode_id
+-            WHERE episode_aliases.url=?
+-            """,
++            WHERE """ + exact_url_predicate("episode_aliases.url"),
+             (episode_url,),
+         ).fetchone()
+     if row:
+@@ -482,6 +485,7 @@
+         ),
+     )
+     episode_id = int(cur.lastrowid)
++    con.execute("UPDATE episodes SET latest_source_url=? WHERE id=?",(episode_url,episode_id))
+     add_episode_alias(con, episode_id, episode_url, "canonical")
+     return episode_id
+ 
+@@ -555,6 +559,7 @@
+     payload: dict[str, Any] | None = None,
+     priority: int = 100,
+     dedupe_running: bool = True,
++    source_url: str | None = None,
+ ) -> int:
+     if dedupe_running:
+         row = con.execute(
+@@ -569,14 +574,21 @@
+         ).fetchone()
+         if row:
+             return int(row["id"])
++    if job_type == "transcribe":
++        episode = con.execute("SELECT latest_source_url,episode_url FROM episodes WHERE id=?",(episode_id,)).fetchone()
++        source_url = source_url or (episode["latest_source_url"] if episode else None)
++        if not source_url:
++            raise ValueError("A transcription generation requires an explicit source URL.")
+     now = now_iso()
+     cur = con.execute(
+         """
+-        INSERT INTO jobs (job_type, status, priority, episode_id, podcast_id, payload_json, created_at, updated_at)
+-        VALUES (?, 'queued', ?, ?, ?, ?, ?, ?)
++        INSERT INTO jobs (job_type, status, priority, episode_id, podcast_id, payload_json, created_at, updated_at, source_url)
++        VALUES (?, 'queued', ?, ?, ?, ?, ?, ?, ?)
+         """,
+-        (job_type, priority, episode_id, podcast_id, dumps(payload or {}), now, now),
++        (job_type, priority, episode_id, podcast_id, dumps(payload or {}), now, now, source_url),
+     )
++    if job_type == "transcribe":
++        con.execute("UPDATE episodes SET terminal_error=NULL WHERE id=?",(episode_id,))
+     return int(cur.lastrowid)
+ 
+ 
+@@ -823,7 +835,7 @@
+     typed = loads(raw_message, None)
+     if isinstance(typed, dict) and typed.get("code") in {
+         "source_audio_unavailable", "audio_too_large", "audio_duration_exceeded", "audio_duration_invalid",
+-        "no_speech", "unsupported_language", "processing_timeout", "resources_unavailable",
++        "no_speech", "unsupported_language", "processing_timeout", "resources_unavailable", "invalid_retry_metadata",
+     } and isinstance(typed.get("retryable"), bool):
+         result = {key:value for key,value in typed.items() if key in {
+             "code","message","retryable","retry_after_seconds","source_status","max_audio_bytes","max_duration_seconds"}}
+@@ -873,8 +885,8 @@
+     return result
+ 
+ 
+-def episode_status(episode_id: int) -> dict[str, Any] | None:
+-    with connect() as con:
++def episode_status(episode_id: int, connection: Any = None) -> dict[str, Any] | None:
++    with (nullcontext(connection) if connection is not None else connect()) as con:
+         episode = con.execute(
+             """
+             SELECT episodes.*, podcasts.title AS podcast_title, podcasts.slug AS podcast_slug,
+@@ -935,7 +947,7 @@
+                 progress = progress_for_status(effective_status)
+             progress = canonical_seconds(progress)
+         server_duration = canonical_seconds(episode["detected_duration_seconds"])
+-        error = contract_error or (job_error(failed_job) if public_episode_status == "failed" else None)
++        error = contract_error or (job_error({"error":episode["terminal_error"]}) if public_episode_status == "failed" and episode["terminal_error"] else job_error(failed_job) if public_episode_status == "failed" else None)
+         if public_episode_status == "failed" and error is None:
+             error = {
+                 "code": "transcription_failed",
+--- a/app/worker.py
++++ b/app/worker.py
+@@ -4,8 +4,9 @@
+ import errno
+ import multiprocessing
+ import contextvars
+-from contextlib import contextmanager
++from contextlib import contextmanager, nullcontext
+ import hashlib
++import inspect
+ import hmac
+ import json
+ import math
+@@ -17,12 +18,14 @@
+ import time
+ import uuid
+ from datetime import datetime, timedelta, timezone
++from email.utils import parsedate_to_datetime
+ from pathlib import Path
+ from typing import Any
+ 
+ import requests
+ from fastapi import HTTPException
+ 
++from .checkpoint_provenance import asr_provenance, digest
+ from . import config
+ from .artifact_contract import canonical_seconds, parse_srt, validate_required_artifacts
+ from .caption_sentences import (
+@@ -39,7 +42,7 @@
+ )
+ from .rss import fetch_feed
+ from .security import guarded_get, guarded_post_raw
+-from .service import (artifact_file_sha256, ensure_episode, enqueue_job, episode_status, update_duration_warning,
++from .service import (artifact_file_sha256, job_error, ensure_episode, enqueue_job, episode_status, update_duration_warning,
+                       TranscriptionProviderUnavailable, TranscriptionJobError, TranscriptionResourcesUnavailable, transcription_language_status, invalidate_transcription_provider_status, transcription_provider_status, transcription_resource_status, block_transcription_provider, queue_admission_transaction)
+ from .settings import (
+     ai_monthly_spend,
+@@ -173,8 +176,12 @@
+             if row["episode_id"]:
+                 con.execute("""UPDATE episodes SET status=CASE WHEN ?='failed' THEN 'failed'
+                     WHEN status IN ('downloading','transcribing','postprocessing','finalizing') THEN status ELSE 'queued' END,
+-                    processing_progress=CASE WHEN ?='failed' THEN NULL ELSE processing_progress END,updated_at=? WHERE id=?""",
+-                    (state,state,now,row["episode_id"]))
++                    processing_progress=CASE WHEN ?='failed' THEN NULL ELSE processing_progress END,
++                    terminal_error=CASE WHEN ?='failed' THEN ? ELSE terminal_error END,updated_at=? WHERE id=?""",
++                    (state,state,state,"Worker-Lease abgelaufen; Zeitlimit der Verarbeitung überschritten.",now,row["episode_id"]))
++                if terminal and row["job_type"] == "transcribe":
++                    payload = loads(row["payload_json"], {}) or {}
++                    queue_webhook(payload.get("callback_url"),int(row["episode_id"]),int(row["id"]),"episode.failed",connection=con)
+ 
+ 
+ 
+@@ -183,6 +190,8 @@
+ 
+ 
+ _active_job_claim = contextvars.ContextVar("active_job_claim", default=None)
++_checkpoint_expectations = contextvars.ContextVar("checkpoint_expectations", default=None)
++_analysis_source = contextvars.ContextVar("analysis_source", default=None)
+ 
+ 
+ @contextmanager
+@@ -190,10 +199,14 @@
+     if not job.get("claim_token"):
+         raise JobClaimLost("A worker mutation requires a claimed job token.")
+     token = _active_job_claim.set(job)
++    checkpoint_token = _checkpoint_expectations.set({})
++    source_token = _analysis_source.set(None)
+     try:
+         yield
+     finally:
+         _active_job_claim.reset(token)
++        _checkpoint_expectations.reset(checkpoint_token)
++        _analysis_source.reset(source_token)
+ 
+ 
+ def assert_job_claim(con: Any, episode_id: int | None = None, job: dict[str, Any] | None = None) -> Any:
+@@ -212,16 +225,16 @@
+ def claim_job(worker_id: str) -> dict[str, Any] | None:
+     reset_stale_jobs()
+     with connect() as check:
+-        has_transcription = check.execute("SELECT 1 FROM jobs WHERE status='queued' AND job_type='transcribe' LIMIT 1").fetchone() is not None
++        has_transcription = check.execute("SELECT 1 FROM jobs WHERE status='queued' AND job_type='transcribe' AND (next_attempt_at IS NULL OR next_attempt_at <= ?) LIMIT 1", (now_iso(),)).fetchone() is not None
+     provider_status = transcription_provider_status() if has_transcription else None
+     with queue_admission_transaction() as con:
+         rows = con.execute(
+             """
+             SELECT * FROM jobs
+-            WHERE status='queued'
++            WHERE status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+             ORDER BY priority ASC, created_at ASC
+             LIMIT 25
+-            """
++            """, (now_iso(),)
+         ).fetchall()
+         for row in rows:
+             if row["job_type"] == "transcribe" and (not has_transcription or provider_status or transcribe_block_reason(con)):
+@@ -233,7 +246,7 @@
+                 """
+                 UPDATE jobs SET status='running', locked_by=?, lease_until=?, claim_token=?,
+                     attempts=attempts+1, started_at=COALESCE(started_at, ?),
+-                    updated_at=?, error=NULL
++                    updated_at=?, error=NULL, next_attempt_at=NULL
+                 WHERE id=? AND status='queued'
+                 """,
+                 (worker_id, lease_until, claim_token, now, now, row["id"]),
+@@ -298,7 +311,7 @@
+     with tx() as con:
+         assert_job_claim(con)
+         job = con.execute(
+-            "SELECT job_type, episode_id FROM jobs WHERE id=?",
++            "SELECT * FROM jobs WHERE id=?",
+             (job_id,),
+         ).fetchone()
+         con.execute(
+@@ -314,6 +327,8 @@
+                 "UPDATE episodes SET status='ready', processing_progress=1.0, updated_at=? WHERE id=?",
+                 (timestamp, job["episode_id"]),
+             )
++            payload = loads(job["payload_json"], {}) or {}
++            queue_webhook(payload.get("callback_url"),int(job["episode_id"]),job_id,"episode.ready",connection=con)
+ 
+ 
+ def defer_job_for_provider(job: dict[str, Any], message: str) -> None:
+@@ -332,8 +347,16 @@
+ 
+ def fail_job(job: dict[str, Any], error: str) -> str:
+     service_error = loads(error, None)
+-    permanent = isinstance(service_error, dict) and service_error.get("retryable") is False
++    classified = job_error({"error": error})
++    permanent = classified is not None and classified.get("retryable") is False
+     status = "failed" if permanent or int(job["attempts"]) >= int(job["max_attempts"]) else "queued"
++    retry_seconds = service_error.get("retry_after_seconds") if isinstance(service_error,dict) else None
++    if retry_seconds is None:
++        retry_seconds = min(1800,30 * 2**max(0,min(16,int(job["attempts"])-1)))
++    if isinstance(retry_seconds,bool) or not isinstance(retry_seconds,(int,float)) or not math.isfinite(retry_seconds) or not 0 <= retry_seconds <= 86400:
++        error = str(TranscriptionJobError("invalid_retry_metadata","Die Wartezeit des Anbieters liegt ausserhalb des unterstützten Bereichs."))
++        status = "failed"
++    next_attempt_at = future_iso(max(1,int(retry_seconds))) if status == "queued" else None
+     with tx() as con:
+         try:
+             assert_job_claim(con, job=job)
+@@ -341,17 +364,17 @@
+             return "canceled"
+         con.execute(
+             """
+-            UPDATE jobs SET status=?, error=?, lease_until=NULL, locked_by=NULL,
++            UPDATE jobs SET status=?, error=?, next_attempt_at=?, lease_until=NULL, locked_by=NULL,
+                 updated_at=?, finished_at=CASE WHEN ?='failed' THEN ? ELSE finished_at END
+             WHERE id=?
+             """,
+-            (status, error[:4000], now_iso(), status, now_iso(), job["id"]),
++            (status, error[:4000], next_attempt_at, now_iso(), status, now_iso(), job["id"]),
+         )
+         if job["job_type"] == "transcribe" and job["episode_id"]:
+             if status == "failed":
+                 con.execute(
+-                    "UPDATE episodes SET status='failed', processing_progress=NULL, updated_at=? WHERE id=?",
+-                    (now_iso(), job["episode_id"]),
++                    "UPDATE episodes SET status='failed', terminal_error=?, processing_progress=NULL, updated_at=? WHERE id=?",
++                    (error[:4000], now_iso(), job["episode_id"]),
+                 )
+             else:
+                 con.execute(
+@@ -375,6 +398,9 @@
+                 "UPDATE podcasts SET last_checked_at=?, updated_at=? WHERE id=?",
+                 (now_iso(), now_iso(), job["podcast_id"]),
+             )
++        if status == "failed" and job["job_type"] == "transcribe" and job["episode_id"]:
++            payload = loads(job["payload_json"], {}) or {}
++            queue_webhook(payload.get("callback_url"),int(job["episode_id"]),int(job["id"]),"episode.failed",connection=con)
+     return status
+ 
+ 
+@@ -534,6 +560,25 @@
+     return total, busy, proc_ticks, now
+ 
+ 
++def source_retry_after(response: requests.Response) -> int | None:
++    value = response.headers.get("Retry-After")
++    if value is None:
++        return None
++    try:
++        if str(value).isdigit():
++            delay = int(value)
++        else:
++            moment = parsedate_to_datetime(value)
++            if moment.tzinfo is None:
++                raise ValueError()
++            delay = max(0,math.ceil(moment.timestamp()-time.time()))
++        if not 0 <= delay <= 86400:
++            raise ValueError()
++        return delay
++    except (ValueError,TypeError,OverflowError):
++        raise TranscriptionJobError("invalid_retry_metadata","Die Wartezeit des Anbieters liegt ausserhalb des unterstützten Bereichs.") from None
++
++
+ def _download_audio_process(url: str, tmp: Path, connection) -> None:
+     """Network I/O runs in a killable child, including DNS and slow trickle reads."""
+     signal.signal(signal.SIGTERM, signal.SIG_DFL)
+@@ -560,7 +605,12 @@
+         if status in (404,410):
+             connection.send(("error", str(TranscriptionJobError("source_audio_unavailable", "Die Audiodatei ist beim Podcast-Anbieter nicht mehr verfügbar.", source_status=status))))
+         else:
+-            connection.send(("error", str(TranscriptionJobError("source_audio_unavailable", "Die Audiodatei konnte beim Anbieter nicht abgerufen werden.", retryable=status is None or status >= 500 or status in (408,429), source_status=status))))
++            try:
++                retry_after = source_retry_after(exc.response) if exc.response is not None else None
++                detail = {"retry_after_seconds":retry_after} if retry_after is not None else {}
++                connection.send(("error", str(TranscriptionJobError("source_audio_unavailable", "Die Audiodatei konnte beim Anbieter nicht abgerufen werden.", retryable=status is None or status >= 500 or status in (408,429), source_status=status, **detail))))
++            except TranscriptionJobError as metadata_error:
++                connection.send(("error",str(metadata_error)))
+     except requests.Timeout:
+         connection.send(("error", str(TranscriptionJobError("processing_timeout", "Zeitlimit beim Abruf der Audiodatei überschritten.", retryable=True))))
+     except OSError as exc:
+@@ -679,6 +729,12 @@
+ 
+ def write_json_atomic(path: Path, payload: Any) -> None:
+     check_worker_resources()
++    expected = (_checkpoint_expectations.get() or {}).get(str(path))
++    if expected is not None and isinstance(payload, dict) and payload.get("status") == "ready":
++        # The actual provider/model is returned by call_ai_json, not inferred from
++        # an old checkpoint or a configuration that changed during inference.
++        if payload.get("provider") == expected["provider"] and payload.get("model") == expected["model"]:
++            payload = {**payload, "checkpoint_provenance":expected}
+     path.parent.mkdir(parents=True, exist_ok=True)
+     temporary = path.with_suffix(path.suffix + ".tmp")
+     temporary.write_text(
+@@ -692,9 +748,22 @@
+     path: Path,
+     purpose: str,
+     analysis_revision: str | None = None,
++    *, inputs: Any,
+ ) -> dict[str, Any] | None:
++    settings = get_ai_settings()
++    implementation = "\n".join(inspect.getsource(value) for name,value in sorted(globals().items())
++                               if (name.startswith("make_ai_") or name.startswith("complete_sponsor_") or name == "call_ai_json") and inspect.isfunction(value))
++    expected = {"inputs_sha256":digest(inputs), "source":_analysis_source.get(),
++                "provider":settings["provider"], "model":settings["kimi_model"],
++                "base_url":settings["kimi_base_url"],
++                "prompt_sha256":hashlib.sha256(implementation.encode()).hexdigest()}
++    registered = dict(_checkpoint_expectations.get() or {})
++    registered[str(path)] = expected
++    _checkpoint_expectations.set(registered)
+     payload = load_json(path, None)
+     if not isinstance(payload, dict):
++        return None
++    if payload.get("checkpoint_provenance") != expected:
+         return None
+     if payload.get("status") != "ready" or payload.get("purpose") != purpose:
+         return None
+@@ -2706,6 +2775,7 @@
+             checkpoint_path,
+             "sponsor_adjudication",
+             SPONSOR_ADJUDICATION_ANALYSIS_REVISION,
++            inputs=[episode["title"], section, section_chapters, duration],
+         )
+         if analysis is not None:
+             try:
+@@ -3331,7 +3401,7 @@
+                 revision: str,
+                 proposals: dict[str, Any] | None = None,
+             ) -> list[tuple[int, int]]:
+-                analysis = completed_ai_checkpoint(path, purpose, revision)
++                analysis = completed_ai_checkpoint(path, purpose, revision, inputs=[episode["title"], section, mode, proposals])
+                 resolved: list[tuple[int, int]] = []
+                 if analysis is not None:
+                     try:
+@@ -3467,6 +3537,7 @@
+             path,
+             "sponsor_context_hierarchy_reconciliation",
+             SPONSOR_CONTEXT_HIERARCHY_REVISION,
++            inputs=[episode["title"], section, proposals],
+         )
+         resolved: list[tuple[int, int]] = []
+         if analysis is not None:
+@@ -3558,7 +3629,7 @@
+             else ""
+         )
+         path = run_dir / f"sponsor-context-facts-{mode}-{context_key}{proposal_key}.json"
+-        analysis = completed_ai_checkpoint(path, purpose, revision)
++        analysis = completed_ai_checkpoint(path, purpose, revision, inputs=[episode["title"], candidates, mode, proposals])
+         resolved: dict[int, list[dict[str, Any]]] = {}
+         if analysis is not None:
+             try:
+@@ -4032,6 +4103,7 @@
+             checkpoint_path,
+             "sponsor_edge_adjudication",
+             SPONSOR_EDGE_ANALYSIS_REVISION,
++            inputs=[episode["title"], section],
+         )
+         selected_blocks: list[dict[str, Any]] = []
+         if analysis is not None:
+@@ -5615,7 +5687,7 @@
+         path = run_dir / (
+             f"sponsor-word-{edge}-boundary-{mode}-{candidate_id}-{key}{proposal_key}.json"
+         )
+-        analysis = completed_ai_checkpoint(path, purpose, revision)
++        analysis = completed_ai_checkpoint(path, purpose, revision, inputs=[episode["title"], section, provisional, edge, mode, proposals])
+         decision: dict[str, Any] | None = None
+         if analysis is not None:
+             try:
+@@ -5998,6 +6070,7 @@
+         checkpoint_path,
+         "sponsor_naming",
+         SPONSOR_NAMING_ANALYSIS_REVISION,
++        inputs=[episode["title"], sections, episode_context],
+     )
+     names: list[dict[str, Any]] = []
+     if analysis is not None:
+@@ -6280,10 +6353,10 @@
+     return hmac.new(secret, message, hashlib.sha256).hexdigest()
+ 
+ 
+-def queue_webhook(callback_url: str | None, episode_id: int, job_id: int | None, event: str) -> None:
++def queue_webhook(callback_url: str | None, episode_id: int, job_id: int | None, event: str, *, connection: Any = None) -> None:
+     if not callback_url or not episode_id:
+         return
+-    status = episode_status(episode_id) or {"id": episode_id, "status": "unknown"}
++    status = episode_status(episode_id,connection=connection) or {"id": episode_id, "status": "unknown"}
+     payload = {
+         "event": event,
+         "episode_id": episode_id,
+@@ -6291,7 +6364,7 @@
+         "generated_at": now_iso(),
+     }
+     now = now_iso()
+-    with connect() as con:
++    with (nullcontext(connection) if connection is not None else connect()) as con:
+         con.execute(
+             """
+             INSERT INTO webhook_deliveries (
+@@ -6440,7 +6513,7 @@
+     if not podcast or not podcast["feed_url"]:
+         raise RuntimeError("Podcast Feed fehlt.")
+ 
+-    feed = fetch_feed(podcast["feed_url"])
++    feed = fetch_feed(podcast["feed_url"], check_cancelled=check_worker_resources)
+     limit = int(payload.get("latest_limit") or podcast["auto_latest_limit"] or 3)
+     enqueue_latest = feed_scan_should_enqueue(podcast, payload)
+     latest = feed["episodes"][: max(1, limit)]
+@@ -6461,7 +6534,7 @@
+             )
+             if enqueue_latest:
+                 episode_row = con.execute("SELECT status FROM episodes WHERE id=?", (episode_id,)).fetchone()
+-                if episode_row and episode_row["status"] not in {"ready", "canceled", "deleted"}:
++                if episode_row and episode_row["status"] not in {"ready", "failed", "canceled", "deleted"}:
+                     active = con.execute("SELECT 1 FROM jobs WHERE episode_id=? AND job_type='transcribe' AND status IN ('queued','running','paused') LIMIT 1",(episode_id,)).fetchone()
+                     if active:
+                         continue
+@@ -6694,6 +6767,18 @@
+     return run_dir
+ 
+ 
++def raw_checkpoint_complete(prefix: Path, expected: dict) -> bool:
++    payload = load_json(prefix.with_suffix(".json"), None)
++    marker = load_json(prefix.parent / "raw-checkpoint.json", None)
++    if not isinstance(payload,dict) or payload.get("asr_provenance") != expected or not has_complete_word_timestamps(payload) or not isinstance(marker,dict):
++        return False
++    for suffix in (".json", ".txt", ".srt", ".vtt"):
++        path = prefix.with_suffix(suffix)
++        if not path.is_file() or path.stat().st_size <= 0 or hashlib.sha256(path.read_bytes()).hexdigest() != marker.get(path.name):
++            return False
++    return True
++
++
+ def run_transcribe(job: dict[str, Any], payload: dict[str, Any]) -> None:
+     if language := transcription_language_status():
+         raise TranscriptionJobError("unsupported_language", language["message"])
+@@ -6711,6 +6796,8 @@
+         ).fetchone()
+     if not episode:
+         raise RuntimeError("Episode nicht gefunden.")
++    episode = dict(episode)
++    episode["episode_url"] = job["source_url"]
+ 
+     result_dir = Path(episode["result_dir"] or episode_dir(episode["podcast_slug"] or "single-episodes", episode["slug"]))
+     result_dir.mkdir(parents=True, exist_ok=True)
+@@ -6767,10 +6854,12 @@
+     progress_path = run_dir / "transcription-progress.json"
+     raw_payload = load_json(raw_prefix.with_suffix(".json"), None)
+     raw_paths = [raw_prefix.with_suffix(suffix) for suffix in (".json", ".txt", ".srt", ".vtt")]
+-    raw_complete = (
+-        has_complete_word_timestamps(raw_payload)
+-        and all(path.is_file() and path.stat().st_size > 0 for path in raw_paths)
+-    )
++    expected_asr = asr_provenance(audio_sha256, {
++        "model":config.WHISPER_MODEL, "compute_type":config.WHISPER_COMPUTE_TYPE,
++        "beam_size":config.WHISPER_BEAM_SIZE, "batch_size":config.WHISPER_BATCH_SIZE,
++        "chunk_seconds":config.CHUNK_SECONDS, "language":config.WHISPER_LANGUAGE,
++        "word_timestamps":True})
++    raw_complete = raw_checkpoint_complete(raw_prefix, expected_asr)
+     if not raw_complete:
+         set_episode_status(episode_id, "transcribing")
+         chunk_workers = adaptive_chunk_workers()
+@@ -6826,6 +6915,9 @@
+     if not any(isinstance(segment, dict) and isinstance(segment.get("text"), str) and segment["text"].strip() for segment in raw_payload["segments"]):
+         raise TranscriptionJobError("no_speech", "In der Audiodatei wurde keine transkribierbare Sprache erkannt.")
+ 
++    if not raw_checkpoint_complete(raw_prefix, expected_asr):
++        raise RuntimeError("Rohtranskript hat keinen vollständigen, zur Audioquelle passenden Checkpoint.")
++    _analysis_source.set({"audio_sha256":audio_sha256,"raw_sha256":hashlib.sha256(raw_prefix.with_suffix(".json").read_bytes()).hexdigest()})
+     touch_job(job_id)
+     set_episode_progress(episode_id, "postprocessing", 0.80)
+     with tx() as con:
+@@ -6842,7 +6934,8 @@
+     except (OSError, UnicodeDecodeError, ValueError):
+         readable_cues = []
+     readable_complete = bool(
+-        isinstance(groups, list)
++        raw_complete
++        and isinstance(groups, list)
+         and groups
+         and len(readable_cues) == len(groups)
+         and all(path.is_file() and path.stat().st_size > 0 for path in readable_paths)
+@@ -6967,6 +7060,7 @@
+             sponsor_checkpoint,
+             "sponsors",
+             SPONSOR_ANALYSIS_REVISION,
++            inputs=[episode["title"], groups, detected_duration, window, window_chapters],
+         )
+         if sponsor_analysis is not None:
+             try:
+@@ -7031,6 +7125,7 @@
+             sponsor_verification_checkpoint,
+             "sponsor_verification",
+             SPONSOR_ANALYSIS_REVISION,
++            inputs=[episode["title"], groups, detected_duration, window, window_chapters, window_blocks],
+         )
+         if sponsor_verification is not None:
+             try:
+@@ -7107,6 +7202,7 @@
+             publisher_sponsor_checkpoint,
+             "publisher_sponsor_verification",
+             PUBLISHER_SPONSOR_ANALYSIS_REVISION,
++            inputs=[episode["title"], focus_section, verified_sponsor_blocks, detected_duration],
+         )
+         if publisher_sponsor_verification is not None:
+             try:
+@@ -7270,6 +7366,7 @@
+         chapter_checkpoint,
+         "chapters",
+         CHAPTER_ANALYSIS_REVISION,
++        inputs=[episode["title"], groups, detected_duration, sponsor_blocks, publisher_chapters],
+     )
+     if chapter_analysis is not None:
+         try:
+@@ -7321,6 +7418,7 @@
+         summary_checkpoint,
+         "summary",
+         SUMMARY_ANALYSIS_REVISION,
++        inputs=[episode["title"], groups, client_chapters, sponsor_blocks, detected_duration],
+     )
+     if summary_analysis is not None:
+         try:
+@@ -7409,9 +7507,11 @@
+             time.sleep(config.WORKER_POLL_SECONDS)
+             continue
+         with job_claim(job):
++            completed = False
+             try:
+                 run_job(job)
+                 finish_job(int(job["id"]))
++                completed = True
+                 if job["job_type"] == "transcribe":
+                     with connect() as con:
+                         finished_episode = con.execute("SELECT result_dir FROM episodes WHERE id=?", (job["episode_id"],)).fetchone()
+@@ -7423,19 +7523,20 @@
+                             delete_downloaded_audio(finished_run / audio_name, finished_run / "audio.mp3")
+                 if job["job_type"] == "transcribe":
+                     payload = loads(job["payload_json"], {}) or {}
+-                    queue_webhook(payload.get("callback_url"), int(job["episode_id"] or 0), int(job["id"]), "episode.ready")
+                     process_due_webhooks(limit=2)
+             except JobClaimLost:
+                 pass
+             except TranscriptionProviderUnavailable as exc:
+                 defer_job_for_provider(job, str(exc))
+             except Exception as exc:
++                if completed:
++                    print("Post-completion maintenance failed: " + exception_message(exc),flush=True)
++                    continue
+                 retry_status = record_job_exception(job, exc)
+                 if job["job_type"] == "transcribe" and retry_status == "failed":
+                     cleanup_failed_transcribe_job(job)
+                 if retry_status == "failed":
+                     payload = loads(job["payload_json"], {}) or {}
+-                    queue_webhook(payload.get("callback_url"), int(job["episode_id"] or 0), int(job["id"]), "episode.failed")
+                     process_due_webhooks(limit=2)
+     return 0
+ 
+--- a/tools/api_contract_v3_regression.py
++++ b/tools/api_contract_v3_regression.py
+@@ -26,7 +26,7 @@
+ 
+ def test_schema_has_one_public_contract() -> None:
+     schema = api_schema(1)
+-    if schema["schema_revision"] != "2026-08-04.1":
++    if schema["schema_revision"] != "2026-09-06.1":
+         fail(f"wrong schema revision: {schema['schema_revision']}")
+     if schema["base_url"] != "https://transcript.instacast.ch/api/v1":
+         fail(f"wrong API base URL: {schema['base_url']}")
+--- /dev/null
++++ b/tools/artifact_resource_regression.py
+@@ -0,0 +1,30 @@
++#!/usr/bin/env python3
++import sys,tempfile,unittest,json,hashlib
++from pathlib import Path
++from unittest.mock import patch
++sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
++from app import artifact_contract as contract, config
++class ArtifactResourceTests(unittest.TestCase):
++ def test_transcript_cues_cannot_exceed_measured_audio(self):
++  with tempfile.TemporaryDirectory() as directory:
++   paths={kind:Path(directory)/kind for kind in ['transcript_srt','chapters_json','ads_json','summary_json']}
++   paths['transcript_srt'].write_text('1\n00:00:09,000 --> 00:00:11,000\nThis exceeds the audio.\n')
++   shared={'schema_version':1,'audio_duration_seconds':10.0,'transcript_revision':'sha256:'+hashlib.sha256(paths['transcript_srt'].read_bytes()).hexdigest()}
++   paths['chapters_json'].write_text(json.dumps(dict(shared,chapters=[{'start':0.0,'end':10.0,'title':'Content','is_sponsor':False}])))
++   paths['ads_json'].write_text(json.dumps(dict(shared,segments=[])))
++   paths['summary_json'].write_text(json.dumps(dict(shared,summary='A valid summary.',topic_titles=['Content'])))
++   result=contract.validate_required_artifacts(paths,10)
++   self.assertFalse(result.valid,'Transcript cue past measured duration was published')
++   self.assertTrue(any('exceeds audio duration' in issue for issue in result.issues),result.issues)
++ def test_any_oversized_artifact_rejected_before_any_parsing(self):
++  required=['transcript_srt','chapters_json','ads_json','summary_json']
++  with tempfile.TemporaryDirectory() as directory:
++   paths={kind:Path(directory)/kind for kind in required}
++   for oversized in required:
++    with self.subTest(kind=oversized):
++     for kind,path in paths.items():path.write_bytes(b'x'*(33 if kind==oversized else 1))
++     with patch.object(config,'MAX_ARTIFACT_BYTES',32,create=True),patch.object(contract,'parse_srt',side_effect=AssertionError('Parsed before enforcing artifact byte cap')):
++      result=contract.validate_required_artifacts(paths,10)
++     self.assertFalse(result.valid)
++     self.assertTrue(any(oversized in issue and 'byte limit' in issue for issue in result.issues),result.issues)
++if __name__=='__main__':unittest.main()
+--- /dev/null
++++ b/tools/feed_transport_regression.py
+@@ -0,0 +1,161 @@
++#!/usr/bin/env python3
++"""Feed resource boundaries, executed against production methods with controlled peers."""
++import os
++import subprocess
++import sys
++import tempfile
++import textwrap
++import threading
++import time
++import unittest
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
++from pathlib import Path
++from unittest.mock import patch
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++from app import config, rss
++import requests
++
++class FeedTransportTests(unittest.TestCase):
++    def response(self, chunks, headers=None):
++        response = requests.Response()
++        response.status_code = 200
++        response.raw = object()
++        response.url = 'https://example.org/feed.xml'
++        response.headers.update(headers or {})
++        response.iter_content = lambda *args, **kwargs: iter(chunks)
++        response.close = lambda: None
++        return response
++
++    def test_feed_requests_stream_before_size_check(self):
++        response = self.response([b'<rss/>'])
++        with patch.object(rss, 'guarded_get', return_value=response) as get:
++            self.assertEqual(b'<rss/>', rss.fetch_response(response.url).content)
++        self.assertTrue(get.call_args.kwargs.get('stream'), 'Feed eagerly buffered before size guard')
++
++    def test_declared_oversize_reads_no_body(self):
++        response = self.response([], {'Content-Length': '9'})
++        def body(*args, **kwargs):
++            self.fail('Oversized declared body consumed')
++        response.iter_content = body
++        with patch.object(rss, 'guarded_get', return_value=response), patch.object(config, 'MAX_FEED_BYTES', 8):
++            with self.assertRaisesRegex(ValueError, 'gross'):
++                rss.fetch_response(response.url)
++
++    def test_unknown_length_stops_at_limit_crossing(self):
++        response = self.response([])
++        consumed = []
++        def body(*args, **kwargs):
++            for chunk in [b'12345', b'67890', b'must never read']:
++                consumed.append(chunk)
++                yield chunk
++        response.iter_content = body
++        with patch.object(rss, 'guarded_get', return_value=response), patch.object(config, 'MAX_FEED_BYTES', 8):
++            with self.assertRaisesRegex(ValueError, 'gross'):
++                rss.fetch_response(response.url)
++        self.assertEqual(2, len(consumed), 'Whole unbounded body consumed before enforcing cap')
++
++    def test_content_encoding_does_not_bypass_decoded_byte_cap(self):
++        response = self.response([b'12345', b'67890'], {'Content-Length': '3', 'Content-Encoding': 'gzip'})
++        with patch.object(rss, 'guarded_get', return_value=response), patch.object(config, 'MAX_FEED_BYTES', 8):
++            with self.assertRaisesRegex(ValueError, 'gross'):
++                rss.fetch_response(response.url)
++
++    def test_whole_feed_deadline_kills_blocked_child(self):
++        # A blocked DNS/read/parser surrogate in a real OS child. Parent's
++        # independent timeout also proves the old implementation never enforces it.
++        with tempfile.TemporaryDirectory() as directory:
++            sleeper = Path(directory) / 'blocked-python'
++            pidfile = Path(directory) / 'pid'
++            sleeper.write_text('#!' + sys.executable + '\nimport os,time\nopen(' + repr(str(pidfile)) + ',"w").write(str(os.getpid()))\ntime.sleep(30)\n')
++            sleeper.chmod(0o755)
++            source = textwrap.dedent('''
++                import sys,time
++                from unittest.mock import patch
++                from app import rss,config
++                import requests
++                config.FEED_FETCH_TIMEOUT_SECONDS = .15
++                # Old path blocks in fetch_response; bounded path blocks inside
++                # the actual child executable and must kill/wait it.
++                with patch.object(rss, 'validate_public_url', side_effect=lambda url,*a,**kw:url), patch.object(rss, 'fetch_response', side_effect=lambda url:time.sleep(30)), patch.object(sys, 'executable', EXECUTABLE):
++                    try:rss.fetch_feed('https://example.org/feed.xml')
++                    except requests.Timeout:print('bounded timeout')
++                    else:raise AssertionError('No total timeout')
++            ''').replace('EXECUTABLE', repr(str(sleeper)))
++            env = dict(os.environ, PYTHONPATH=str(Path(rss.__file__).resolve().parents[1]))
++            try:
++                result = subprocess.run([sys.executable, '-c', source], env=env, capture_output=True, text=True, timeout=2)
++            except subprocess.TimeoutExpired:
++                self.fail('Feed DNS/body/parser has no total operation deadline')
++            self.assertEqual(0, result.returncode, result.stderr)
++            self.assertIn('bounded timeout', result.stdout)
++            if pidfile.exists():
++                with self.assertRaises(ProcessLookupError):os.kill(int(pidfile.read_text()), 0)
++
++    def test_cancellation_before_network_does_not_start_child(self):
++        def cancelled():raise InterruptedError('operator stopped')
++        with self.assertRaisesRegex(InterruptedError, 'operator stopped'):
++            rss.fetch_feed('https://example.org/feed.xml', check_cancelled=cancelled)
++
++    def test_cancellation_reaps_child_already_blocked(self):
++        with tempfile.TemporaryDirectory() as directory:
++            runner = Path(directory) / 'blocked-python'
++            pidfile = Path(directory) / 'pid'
++            runner.write_text('#!' + sys.executable + '\nimport os,time\nopen(' + repr(str(pidfile)) + ',"w").write(str(os.getpid()))\ntime.sleep(30)\n')
++            runner.chmod(0o755)
++            calls = 0
++            def check():
++                nonlocal calls
++                calls += 1
++                if calls >= 4:raise InterruptedError('worker stopped')
++            with patch.object(sys, 'executable', str(runner)):
++                with self.assertRaisesRegex(InterruptedError, 'worker stopped'):
++                    rss.fetch_feed('https://example.org/feed.xml', check_cancelled=check)
++            self.assertTrue(pidfile.exists())
++            with self.assertRaises(ProcessLookupError):os.kill(int(pidfile.read_text()), 0)
++
++    def test_url_policy_survives_process_boundary(self):
++        with self.assertRaises(rss.HTTPException) as error:
++            rss.fetch_feed('file:///private-file')
++        self.assertEqual(400, error.exception.status_code)
++
++    def test_real_transport_success_errors_redirects_and_cleanup(self):
++        xml = b'<rss><channel><title>Fixture</title><item><title>Episode</title><guid>test</guid><enclosure url="https://example.org/audio.mp3"/></item></channel></rss>'
++        class Handler(BaseHTTPRequestHandler):
++            def log_message(self, *args):pass
++            def do_GET(self):
++                if self.path == '/redirect':
++                    self.send_response(302);self.send_header('Location', '/feed');self.end_headers();return
++                if self.path == '/missing':
++                    self.send_response(404);self.end_headers();return
++                if self.path == '/oversized':body = b'x' * 2048
++                elif self.path == '/invalid':body = b'invalid feed'
++                else:body = xml
++                self.send_response(200);self.send_header('Content-Length', str(len(body)));self.end_headers()
++                self.wfile.write(body)
++        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
++        thread = threading.Thread(target=server.serve_forever, daemon=True);thread.start()
++        try:
++            with tempfile.TemporaryDirectory() as directory:
++                # Only the test executable allows loopback, keeping the production
++                # SSRF policy intact. All requests, redirects, decoding and IPC are real.
++                runner = Path(directory) / 'fixture-python'
++                runner.write_text('#!' + sys.executable + '\nimport sys\nsys.path.insert(0,' + repr(str(Path(rss.__file__).resolve().parents[1])) + ')\nfrom app import rss,security\nsecurity.validate_public_url = rss.validate_public_url = lambda url,*a,**kw:url\nrss._main()\n')
++                runner.chmod(0o755)
++                base = 'http://127.0.0.1:' + str(server.server_port)
++                with patch.object(sys, 'executable', str(runner)), patch.object(config, 'MAX_FEED_BYTES', 1024), patch.object(config, 'FEED_FETCH_TIMEOUT_SECONDS', 5):
++                    for path in ['/feed', '/redirect']:
++                        result = rss.fetch_feed(base + path)
++                        self.assertEqual('Fixture', result['title'])
++                        self.assertEqual('test', result['episodes'][0]['guid'])
++                    with self.assertRaises(rss.HTTPException) as error:rss.fetch_feed(base + '/missing')
++                    self.assertEqual(404, error.exception.status_code)
++                    with self.assertRaises(rss.HTTPException) as oversized:rss.fetch_feed(base + '/oversized')
++                    self.assertEqual(413, oversized.exception.status_code)
++                    self.assertEqual('feed_too_large', oversized.exception.detail['code'])
++                    self.assertFalse(oversized.exception.detail['retryable'])
++                    with self.assertRaisesRegex(ValueError, 'verarbeitet'):rss.fetch_feed(base + '/invalid')
++        finally:
++            server.shutdown();server.server_close();thread.join()
++
++if __name__ == '__main__':unittest.main()
+--- a/tools/pipeline_resume_regression.py
++++ b/tools/pipeline_resume_regression.py
+@@ -6,13 +6,14 @@
+ import tempfile
+ from pathlib import Path
+ from types import SimpleNamespace
++from unittest.mock import patch
+ 
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT))
+ sys.path.insert(0, str(ROOT / "tools"))
+ 
+-from app.worker import completed_ai_checkpoint, transcription_progress  # noqa: E402
++from app.worker import completed_ai_checkpoint, transcription_progress, write_json_atomic  # noqa: E402
+ from transcribe_podcast import find_untranscribed_vad_spans  # noqa: E402
+ from transcribe_podcast_parallel import (  # noqa: E402
+     build_chunks,
+@@ -75,26 +76,22 @@
+ 
+ 
+ def test_only_complete_ai_checkpoint_is_reused() -> None:
+-    with tempfile.TemporaryDirectory(prefix="instacast-ai-resume-") as temporary:
++    with tempfile.TemporaryDirectory(prefix="instacast-ai-resume-") as temporary, patch("app.worker.transcription_resource_status", return_value=None), patch("app.worker.get_ai_settings", return_value={"provider":"deepseek", "kimi_model":"test-model", "kimi_base_url":"https://example.org"}):
+         checkpoint = Path(temporary) / "sponsor-analysis.json"
+-        checkpoint.write_text(
+-            json.dumps(
+-                {
+-                    "status": "ready",
+-                    "purpose": "sponsors",
+-                    "analysis_revision": "revision-1",
+-                    "payload": {"sponsor_blocks": []},
+-                }
+-            ),
+-            encoding="utf-8",
+-        )
+-        if completed_ai_checkpoint(checkpoint, "sponsors") is None:
+-            fail("complete AI checkpoint was not reused")
+-        if completed_ai_checkpoint(checkpoint, "sponsors", "revision-1") is None:
++        payload = {"status":"ready", "purpose":"sponsors", "analysis_revision":"revision-1",
++                   "provider":"deepseek", "model":"test-model", "payload":{"sponsor_blocks":[]}}
++        inputs = {"transcript":"Source-bound regression sentence."}
++        checkpoint.write_text(json.dumps(payload), encoding="utf-8")
++        if completed_ai_checkpoint(checkpoint, "sponsors", inputs=inputs) is not None:
++            fail("unproven historical checkpoint was reused")
++        write_json_atomic(checkpoint, payload)
++        if completed_ai_checkpoint(checkpoint, "sponsors", inputs=inputs) is None:
++            fail("complete source-bound AI checkpoint was not reused")
++        if completed_ai_checkpoint(checkpoint, "sponsors", "revision-1", inputs=inputs) is None:
+             fail("checkpoint with the current analysis revision was not reused")
+-        if completed_ai_checkpoint(checkpoint, "sponsors", "revision-2") is not None:
++        if completed_ai_checkpoint(checkpoint, "sponsors", "revision-2", inputs=inputs) is not None:
+             fail("checkpoint with an obsolete analysis revision was reused")
+-        if completed_ai_checkpoint(checkpoint, "summary") is not None:
++        if completed_ai_checkpoint(checkpoint, "summary", inputs=inputs) is not None:
+             fail("AI checkpoint was reused for the wrong processing purpose")
+ 
+ 
+--- a/tools/queue_admission_mysql_regression.py
++++ b/tools/queue_admission_mysql_regression.py
+@@ -27,6 +27,8 @@
+     parser.add_argument('--reliability', action='store_true')
+     parser.add_argument('--rates', action='store_true')
+     parser.add_argument('--edge-cases', action='store_true')
++    parser.add_argument('--systematic', action='store_true')
++    parser.add_argument('--test', help='Run one isolated test method')
+     parser.add_argument('--admin-config', default='/etc/webmin/mysql/config')
+     args = parser.parse_args()
+     auth = dict(line.split('=', 1) for line in Path(args.admin_config).read_text().splitlines() if '=' in line)
+@@ -51,6 +53,9 @@
+         if args.edge_cases:
+             from worker_edge_cases_regression import EdgeCasesTests
+             base = EdgeCasesTests
++        if args.systematic:
++            from systematic_state_regression import SystematicTests
++            base = SystematicTests
+         class MySQLAdmissionTests(base):
+             def setUp(self):
+                 super().setUp()
+@@ -67,7 +72,7 @@
+                     con.execute('SET FOREIGN_KEY_CHECKS=1')
+                 init_db()
+ 
+-        suite = unittest.defaultTestLoader.loadTestsFromTestCase(MySQLAdmissionTests)
++        suite = unittest.TestSuite([MySQLAdmissionTests(args.test)]) if args.test else unittest.defaultTestLoader.loadTestsFromTestCase(MySQLAdmissionTests)
+         result = unittest.TextTestRunner(verbosity=1).run(suite)
+         return 0 if result.wasSuccessful() else 1
+     finally:
+--- a/tools/server_model_regression.py
++++ b/tools/server_model_regression.py
+@@ -160,11 +160,16 @@
+         if atomic["status"] == "ready":
+             fail("ready was exposed without required client artifacts")
+ 
++        # The retry clock must become due; production no longer burns attempts immediately.
++        with connect() as con:
++            con.execute("UPDATE jobs SET next_attempt_at=? WHERE id=?", ("2000-01-01T00:00:00+00:00", job["id"]))
+         terminal = worker.claim_job("regression-worker")
+         if not terminal or terminal["claim_token"] == job["claim_token"]:
+             fail("retry did not receive a fresh worker claim")
+         while terminal["attempts"] < terminal["max_attempts"]:
+             worker.fail_job(terminal, "Temporary regression failure")
++            with connect() as con:
++                con.execute("UPDATE jobs SET next_attempt_at=? WHERE id=?", ("2000-01-01T00:00:00+00:00", terminal["id"]))
+             terminal = worker.claim_job("regression-worker")
+             if not terminal:
+                 fail("terminal attempt was not claimed")
+--- /dev/null
++++ b/tools/systematic_state_regression.py
+@@ -0,0 +1,220 @@
++#!/usr/bin/env python3
++"""State/writer and durable failure-boundary checks; isolated, no inference."""
++import json
++import sys
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++sys.path.insert(0,str(Path(__file__).resolve().parent))
++from lifecycle_regression import LifecycleTests
++from app import main,service,worker,config
++from app.db import tx,init_db,is_mysql
++from app.security import hash_token
++
++class SystematicTests(LifecycleTests):
++ def claim(self):
++  with patch.object(worker,'transcription_provider_status',return_value=None),patch.object(worker,'transcribe_block_reason',return_value=None):return worker.claim_job('systematic')
++ def failed_job(self,permanent=True):
++  self.seed(1);job=self.claim()
++  error=json.dumps({'code':'source_audio_unavailable','message':'source failure','retryable':not permanent,'source_status':404 if permanent else 503,'retry_after_seconds':120} if not permanent else {'code':'no_speech','message':'No speech','retryable':False})
++  with worker.job_claim(job):worker.fail_job(job,error)
++  return job,error
++ def test_all_legacy_post_writers_preserve_canceled_interest(self):
++  self.seed(1);self.submit(0,'client-b')
++  main.cancel_legacy_client_request(1,self.request(),1)
++  self.assert_error(lambda:self.submit(0),410,'request_canceled')
++  feed={'feed_url':'https://example.org/feed','title':'test','episodes':[{'episode_url':'https://example.org/0.mp3','guid':'same','title':'test','published_at':None}]}
++  with patch.object(main,'fetch_feed',return_value=feed):
++   self.assert_error(lambda:main.submit_podcast(main.PodcastRequest(feed_url=feed['feed_url'],enqueue_latest=False),self.request(),1),410,'request_canceled')
++  with tx() as con:self.assertEqual('canceled',service.request_record(con,hash_token('client-a'),'legacy:1')['state'])
++ def test_permanent_error_survives_job_retention(self):
++  job,error=self.failed_job()
++  with tx() as con:con.execute("UPDATE jobs SET updated_at='2000-01-01T00:00:00+00:00'")
++  worker.cleanup_retention()
++  self.assertEqual('no_speech',service.episode_status(1)['error']['code'])
++  with tx() as con:self.assertFalse(main.episode_can_be_enqueued(con,con.execute('SELECT * FROM episodes WHERE id=1').fetchone()))
++ def test_exhausted_generation_cannot_be_reset_by_auto_scan(self):
++  self.seed(1);job=self.claim();job['attempts']=job['max_attempts']
++  with tx() as con:con.execute('UPDATE jobs SET attempts=? WHERE id=?',(job['attempts'],job['id']))
++  with worker.job_claim(job):self.assertEqual('failed',worker.fail_job(job,'Repeated source connection failure'))
++  with tx() as con:
++   podcast=service.ensure_podcast(con,'https://example.org/feed',auto_enabled=True)
++   con.execute('UPDATE episodes SET podcast_id=?,guid=? WHERE id=1',(podcast,'same'))
++   service.enqueue_job(con,'feed_scan',podcast_id=podcast)
++  scan=self.claim();feed={'feed_url':'https://example.org/feed','title':'test','episodes':[{'episode_url':'https://example.org/0.mp3','guid':'same','title':'test','published_at':None}]}
++  with worker.job_claim(scan),patch.object(worker,'fetch_feed',return_value=feed),patch.object(worker,'transcription_provider_status',return_value=None):worker.run_feed_scan(scan,{'source':'auto_scan'})
++  with tx() as con:self.assertEqual(1,con.execute("SELECT COUNT(*) AS n FROM jobs WHERE job_type='transcribe'").fetchone()['n'])
++ def assert_permanent_http_classification(self,status):
++  self.seed(1);job=self.claim()
++  error=worker.HTTPException(status_code=status,detail={'code':'feed_too_large','message':'Feed too large','retryable':False})
++  with worker.job_claim(job):self.assertEqual('failed',worker.record_job_exception(job,error))
++  self.assertFalse(service.episode_status(job['episode_id'])['error']['retryable'])
++ def test_worker_respects_http_413_permanent_classification(self):self.assert_permanent_http_classification(413)
++ def test_worker_respects_http_400_permanent_classification(self):self.assert_permanent_http_classification(400)
++ def test_retry_due_time_survives_reinitialization_and_bounds_claim(self):
++  job,error=self.failed_job(False)
++  init_db()
++  self.assertIsNone(self.claim())
++  with tx() as con:con.execute("UPDATE jobs SET next_attempt_at='2000-01-01T00:00:00+00:00'")
++  next_job=self.claim();self.assertEqual(job['id'],next_job['id']);self.assertEqual(2,next_job['attempts'])
++ def test_terminal_completion_and_outbox_commit_together(self):
++  self.seed(1)
++  with tx() as con:con.execute('UPDATE jobs SET payload_json=?',(json.dumps({'callback_url':'https://example.org/callback'}),))
++  job=self.claim()
++  with worker.job_claim(job):worker.finish_job(job['id'])
++  with tx() as con:
++   self.assertEqual('done',con.execute('SELECT status FROM jobs').fetchone()['status'])
++   self.assertEqual(1,con.execute('SELECT COUNT(*) AS n FROM webhook_deliveries').fetchone()['n'])
++ def test_failed_outbox_write_rolls_back_ready(self):
++  self.seed(1)
++  with tx() as con:con.execute('UPDATE jobs SET payload_json=?',(json.dumps({'callback_url':'https://example.org/callback'}),))
++  job=self.claim()
++  with worker.job_claim(job),patch.object(worker,'queue_webhook',side_effect=OSError('injected outbox failure')):
++   with self.assertRaisesRegex(OSError,'injected'):worker.finish_job(job['id'])
++  with tx() as con:self.assertEqual('running',con.execute('SELECT status FROM jobs').fetchone()['status'])
++ def test_duplicate_completion_cannot_duplicate_outbox(self):
++  self.seed(1)
++  with tx() as con:con.execute('UPDATE jobs SET payload_json=?',(json.dumps({'callback_url':'https://example.org/callback'}),))
++  job=self.claim()
++  with worker.job_claim(job):
++   worker.finish_job(job['id'])
++   with self.assertRaises(worker.JobClaimLost):worker.finish_job(job['id'])
++  with tx() as con:self.assertEqual(1,con.execute('SELECT COUNT(*) AS n FROM webhook_deliveries').fetchone()['n'])
++ def test_feed_alias_update_does_not_change_active_source(self):
++  with tx() as con:
++   podcast=service.ensure_podcast(con,'https://example.org/feed')
++   eid=service.ensure_episode(con,'https://example.org/first.mp3',podcast_id=podcast,guid='same')
++   service.enqueue_job(con,'transcribe',episode_id=eid)
++   service.ensure_episode(con,'https://example.org/renewed.mp3',podcast_id=podcast,guid='same')
++   service.enqueue_job(con,'transcribe',episode_id=eid)
++   rows=con.execute("SELECT source_url FROM jobs WHERE job_type='transcribe'").fetchall()
++  self.assertEqual(['https://example.org/first.mp3'],[r['source_url'] for r in rows])
++ def test_explicit_generation_binds_supplied_source_url(self):
++  with tx() as con:
++   podcast=service.ensure_podcast(con,'https://example.org/feed')
++   eid=service.ensure_episode(con,'https://example.org/expired.mp3',podcast_id=podcast,guid='same')
++   service.ensure_episode(con,'https://example.org/current.mp3',podcast_id=podcast,guid='same')
++   con.execute("UPDATE episodes SET status='failed' WHERE id=?",(eid,))
++  payload=main.EpisodeRequest(episode_url='https://example.org/current.mp3',title='test',client_duration_seconds=0,wait_seconds=0,force=True,client_request_id='11111111-1111-4111-8111-111111111111')
++  main.submit_episode(payload,self.request(),1)
++  with tx() as con:self.assertEqual(payload.episode_url,dict(con.execute('SELECT * FROM jobs').fetchone()).get('source_url'))
++ def test_full_urls_with_same_512_character_prefix_are_distinct(self):
++  prefix='https://example.org/'+600*'a'
++  with tx() as con:
++   first=service.ensure_episode(con,prefix+'1');second=service.ensure_episode(con,prefix+'2')
++  self.assertNotEqual(first,second)
++ def test_existing_mariadb_prefix_schema_migrates_rows_and_failure_cause(self):
++  if not is_mysql():self.skipTest('MariaDB DDL migration')
++  prefix='https://example.org/'+600*'a'
++  with tx() as con:
++   eid=service.ensure_episode(con,prefix+'1')
++   jid=service.enqueue_job(con,'transcribe',episode_id=eid)
++   error=json.dumps({'code':'no_speech','message':'No speech','retryable':False})
++   con.execute("UPDATE jobs SET status='failed',error=? WHERE id=?",(error,jid))
++   con.execute("UPDATE episodes SET status='failed' WHERE id=?",(eid,))
++   for table,column,old in [('episodes','episode_url','uniq_episodes_episode_url'),('episode_aliases','url','uniq_episode_aliases_url'),('podcasts','feed_url','uniq_podcasts_feed_url')]:
++    con.execute('ALTER TABLE '+table+' DROP INDEX uniq_'+table+'_full_url')
++    con.execute('ALTER TABLE '+table+' DROP COLUMN '+column+'_sha256')
++    con.execute('CREATE UNIQUE INDEX '+old+' ON '+table+'('+column+'(512))')
++   for table,column in [('episodes','terminal_error'),('episodes','latest_source_url'),('jobs','source_url'),('jobs','next_attempt_at')]:con.execute('ALTER TABLE '+table+' DROP COLUMN '+column)
++  init_db();init_db()
++  with tx() as con:
++   self.assertNotEqual(eid,service.ensure_episode(con,prefix+'2'))
++   row=con.execute('SELECT terminal_error,latest_source_url FROM episodes WHERE id=?',(eid,)).fetchone()
++   self.assertEqual(error,row['terminal_error']);self.assertEqual(prefix+'1',row['latest_source_url'])
++   self.assertEqual(prefix+'1',con.execute('SELECT source_url FROM jobs WHERE id=?',(jid,)).fetchone()['source_url'])
++ def test_mariadb_lookup_uses_exact_url_index(self):
++  if not is_mysql():self.skipTest('MariaDB query plan')
++  with tx() as con:
++   service.ensure_episode(con,'https://example.org/indexed.mp3')
++   class QueryRecorder:
++    def __init__(self):self.statements=[]
++    def execute(self,sql,params=()):self.statements.append((sql,params));return con.execute(sql,params)
++   recorder=QueryRecorder()
++   self.assertIsNotNone(main.find_episode_row_by_url(recorder,'https://example.org/indexed.mp3'))
++   sql,params=recorder.statements[0]
++   plan=con.execute('EXPLAIN '+sql,params).fetchone()
++   self.assertIn('uniq_episodes_full_url',plan['possible_keys'] or '')
++   service.add_episode_alias(con,1,'https://example.org/alias.mp3','test')
++   recorder=QueryRecorder()
++   self.assertIsNotNone(main.find_episode_row_by_url(recorder,'https://example.org/alias.mp3'))
++   sql,params=recorder.statements[-1]
++   plans=con.execute('EXPLAIN '+sql,params).fetchall()
++   self.assertTrue(any('uniq_episode_aliases_full_url' in (r['possible_keys'] or '') for r in plans))
++   service.ensure_podcast(con,'https://example.org/feed')
++   recorder=QueryRecorder();service.ensure_podcast(recorder,'https://example.org/feed')
++   sql,params=recorder.statements[0]
++   plan=con.execute('EXPLAIN '+sql,params).fetchone()
++   self.assertIn('uniq_podcasts_full_url',plan['possible_keys'] or '')
++ def test_url_path_case_is_not_an_alias(self):
++  with tx() as con:
++   first=service.ensure_episode(con,'https://example.org/Audio.mp3')
++   second=service.ensure_episode(con,'https://example.org/audio.mp3')
++  self.assertNotEqual(first,second)
++ def test_schema_retry_intervals_have_explicit_maximum(self):
++  schema=main.api_schema(1)
++  def inspect(value):
++   if isinstance(value,dict):
++    if value.get('type') in ('integer',['integer','null']) and value.get('minimum') in (0,1) and value.get('maximum')==86400:return
++    for key,child in value.items():
++     if key=='retry_after_seconds' and isinstance(child,dict) and child.get('type') in ('integer',['integer','null']):self.assertEqual(86400,child.get('maximum'))
++     inspect(child)
++   elif isinstance(value,list):
++    for child in value:inspect(child)
++  inspect(schema)
++
++ def test_ai_checkpoint_cannot_bypass_input_binding(self):
++  path=Path(self.temp.name)/'analysis.json'
++  path.write_text(json.dumps({'status':'ready','purpose':'sponsors','payload':{}}))
++  with self.assertRaises(TypeError):worker.completed_ai_checkpoint(path,'sponsors')
++ def test_completed_ai_requires_matching_model_and_full_inputs(self):
++  path=Path(self.temp.name)/'analysis.json'
++  original={'status':'ready','purpose':'sponsors','analysis_revision':'r1','payload':{'decision':'old'},'checkpoint_inputs':'old-input'}
++  path.write_text(json.dumps(original))
++  self.assertIsNone(worker.completed_ai_checkpoint(path,'sponsors','r1',inputs={'text':'new'}))
++ def test_completed_ai_reuses_only_exact_actual_model_and_input(self):
++  path=Path(self.temp.name)/'analysis.json'
++  settings={'provider':'deepseek','kimi_model':'model-a','kimi_base_url':'https://example.org'}
++  payload={'status':'ready','purpose':'sponsors','analysis_revision':'r1','provider':'deepseek','model':'model-a','payload':{'decision':'valid'}}
++  with patch.object(worker,'get_ai_settings',return_value=settings):
++   self.assertIsNone(worker.completed_ai_checkpoint(path,'sponsors','r1',inputs={'text':'same'}))
++   worker.write_json_atomic(path,payload)
++   self.assertIsNotNone(worker.completed_ai_checkpoint(path,'sponsors','r1',inputs={'text':'same'}))
++   self.assertIsNone(worker.completed_ai_checkpoint(path,'sponsors','r1',inputs={'text':'changed'}))
++  with patch.object(worker,'get_ai_settings',return_value={**settings,'kimi_model':'model-b'}):
++   self.assertIsNone(worker.completed_ai_checkpoint(path,'sponsors','r1',inputs={'text':'same'}))
++
++ def test_asr_producer_publishes_complete_source_bound_marker_before_exit(self):
++  import transcribe_podcast_parallel as parallel
++  source=Path(self.temp.name)/'source.mp3';source.write_bytes(b'a')
++  output=Path(self.temp.name)/'output'
++  result={'index':0,'start':0,'duration':10,'segments':[{'start':0,'end':1,'text':'Hallo','words':[{'start':0,'end':1,'word':'Hallo'}]}],'total_seconds':0}
++  argv=['parallel',str(source),'--name','transcript-raw','--word-timestamps','--output-dir',str(output),'--work-dir',str(Path(self.temp.name)/'work'),'--no-silence-boundaries']
++  with patch.object(sys,'argv',argv),patch.object(parallel,'audio_duration',return_value=10),patch.object(parallel,'run_chunk',return_value=result):self.assertEqual(0,parallel.main())
++  self.assertTrue((output/'raw-checkpoint.json').is_file())
++  raw=json.loads((output/'transcript-raw.json').read_text())
++  self.assertEqual(worker.checkpoint_audio_hash(source),raw['asr_provenance']['audio_sha256'])
++  self.assertTrue(worker.raw_checkpoint_complete(output/'transcript-raw',raw['asr_provenance']))
++  changed={**raw['asr_provenance'],'model':'different'}
++  self.assertFalse(worker.raw_checkpoint_complete(output/'transcript-raw',changed))
++
++ def test_source_retry_after_is_not_discarded(self):
++  response=worker.requests.Response();response.status_code=429;response.headers={'Retry-After':'120'}
++  error=worker.requests.HTTPError(response=response)
++  messages=[]
++  class Channel:
++   def send(self,value):messages.append(value)
++   def close(self):pass
++  import signal
++  old=signal.getsignal(signal.SIGTERM)
++  try:
++   with patch.object(worker,'guarded_get',side_effect=error):worker._download_audio_process('https://example.org/audio',Path(self.temp.name)/'audio.part',Channel())
++  finally:signal.signal(signal.SIGTERM,old)
++  detail=json.loads(messages[0][1]);self.assertEqual(120,detail.get('retry_after_seconds'))
++ def test_absurd_retry_hint_is_terminal_bad_metadata(self):
++  self.seed(1);job=self.claim()
++  with worker.job_claim(job):worker.fail_job(job,json.dumps({'code':'source_audio_unavailable','message':'bad hint','retryable':True,'retry_after_seconds':86401}))
++  self.assertEqual('invalid_retry_metadata',service.episode_status(1)['error']['code'])
++
++def load_tests(loader,tests,pattern):return unittest.TestSuite(SystematicTests(name) for name in SystematicTests.__dict__ if name.startswith('test_'))
++if __name__=='__main__':unittest.main()
+--- a/tools/transcribe_podcast_parallel.py
++++ b/tools/transcribe_podcast_parallel.py
+@@ -9,7 +9,11 @@
+ import shutil
+ import subprocess
+ import time
++import sys
+ from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++from app.checkpoint_provenance import asr_provenance
+ 
+ from caption_contract import canonical_seconds, format_timestamp, normalize_caption_items, write_srt_file
+ 
+@@ -180,9 +184,7 @@
+     with args.audio.open("rb") as source:
+         for chunk in iter(lambda: source.read(1024*1024), b""):
+             digest.update(chunk)
+-    return {"audio_sha256":digest.hexdigest(), **{key:getattr(args,key) for key in (
+-        "model","compute_type","beam_size","best_of","batched","batch_size","vad",
+-        "word_timestamps","language","initial_prompt","hotwords")}}
++    return asr_provenance(digest.hexdigest(), vars(args))
+ 
+ 
+ def prepare_chunk_plan(work_dir: Path, chunks: list[dict], identity: dict | None = None) -> bool:
+@@ -470,7 +472,8 @@
+         preferred_silence_seconds=args.preferred_silence_seconds,
+         overlap_seconds=max(0.0, args.chunk_overlap_seconds),
+     )
+-    prepare_chunk_plan(args.work_dir, chunks, chunk_source_identity(args))
++    provenance = chunk_source_identity(args)
++    prepare_chunk_plan(args.work_dir, chunks, provenance)
+     for chunk in chunks:
+         index = chunk["index"]
+         chunk["name"] = f"chunk-{index:03d}"
+@@ -526,6 +529,7 @@
+     output_prefix = args.output_dir / args.name
+     text = "\n".join(segment["text"] for segment in segments).strip() + "\n"
+     metadata = {
++        "asr_provenance": provenance,
+         "audio": str(args.audio),
+         "transcription_pipeline_revision": TRANSCRIPTION_PIPELINE_REVISION,
+         "model": args.model,
+@@ -566,6 +570,13 @@
+     if segments:
+         write_srt(output_prefix.with_suffix(".srt"), segments)
+     write_vtt(output_prefix.with_suffix(".vtt"), segments)
++    if segments:
++        # Publish the complete set before deleting chunks or returning to the worker.
++        marker = {output_prefix.with_suffix(suffix).name: hashlib.sha256(output_prefix.with_suffix(suffix).read_bytes()).hexdigest()
++                  for suffix in (".json", ".txt", ".srt", ".vtt")}
++        temporary = args.output_dir / "raw-checkpoint.json.tmp"
++        temporary.write_text(json.dumps(marker, sort_keys=True), encoding="utf-8")
++        temporary.replace(args.output_dir / "raw-checkpoint.json")
+     if not args.keep_work_dir:
+         shutil.rmtree(args.work_dir, ignore_errors=True)
+     print(json.dumps({key: value for key, value in metadata.items() if key != "segments"}, ensure_ascii=False, indent=2))

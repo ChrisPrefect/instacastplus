@@ -1437,23 +1437,28 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
                 return;
             }
             NSURL* audioURL = [cman episodeIsCached:self.episode] ? [cman URLForCachedEpisode:self.episode] : nil;
-            (void)[[TranscriptionQueue shared] enqueueWithEpisodeHash:self.episode.objectHash
+            BOOL enqueued = [[TranscriptionQueue shared] enqueueWithEpisodeHash:self.episode.objectHash
                                                        episodeTitle:self.episode.title ?: @""
                                                           feedTitle:self.episode.feed.title ?: @""
                                                            audioURL:audioURL
                                                            language:self.episode.feed.language];
-            PlaySoundFile(@"AffirmIn", NO);
+            if (enqueued) PlaySoundFile(@"AffirmIn", NO);
         }]];
     }
     // Hidden while a submitted run still owns the episode (same rule as the list menu).
     if (serverTranscriptionEnabled && ![[ServerTranscriptionManager shared] hasActiveItemForEpisodeHash:self.episode.objectHash ?: @""]) {
         [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Server transkribieren", nil) image:[UIImage systemImageNamed:@"server.rack"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
-            if ([[ServerTranscriptionManager shared] enqueueEpisode:self.episode]) {
-                PlaySoundFile(@"AffirmIn", NO);
-            } else {
-                PlayHapticFeedback(ICHapticFeedbackLight);
-            }
+            __weak typeof(self) weakSelf = self;
+            [[ServerTranscriptionManager shared] enqueueEpisode:self.episode completion:^(BOOL accepted, NSString* message) {
+                if (accepted) {
+                    PlaySoundFile(@"AffirmIn", NO);
+                } else if (weakSelf.view.window) {
+                    UIAlertController* alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Server transcription", nil) message:message preferredStyle:UIAlertControllerStyleAlert];
+                    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+                    [weakSelf presentViewController:alert animated:YES completion:nil];
+                }
+            }];
         }]];
     }
 

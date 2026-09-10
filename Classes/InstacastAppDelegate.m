@@ -397,6 +397,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
         return;
     }
     __block id queueObserver = nil;
+    __block id serverProcessingObserver = nil;
     __block id cancellationObserver = nil;
     __block BOOL taskCompleted = NO;
     __block BOOL completionRequested = NO;
@@ -475,6 +476,10 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
             [[NSNotificationCenter defaultCenter] removeObserver:queueObserver];
             queueObserver = nil;
         }
+        if (serverProcessingObserver) {
+            [[NSNotificationCenter defaultCenter] removeObserver:serverProcessingObserver];
+            serverProcessingObserver = nil;
+        }
         if (cancellationObserver) {
             [[NSNotificationCenter defaultCenter] removeObserver:cancellationObserver];
             cancellationObserver = nil;
@@ -506,10 +511,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
                                      @"path": ICTranscriptionLegacyProcessingPath,
                                  }];
 
-    queueObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICTranscriptionQueueDidChangeNotification"
-                                                                      object:nil
-                                                                       queue:[NSOperationQueue mainQueue]
-                                                                  usingBlock:^(__unused NSNotification *note) {
+    void (^queueDidChange)(NSNotification*) = ^(__unused NSNotification *note) {
         TranscriptionQueue* queue = [TranscriptionQueue shared];
         if (completionRequested) {
             completeTask(requestedSuccess, requestedReason);
@@ -520,7 +522,15 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
             !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
             completeTask(YES, @"legacy-processing-completed");
         }
-    }];
+    };
+    queueObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICTranscriptionQueueDidChangeNotification"
+                                                                      object:nil
+                                                                       queue:[NSOperationQueue mainQueue]
+                                                                  usingBlock:queueDidChange];
+    serverProcessingObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICServerTranscriptionProcessingDidChangeNotification"
+                                                                                 object:nil
+                                                                                  queue:[NSOperationQueue mainQueue]
+                                                                             usingBlock:queueDidChange];
 
     cancellationObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICOpenAIBackgroundCancellationWorkDidChangeNotification"
                                                                                object:nil
@@ -584,6 +594,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
         return;
     }
     __block id queueObserver = nil;
+    __block id serverProcessingObserver = nil;
     __block id progressObserver = nil;
     __block id cancellationObserver = nil;
     __block BOOL taskCompleted = NO;
@@ -666,6 +677,10 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
         if (queueObserver) {
             [[NSNotificationCenter defaultCenter] removeObserver:queueObserver];
             queueObserver = nil;
+        }
+        if (serverProcessingObserver) {
+            [[NSNotificationCenter defaultCenter] removeObserver:serverProcessingObserver];
+            serverProcessingObserver = nil;
         }
         if (progressObserver) {
             [[NSNotificationCenter defaultCenter] removeObserver:progressObserver];
@@ -754,10 +769,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
         updateTaskStatus(@(fraction));
     }];
 
-    queueObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICTranscriptionQueueDidChangeNotification"
-                                                                      object:nil
-                                                                       queue:[NSOperationQueue mainQueue]
-                                                                  usingBlock:^(__unused NSNotification *note) {
+    void (^queueDidChange)(NSNotification*) = ^(__unused NSNotification *note) {
         TranscriptionQueue* queue = [TranscriptionQueue shared];
         updateTaskStatus(nil);
         if (completionRequested) {
@@ -770,7 +782,15 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
             continuedTask.progress.completedUnitCount = continuedTask.progress.totalUnitCount;
             completeTask(YES, @"queue-completed");
         }
-    }];
+    };
+    queueObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICTranscriptionQueueDidChangeNotification"
+                                                                      object:nil
+                                                                       queue:[NSOperationQueue mainQueue]
+                                                                  usingBlock:queueDidChange];
+    serverProcessingObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICServerTranscriptionProcessingDidChangeNotification"
+                                                                                 object:nil
+                                                                                  queue:[NSOperationQueue mainQueue]
+                                                                             usingBlock:queueDidChange];
 
     cancellationObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICOpenAIBackgroundCancellationWorkDidChangeNotification"
                                                                                object:nil

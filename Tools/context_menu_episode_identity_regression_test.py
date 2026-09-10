@@ -83,11 +83,12 @@ require(
     "The interaction gate must remember a full episode refetch while the context menu is open.",
 )
 
-will_display = method_body(EPISODES, "willDisplayContextMenuWithConfiguration:")
 will_end = method_body(EPISODES, "willEndContextMenuInteractionWithConfiguration:")
 require(
-    "contextMenuInteractionActive = YES" in will_display,
-    "The table must enter its update gate when UIKit displays the context menu.",
+    "contextMenuInteractionActive = YES" in configuration
+    and configuration.index("contextMenuInteractionActive = YES")
+        < configuration.index("configurationWithIdentifier:"),
+    "The table must enter its update gate when UIKit begins lifting the cell, before menu presentation.",
 )
 require(
     "addCompletion:" in will_end

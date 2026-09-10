@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "live_inferences": 1,
+  "provider": "openai_codex",
+  "model": "gpt-5.6-sol",
+  "billing_mode": "chatgpt_subscription",
+  "job_id": 1,
+  "episode_id": 1,
+  "input_tokens": 3860,
+  "output_tokens": 101,
+  "api_cost_usd": null,
+  "usage_rows": 1,
+  "summary": "Die Stadtbibliothek verlängert ab Oktober ihre Samstagsöffnung bis 18 Uhr. Ab November bietet sie zudem kostenlose, anmeldepflichtige Robotik-Programmierkurse für Jugendliche an.",
+  "summary_path": "/tmp/instacast-final-worker-smoke/isolated-state/summary.json",
+  "isolated_db": "/tmp/instacast-final-worker-smoke/isolated-state/smoke.sqlite3",
+  "content_matches_json": true,
+  "production_database_touched": false,
+  "test_scope": "Real OAuth summary generation, usage persistence, and summary JSON publication in isolated SQLite; no audio transcription or complete episode pipeline."
+}

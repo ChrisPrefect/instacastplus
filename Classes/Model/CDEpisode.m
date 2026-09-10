@@ -11,6 +11,7 @@
 #import "CDFeed.h"
 #import "CDMedium.h"
 #import "InstacastPlus-Swift.h"
+#import <execinfo.h>
 
 @interface CDEpisode ()
 @property (nonatomic, strong) NSString * imageURL_;
@@ -327,6 +328,35 @@ static void ICProcessPendingTranscriptCacheRemovals(void)
     BOOL wasConsumed = self.consumed;
     if (wasConsumed == consumed) {
         return;
+    }
+    if (wasConsumed && !consumed) {
+        // Capture the reset caller here; resolve symbols off the Core Data queue.
+        NSArray<NSNumber*>* addresses = [NSThread callStackReturnAddresses];
+        NSDictionary* snapshot = @{
+            @"episodeHash": self.objectHash ?: @"",
+            @"episodeObjectID": self.objectID.URIRepresentation.absoluteString,
+            @"episodePosition": @(self.position),
+            @"episodeDuration": @(self.duration),
+            @"changedAt": @([NSDate timeIntervalSinceReferenceDate]),
+        };
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            NSMutableDictionary* metadata = [snapshot mutableCopy];
+            void* frames[32];
+            int count = (int)MIN(addresses.count, 32);
+            for (int index = 0; index < count; index++) {
+                frames[index] = (void*)(uintptr_t)addresses[index].unsignedLongLongValue;
+            }
+            char** symbols = backtrace_symbols(frames, count);
+            if (symbols) {
+                for (int index = 0; index < count; index++) {
+                    metadata[[NSString stringWithFormat:@"caller.%02d", index]] = @(symbols[index]);
+                }
+                free(symbols);
+            }
+            [[ICDiagnosticLogger shared] logEvent:@"episode-played-state"
+                                          message:@"Hörstatus wird auf ungespielt gesetzt"
+                                         metadata:metadata];
+        });
     }
     [self willChangeValueForKey:@"consumed"];
     [self setPrimitiveValue:@(consumed) forKey:@"consumed"];

@@ -1,0 +1,235 @@
+--- a/app/service.py
++++ b/app/service.py
+@@ -749,20 +749,6 @@
+     }.get(internal_status or "", "finalizing")
+ 
+ 
+-def progress_for_status(internal_status: str | None) -> float | None:
+-    return {
+-        "new": 0.0,
+-        "queued": 0.0,
+-        "paused": 0.0,
+-        "downloading": 0.05,
+-        "transcribing": 0.35,
+-        "postprocessing": 0.85,
+-        "finalizing": 0.97,
+-        "publishing_artifacts": 0.95,
+-        "ready": 1.0,
+-    }.get(internal_status or "")
+-
+-
+ def retry_after_seconds_for_status(status: str | None) -> int | None:
+     if status in {"queued", "running"}:
+         return config.API_STATUS_POLL_SECONDS
+@@ -937,15 +923,9 @@
+                 for row in artifact_rows
+                 if API_ARTIFACT_KINDS.get(row["kind"], row["kind"]) in REQUIRED_CLIENT_ARTIFACT_KINDS
+             ]
+-        if public_episode_status == "ready":
+-            progress = 1.0
+-        elif public_episode_status in {"failed", "canceled"}:
+-            progress = None
+-        else:
+-            progress = episode["processing_progress"]
+-            if progress is None:
+-                progress = progress_for_status(effective_status)
+-            progress = canonical_seconds(progress)
++        # processing_progress is an internal, weighted pipeline checkpoint. It
++        # measures neither total work nor remaining time and is not public progress.
++        progress = 1.0 if public_episode_status == "ready" else None
+         server_duration = canonical_seconds(episode["detected_duration_seconds"])
+         error = contract_error or (job_error({"error":episode["terminal_error"]}) if public_episode_status == "failed" and episode["terminal_error"] else job_error(failed_job) if public_episode_status == "failed" else None)
+         if public_episode_status == "failed" and error is None:
+--- a/app/main.py
++++ b/app/main.py
+@@ -738,7 +738,7 @@
+     return {
+         "api_version": "v1",
+         "$schema": "https://json-schema.org/draft/2020-12/schema",
+-        "schema_revision": "2026-09-06.1",
++        "schema_revision": "2026-09-06.2",
+         "base_url": f"{config.PUBLIC_BASE_URL.rstrip('/')}/api/v1",
+         "request_lifecycle_contract": {
+             "identity": "Full SHA-256 client identity plus durable request UUID; request URLs have an immutable SHA-256 fingerprint.",
+@@ -802,9 +802,9 @@
+             "idempotency": "concurrent retry requests reuse the same queued or running job",
+         },
+         "progress_contract": {
+-            "active_progress": "numeric and greater than or equal to the previous value in the same processing run",
+-            "active_observability": "at least one of updated_at, phase, or progress changes within two retry_after_seconds polling intervals while work advances",
+-            "resume": "the same episode id and nondecreasing progress remain visible after a transient worker interruption",
++            "active_progress": "null: no measured overall fraction exists; show the named processing phase, never a percentage or a proportional progress bar",
++            "active_observability": "updated_at or phase changes within two retry_after_seconds polling intervals while work advances; updated_at is a heartbeat, not a percentage",
++            "resume": "the same episode id and actual processing phase remain visible after a transient worker interruption; a resumed phase may repeat",
+             "ready": "status=ready, phase=ready, progress=1.0, error=null, and exactly four required artifacts",
+             "failed": "status=failed, phase=failed, progress=null, and a complete error object",
+         },
+@@ -1085,7 +1085,7 @@
+                         "if": {"properties": {"status": {"enum": ["queued", "running"]}}},
+                         "then": {
+                             "properties": {
+-                                "progress": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
++                                "progress": {"type": "null"},
+                                 "error": {"type": "null"},
+                                 "artifacts": {"maxItems": 0},
+                             }
+--- a/API.md
++++ b/API.md
+@@ -1,7 +1,7 @@
+ # Instacast Transcript API
+ 
+ Stand: 6. September 2026  
+-Schema-Revision: `2026-09-06.1`  
++Schema-Revision: `2026-09-06.2`  
+ Produktionsbasis: `https://transcript.instacast.ch/api/v1`
+ 
+ Der einzige öffentliche Clientvertrag ist vollständig in [INSTACASTPLUS-API.md](INSTACASTPLUS-API.md) beschrieben und wird maschinenlesbar durch authentifiziertes `GET /api/v1/schema` veröffentlicht.
+@@ -21,3 +21,7 @@
+ ```
+ 
+ Es existieren keine alternativen öffentlichen Requestfelder für Client-ID, Callback, Modell oder Provider. Interne Admin-, Worker-, Queue- und Analysefunktionen sind kein Bestandteil der Client-API.
++
++## Fortschrittsanzeige — Revision 2026-09-06.2
++
++Aktive Aufträge liefern `progress: null`. Die bisherigen gewichteten Pipelinewerte sind keine gemessenen Gesamtprozente und werden nicht mehr veröffentlicht. `phase` benennt den aktuellen Verarbeitungsschritt; `updated_at` ist ein Lebenszeichen. Clients müssen fehlenden Zahlenfortschritt akzeptieren und dürfen weder einen Prozentbalken noch eine Restzeit daraus erfinden. Erst ein geprüftes fertiges Ergebnis liefert `progress: 1.0`. Die Schritte sind nicht gleich lang. Ältere Testclients, die aktive numerische Werte voraussetzen, benötigen das zugehörige App-Update.
+--- a/INSTACASTPLUS-API.md
++++ b/INSTACASTPLUS-API.md
+@@ -1,7 +1,7 @@
+ # InstacastPlus Transcript API
+ 
+ Stand: 6. September 2026  
+-Schema-Revision: `2026-09-06.1`  
++Schema-Revision: `2026-09-06.2`  
+ Produktionsbasis: `https://transcript.instacast.ch/api/v1`
+ 
+ Diese Dokumentation beschreibt ausschliesslich den öffentlichen Vertrag für die iOS-App. Modellwahl, Provider, Prompts, Worker, Queue und interne Artefakte sind serverintern und werden vom Client weder gesteuert noch ausgewertet.
+@@ -113,7 +113,7 @@
+     "id": 123,
+     "status": "running",
+     "phase": "transcribing",
+-    "progress": 0.421,
++    "progress": null,
+     "episode_url": "https://example.org/episode.mp3",
+     "podcast_url": "https://example.org/feed.xml",
+     "title": "Episodentitel",
+@@ -158,11 +158,11 @@
+ 
+ Zustandsregeln:
+ 
+-- `queued` und `running` haben einen numerischen Fortschritt von `0.0` bis kleiner als `1.0` und einen positiven `retry_after_seconds`;
++- `queued` und `running` haben `progress: null` und einen positiven `retry_after_seconds`; ein messbarer Gesamtfortschritt liegt nicht vor;
+ - `running` verwendet eine der Phasen `downloading_audio`, `transcribing`, `analyzing` oder `finalizing`;
+-- Fortschritt fällt innerhalb desselben Auftrags nie zurück;
+-- während aktiver Langarbeit ändert sich spätestens innerhalb von zwei durch `retry_after_seconds` empfohlenen Pollintervallen mindestens `updated_at`, `phase` oder `progress`;
+-- ein Worker-Neustart behält Episode-ID, fertige Zwischenstände und den bisher sichtbaren Fortschritt;
++- Clients zeigen die benannte Phase, optional als Schritt 1 bis 4 (Download, Transkription, Analyse, Vorbereitung), ohne Prozentbalken oder abgeleitete Restzeit;
++- während aktiver Langarbeit ändert sich spätestens innerhalb von zwei durch `retry_after_seconds` empfohlenen Pollintervallen mindestens `updated_at` oder `phase`;
++- ein Worker-Neustart behält Episode-ID und fertige Zwischenstände; die tatsächliche Phase kann beim Fortsetzen erneut durchlaufen werden;
+ - `ready` hat `phase: ready`, `progress: 1.0`, `error: null`, vier Pflichtartefakte und `retry_after_seconds: null`;
+ - `failed` hat `phase: failed`, `progress: null`, ein vollständiges Fehlerobjekt, keine Artefakte und `retry_after_seconds: null`;
+ - ein intern gespeichertes, aber vertragswidriges Altergebnis wird öffentlich als `failed/artifact_contract_invalid` statt als `ready` ausgeliefert.
+@@ -386,7 +386,7 @@
+       "id": 101,
+       "status": "queued",
+       "phase": "queued",
+-      "progress": 0.0,
++      "progress": null,
+       "episode_url": "https://cdn.example.org/episode.mp3",
+       "podcast_url": "https://example.org/feed.xml",
+       "title": "Neue Episode",
+@@ -520,3 +520,7 @@
+ - Generated-Kapitel, Sponsor-Sprünge und Transkript-Seeks brauchen die tatsächlich abgespielte Audiofassung und die exakte geladene Artefaktgeneration. Dateiersatz widerruft bereits veröffentlichte Prüfungen. Ein alter Widget-Kapitelindex darf nur mit derselben veröffentlichten Timeline-ID aufgelöst werden.
+ 
+ Migration: API und Worker stoppen, vollständige Datenbanksicherung erstellen, `init_db()` ausführen und vor Neustart prüfen. Ergänzt werden `episodes.terminal_error/latest_source_url`, `jobs.source_url/next_attempt_at` sowie vollständig indizierte SHA256-URL-Spalten für Episoden, Aliasse und Podcasts. Die bisherige Unique-Präfixlänge512 ist kein gültiger Identitätsvertrag für erlaubte2048-Zeichen-URLs. Bestehende Daten bleiben erhalten; alte Präfix-Indizes nicht blind wiederherstellen, nachdem neue lange URLs aufgenommen wurden.
++
++## Fortschrittsanzeige — Revision 2026-09-06.2
++
++Aktive Aufträge liefern `progress: null`. Die bisherigen gewichteten Pipelinewerte sind keine gemessenen Gesamtprozente und werden nicht mehr veröffentlicht. `phase` benennt den aktuellen Verarbeitungsschritt; `updated_at` ist ein Lebenszeichen. Clients müssen fehlenden Zahlenfortschritt akzeptieren und dürfen weder einen Prozentbalken noch eine Restzeit daraus erfinden. Erst ein geprüftes fertiges Ergebnis liefert `progress: 1.0`. Die Schritte sind nicht gleich lang. Ältere Testclients, die aktive numerische Werte voraussetzen, benötigen das zugehörige App-Update.
+--- a/tools/api_contract_v3_regression.py
++++ b/tools/api_contract_v3_regression.py
+@@ -26,7 +26,7 @@
+ 
+ def test_schema_has_one_public_contract() -> None:
+     schema = api_schema(1)
+-    if schema["schema_revision"] != "2026-09-06.1":
++    if schema["schema_revision"] != "2026-09-06.2":
+         fail(f"wrong schema revision: {schema['schema_revision']}")
+     if schema["base_url"] != "https://transcript.instacast.ch/api/v1":
+         fail(f"wrong API base URL: {schema['base_url']}")
+--- a/tools/server_model_regression.py
++++ b/tools/server_model_regression.py
+@@ -125,8 +125,8 @@
+             fail("episode status missing")
+         if status["status"] != "running" or status["phase"] == "queued":
+             fail("public episode remained queued after job claim")
+-        if status["progress"] is None:
+-            fail("running progress is null after claim")
++        if status["progress"] is not None:
++            fail("running response exposes unmeasured overall progress")
+         if {"jobs", "internal_status", "result_dir"} & set(status):
+             fail("public episode exposes internal processing fields")
+ 
+@@ -135,23 +135,23 @@
+             transcribing = episode_status(episode_id)
+             if transcribing["status"] != "running" or transcribing["phase"] != "transcribing":
+                 fail("phase switch to transcribing was not public")
+-            if transcribing["progress"] is None or transcribing["progress"] < status["progress"]:
+-                fail("progress moved backwards after phase switch")
++            if transcribing["progress"] is not None:
++                fail("phase switch exposes unmeasured overall progress")
+     
+             worker.set_episode_progress(episode_id, "postprocessing", 0.82)
+             worker.set_episode_progress(episode_id, "transcribing", 0.10)
+             resumed = episode_status(episode_id)
+             if resumed["phase"] != "transcribing":
+                 fail("resumed processing did not expose the actual phase")
+-            if resumed["progress"] < 0.82:
+-                fail("resumed processing moved progress backwards")
++            if resumed["progress"] is not None:
++                fail("resumed processing exposes internal weighted progress")
+     
+             retry_status = worker.fail_job(job, "Nach Neustart erneut eingereiht.")
+         if retry_status != "queued":
+             fail("transient failure was not requeued")
+         after_retry = episode_status(episode_id)
+-        if after_retry["progress"] is None or after_retry["progress"] < resumed["progress"]:
+-            fail("retry requeue moved progress backwards")
++        if after_retry["progress"] is not None:
++            fail("retry requeue exposes unmeasured overall progress")
+ 
+         with connect() as con:
+             second_id = ensure_episode(con, "https://example.invalid/ready-without-artifacts.mp3", title="Atomic Ready")
+--- /dev/null
++++ b/tools/progress_presentation_regression.py
+@@ -0,0 +1,31 @@
++#!/usr/bin/env python3
++"""Exercise public progress against isolated storage, including old weighted data."""
++import os
++from pathlib import Path
++import sys
++import tempfile
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++with tempfile.TemporaryDirectory(prefix="instacast-progress-") as directory:
++    os.environ["INSTACAST_DB_BACKEND"] = "sqlite"
++    os.environ["INSTACAST_TRANSCRIPT_DB"] = str(Path(directory) / "test.sqlite3")
++    os.environ["INSTACAST_TRANSCRIPT_STORAGE"] = str(Path(directory) / "storage")
++    from app.db import connect, init_db
++    from app.service import ensure_episode, episode_status
++    from app.main import api_schema
++    init_db()
++    count = 0
++    for state, phase in [("queued", "queued"), ("paused", "queued"), ("downloading", "downloading_audio"), ("transcribing", "transcribing"), ("postprocessing", "analyzing"), ("finalizing", "finalizing"), ("canceled", "canceled"), ("failed", "failed")]:
++        for old_progress in (None, 0.0, 0.5, 0.97):
++            with connect() as con:
++                episode_id = ensure_episode(con, f"https://example.invalid/{count}.mp3", title="Progress test")
++                con.execute("UPDATE episodes SET status=?, processing_progress=? WHERE id=?", (state, old_progress, episode_id))
++            response = episode_status(episode_id)
++            assert response["phase"] == phase, response
++            assert response["progress"] is None, f"Invented public percentage for {state}: {response['progress']}"
++            count += 1
++    episode = api_schema(1)["schemas"]["Episode"]
++    active = next(rule for rule in episode["allOf"] if rule["if"]["properties"]["status"].get("enum") == ["queued", "running"])
++    assert active["then"]["properties"]["progress"] == {"type": "null"}
++    print(f"PASS: {count} public phase/legacy-progress combinations and nullable active schema")

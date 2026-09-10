@@ -198,6 +198,7 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
         case ICEpisodeListDeferredUpdateVisibleCells:
             [self _updateVisiblePlaylistIndicators];
             [self _performPlayComboButtonUpdate];
+            [self _transcriptionQueueChanged];
             break;
         case ICEpisodeListDeferredUpdateNone:
             break;
@@ -1725,6 +1726,8 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
 - (void) _showTranscriptionToastWithText:(NSString*)text
 {
+    static __weak UIView* previousToast;
+    [previousToast removeFromSuperview];
     UIWindow* window = App.ic_keyWindow;
     if (!window) return;
 
@@ -1732,9 +1735,11 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     blurView.layer.cornerRadius = 12;
     blurView.clipsToBounds = YES;
     blurView.alpha = 0;
+    previousToast = blurView;
 
     UILabel* label = [[UILabel alloc] init];
     label.text = text;
+    label.numberOfLines = 0;
     label.textColor = [UIColor whiteColor];
     label.font = [UIFont systemFontOfSize:ICFontSize(14)];
 
@@ -1761,6 +1766,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     [window addSubview:blurView];
     [NSLayoutConstraint activateConstraints:@[
         [blurView.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
+        [blurView.widthAnchor constraintLessThanOrEqualToAnchor:window.widthAnchor constant:-32],
         [blurView.bottomAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.bottomAnchor constant:-100],
     ]];
 
@@ -1952,10 +1958,16 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
         PlaySoundFile(@"AffirmIn", NO);
         [self _showTranscriptionToast];
     } else {
-        // Already in queue — haptic feedback only
-        PlayHapticFeedback(ICHapticFeedbackLight);
+        for (ICTranscriptionQueueItem* item in [TranscriptionQueue shared].items) {
+            if ([item.episodeHash isEqualToString:episode.objectHash] &&
+                item.status != ICTranscriptionStatusCompleted && item.status != ICTranscriptionStatusFailed) {
+                PlayHapticFeedback(ICHapticFeedbackLight);
+                [self _showTranscriptionToastWithText:NSLocalizedString(@"Episode already in transcription queue", nil)];
+                break;
+            }
+        }
     }
-    [self.tableView reloadData];
+    [self _transcriptionQueueChanged];
 }
 
 - (void) _serverTranscribeEpisode:(CDEpisode*)episode
@@ -1963,16 +1975,19 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     if (!ICAITranscriptionFeaturesAvailable() || ![USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) {
         return;
     }
-    if ([[ServerTranscriptionManager shared] enqueueEpisode:episode]) {
-        PlaySoundFile(@"AffirmIn", NO);
-        [self _showTranscriptionToast];
-    } else {
+    __weak typeof(self) weakSelf = self;
+    BOOL staged = [[ServerTranscriptionManager shared] enqueueEpisode:episode completion:^(BOOL accepted, NSString* message) {
+        if (accepted) PlaySoundFile(@"AffirmIn", NO);
+        [weakSelf _showTranscriptionToastWithText:message];
+    }];
+    if (staged) [self _showTranscriptionToastWithText:NSLocalizedString(@"Sending transcription request.", nil)];
+    if (!staged && [[ServerTranscriptionManager shared] hasActiveItemForEpisodeHash:episode.objectHash]) {
         // A rejected request must still lead into the queue — otherwise the running
         // job (and its error state) has no reachable UI.
         PlayHapticFeedback(ICHapticFeedbackLight);
-        [self _showTranscriptionToastWithText:NSLocalizedString(@"Server-Transkription läuft bereits", nil)];
+        [self _showTranscriptionToastWithText:NSLocalizedString(@"A server request for this episode is already being checked or processed.", nil)];
     }
-    [self.tableView reloadData];
+    [self _transcriptionQueueChanged];
 }
 
 - (UISwipeActionsConfiguration*)tableView:(UITableView *)tableView leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
@@ -2011,10 +2026,14 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
 - (void) _transcriptionQueueChanged
 {
-    if ([self _deferTableUpdateDuringSwipe:ICEpisodeListDeferredUpdateFullReload]) {
+    if ([self _deferTableUpdateDuringSwipe:ICEpisodeListDeferredUpdateVisibleCells]) {
         return;
     }
-    [self.tableView reloadData];
+    for (EpisodesTableViewCell* cell in self.tableView.visibleCells) {
+        if (![cell isKindOfClass:[EpisodesTableViewCell class]]) continue;
+        [cell updateTranscriptIndicatorState];
+        [cell setNeedsLayout];
+    }
 }
 
 - (UIView*) _separatorViewOfCell:(UITableViewCell*)cell
@@ -2069,6 +2088,9 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     if (self.tableView.editing) return nil;
     if (indexPath.row >= [self.episodes count]) return nil;
 
+    // UIKit starts lifting the cell before willDisplayContextMenu. A download-triggered
+    // reload in that interval can reuse the preview cell for a different episode.
+    self.contextMenuInteractionActive = YES;
     CDEpisode* episode = self.episodes[indexPath.row];
     WEAK_SELF
     UIContextMenuConfiguration* config = [UIContextMenuConfiguration configurationWithIdentifier:episode.objectHash
@@ -2093,6 +2115,20 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     if (!indexPath) {
         return [UIMenu menuWithTitle:@"" children:@[]];
     }
+    EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[self.tableView cellForRowAtIndexPath:indexPath];
+    CDEpisode* cellEpisode = cell.objectValue;
+    [[ICDiagnosticLogger shared] logEvent:@"episode-context-menu"
+                                  message:@"Hörstatus beim Öffnen des Kontextmenüs"
+                                 metadata:@{
+        @"episodeHash": episode.objectHash ?: @"",
+        @"episodeObjectID": episode.objectID.URIRepresentation.absoluteString,
+        @"episodeConsumed": @(episode.consumed),
+        @"episodePosition": @(episode.position),
+        @"episodeDuration": @(episode.duration),
+        @"cellEpisodeHash": cellEpisode.objectHash ?: @"",
+        @"cellEpisodeObjectID": cellEpisode.objectID.URIRepresentation.absoluteString ?: @"",
+        @"cellEpisodeConsumed": @(cellEpisode.consumed),
+    }];
     return [self _contextMenuForIndexPath:indexPath];
 }
 

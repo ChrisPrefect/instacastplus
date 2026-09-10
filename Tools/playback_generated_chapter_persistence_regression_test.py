@@ -53,7 +53,7 @@ completion = start_loading[completion_index:]
 raw_chapters_index = completion.find("parser.metadataAsset.chapters")
 generated_index = completion.find("loadChaptersFor:")
 persistence_index = completion.find("embeddedChaptersForPersistence =")
-playback_commit_index = completion.find("self.chapters = chapters;")
+playback_commit_index = completion.find("[self _publishChapterTimeline:self.originalChapterTimeline];")
 
 episode_hash_capture_index = start_loading.find(
     "NSString* episodeHash = self.playingEpisode.objectHash"
@@ -91,6 +91,28 @@ require(
 require(
     persistence_index < playback_commit_index,
     "Publisher chapter provenance must be ready before the observable playback chapter update.",
+)
+require(
+    "self.pendingGeneratedChapters = metaChapters;" in completion
+    and "chapters = metaChapters;" not in completion,
+    "Unverified generated chapters must remain pending instead of entering the observable playback timeline.",
+)
+publish = method_body(playback_manager, "- (void)_publishChapterTimeline:")
+require(
+    "self.chapters = timeline;" in publish
+    and "_chapterTimesIdx[index]" in publish
+    and "embeddedChaptersForPersistence" not in publish,
+    "Timeline publication must update the search index and observable chapters without modifying publisher provenance.",
+)
+verification = method_body(playback_manager, "- (void)_completeGeneratedChapterAudioVerification:")
+require(
+    "generation != self.chapterLoadGeneration" in verification
+    and "asset != self.mediaAsset" in verification
+    and "![episodeHash isEqualToString:self.playingEpisode.objectHash]" in verification
+    and verification.index("return;") < verification.index("_publishChapterTimeline:")
+    and "verified && self.pendingGeneratedChapters.count > 0" in verification
+    and "self.chaptersUseGeneratedAnalysis ? self.pendingGeneratedChapters : self.originalChapterTimeline" in verification,
+    "An audio-proof completion must own the current episode/asset/generation and publish generated chapters only after successful verification.",
 )
 
 persistence_statement = completion[persistence_index:completion.find(";", persistence_index) + 1]

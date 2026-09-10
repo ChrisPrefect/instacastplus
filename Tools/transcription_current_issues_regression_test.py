@@ -64,10 +64,13 @@ require(
     "rightContentAccessoryWidth + 5" in cell_source,
     "Elapsed seconds in transcription rows must keep a 5px gap from the info button.",
 )
+restart_dialog = controller_source.split("BOOL checksExistingRequest =", 1)[1].split("[alert addAction:", 1)[0]
 require(
-    "UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@\"Job neu starten?\", nil)\n                                                                  message:nil" in controller_source,
-    "Restart dialog still repeats the full failure text instead of only offering recovery actions.",
+    "item.usesServerTranscription && item.requiresExplicitRetryAfterCrash" in restart_dialog
+    and "message:checksExistingRequest ? (item.statusDetail ?: item.error) : nil" in restart_dialog,
+    "Ordinary restart must not repeat failure text; checking an existing server request must retain its explanatory detail.",
 )
+
 require(
     "GGUF-Modell konnte nicht geladen werden" not in (ROOT / "Classes" / "LocalGGUFModelRunner.swift").read_text()
     and "llama.cpp" not in (ROOT / "Classes" / "LocalGGUFModelRunner.swift").read_text().split("var errorDescription: String?")[1],

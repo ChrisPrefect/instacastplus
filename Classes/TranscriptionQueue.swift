@@ -410,6 +410,8 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     private static let continuedBackgroundActiveKey = "TranscriptionBackgroundContinuedActive"
     private static let backgroundExecutionPathKey = "TranscriptionBackgroundExecutionPath"
     private static let completedItemRetentionInterval: TimeInterval = 30 * 60
+    @objc static let maximumActiveItemCount = 25
+    private static let capacitySkippedEpisodeHashesKey = "TranscriptionQueueCapacitySkippedEpisodeHashes"
     private static let automaticProcessingTaskIdentifier = "com.iteconomy.instacastplus.transcription.processing"
     private static let automaticRetryBaseDelay: TimeInterval = 30
     private static let automaticRetryMaximumDelay: TimeInterval = 6 * 60 * 60
@@ -419,6 +421,80 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     @objc private(set) var items: [ICTranscriptionQueueItem] = []
     @objc var displayItems: [ICTranscriptionQueueItem] {
         items + ServerTranscriptionManager.shared.items
+    }
+    @objc var canAddQueueItem: Bool {
+        queueStorageError == nil && ServerTranscriptionManager.shared.queueStorageError == nil &&
+            activeItemCount < Self.maximumActiveItemCount
+    }
+    private lazy var capacitySkippedEpisodeHashes = Set(UserDefaults.standard.stringArray(forKey: Self.capacitySkippedEpisodeHashesKey) ?? [])
+    private var capacityNoticeUpdatePending = false
+    @objc var capacitySkippedCount: Int { capacitySkippedEpisodeHashes.count }
+    @objc var queueCapacitySummary: String {
+        let active = displayItems.filter { $0.status != .completed && $0.status != .failed && $0.status != .canceled }
+        let serverCount = active.filter(\.usesServerTranscription).count
+        let storageErrors = [queueStorageError, ServerTranscriptionManager.shared.queueStorageError].compactMap { $0 }
+        var lines = storageErrors.isEmpty
+            ? [String(format: NSLocalizedString("%ld of %ld open jobs · %ld local · %ld server", comment: ""),
+                      active.count, Self.maximumActiveItemCount, active.count - serverCount, serverCount)]
+            : storageErrors.map { $0.localizedDescription }
+        if active.count >= Self.maximumActiveItemCount {
+            lines.append(String(format: NSLocalizedString("Existing jobs remain visible and will finish. New jobs can be added when fewer than %ld remain.", comment: ""), Self.maximumActiveItemCount))
+        }
+        if capacitySkippedCount > 0 {
+            lines.append(String(format: NSLocalizedString("%ld episodes were not added automatically because the queue was full. You can add them manually later.", comment: ""), capacitySkippedCount))
+        }
+        let server = ServerTranscriptionManager.shared
+        if server.unconfirmedAdmissionCount > 0 {
+            lines.append(String(format: NSLocalizedString("%ld transcription requests are awaiting confirmation.", comment: ""), server.unconfirmedAdmissionCount))
+        }
+        if server.hasPendingCancellations {
+            let cancellationSummary = server.queueStorageError == nil
+                ? NSLocalizedString("%ld cancellations are waiting for server confirmation. They remain saved while offline.", comment: "")
+                : NSLocalizedString("%ld cancellations are waiting. Recent queue changes could not be saved.", comment: "")
+            lines.append(String(format: cancellationSummary, server.pendingCancellationCount))
+            if let error = server.cancellationError {
+                lines.append(String(format: NSLocalizedString("Server cancellation: %@", comment: ""), error))
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Shared admission boundary for local and server work. Restored jobs keep their
+    /// place; a full queue rejects new work instead of creating an invisible backlog.
+    @objc func admitQueueItem(episodeHash: String, automatic: Bool) -> Bool {
+        guard queueStorageError == nil, ServerTranscriptionManager.shared.queueStorageError == nil else {
+            postQueueChangeNotification()
+            return false
+        }
+        guard !canAddQueueItem else { return true }
+        if automatic {
+            if capacitySkippedEpisodeHashes.insert(episodeHash).inserted {
+                scheduleCapacityNoticeUpdate()
+            }
+        } else {
+            NotificationCenter.default.post(name: NSNotification.Name("ICTranscriptionQueueCapacityDidChangeNotification"),
+                                            object: nil, userInfo: ["automatic": false])
+        }
+        return false
+    }
+
+    @objc func acknowledgeCapacityNotice() {
+        capacitySkippedEpisodeHashes.removeAll()
+        scheduleCapacityNoticeUpdate()
+    }
+
+    private func scheduleCapacityNoticeUpdate() {
+        guard !capacityNoticeUpdatePending else { return }
+        capacityNoticeUpdatePending = true
+        // A discovery batch can reject hundreds of episodes. Publish its aggregate
+        // once, preserving distinct identities across discovery/checkpoint replay.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.capacityNoticeUpdatePending = false
+            UserDefaults.standard.set(Array(self.capacitySkippedEpisodeHashes), forKey: Self.capacitySkippedEpisodeHashesKey)
+            NotificationCenter.default.post(name: NSNotification.Name("ICTranscriptionQueueCapacityDidChangeNotification"),
+                                            object: nil, userInfo: ["automatic": true])
+        }
     }
     @objc private(set) var isProcessing = false
 
@@ -449,6 +525,8 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     private var completedPruneScheduled = false
     private var pendingQueuePersistenceCount = 0
     private var lastQueuePersistenceError: NSError?
+    private var queueLoadError: NSError?
+    @objc var queueStorageError: NSError? { queueLoadError ?? lastQueuePersistenceError }
 
     /// A background task may only release its execution grant after the last
     /// queue snapshot has reached the atomic file-write completion callback.
@@ -459,10 +537,20 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     /// The most recent atomic queue snapshot outcome. A later successful snapshot
     /// clears an earlier error because it durably contains the current queue state.
     @objc var queuePersistenceError: NSError? {
-        lastQueuePersistenceError
+        queueLoadError ?? lastQueuePersistenceError
+    }
+
+    @objc func retryQueueStorage() {
+        guard pendingQueuePersistenceCount == 0 else { return }
+        if queueLoadError != nil { loadPersistedQueue() }
+        guard queueLoadError == nil else { postQueueChangeNotification(); return }
+        if lastQueuePersistenceError != nil { persistQueue() }
+        resumeIfNeeded()
+        postQueueChangeNotification()
     }
 
     @objc func retryQueuePersistenceAfterFailure() {
+        if queueLoadError != nil { retryQueueStorage(); return }
         guard lastQueuePersistenceError != nil,
               pendingQueuePersistenceCount == 0 else { return }
         persistQueue()
@@ -535,6 +623,8 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         appliedWhisperKitExecutionPath = nil
         WhisperKitBackend.setActiveBackgroundExecutionPath(nil)
         loadPersistedQueue()
+        NotificationCenter.default.addObserver(self, selector: #selector(retryQueueStorage),
+                                               name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
         ChapterGenerator.shared.resumePendingOpenAIBackgroundCancellations()
 
         NotificationCenter.default.addObserver(
@@ -677,6 +767,11 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             // A transcription job has nothing to do when an SRT already exists.
             guard !engine.hasSRT(for: episodeHash) else { return false }
         }
+
+        guard !items.contains(where: {
+            $0.episodeHash == episodeHash && $0.status != .completed && $0.status != .failed && $0.status != .canceled
+        }) else { return false }
+        guard admitQueueItem(episodeHash: episodeHash, automatic: automaticallyScheduled) else { return false }
 
         let replaceFailedManualItem = !automaticallyScheduled && !chapterOnly
         if replaceFailedManualItem,
@@ -1101,16 +1196,17 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
             if automaticBackend == "server" {
                 guard decision.transcribe || decision.analyze else { continue }
-                ServerTranscriptionManager.shared.enqueueAutomaticEpisodes([episode])
-                didEnqueueAny = true
+                let enqueued = ServerTranscriptionManager.shared.enqueueAutomaticEpisodes([episode])
+                didEnqueueAny = didEnqueueAny || enqueued
                 ICDiagnosticLogger.shared.logEvent(
                     "automatic-transcription-decision",
-                    message: "Automatische Server-Verarbeitung geplant",
+                    message: enqueued ? "Automatische Server-Verarbeitung geplant" : "Automatische Server-Verarbeitung nicht aufgenommen",
                     metadata: [
                         "episodeHash": episodeHash,
                         "episodeTitle": episode.title ?? "",
                         "feedTitle": episode.feed?.title ?? "",
                         "backend": "server",
+                        "enqueued": enqueued,
                     ] as NSDictionary
                 )
                 continue
@@ -1160,7 +1256,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             )
             didEnqueueAny = didEnqueueAny || enqueued
 
-            let message = enqueued ? "Automatische Verarbeitung geplant" : "Automatische Verarbeitung bereits geplant"
+            let message = enqueued ? "Automatische Verarbeitung geplant" : "Automatische Verarbeitung nicht aufgenommen"
             TranscriptionLogger.shared.append(
                 episodeHash: episodeHash,
                 phase: "queued",
@@ -1196,12 +1292,22 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                     )
                     return
                 }
-                self.acknowledgeAutomaticDiscovery(discoveryHashesToAcknowledge)
-                guard shouldStartAfterPersistence else { return }
-                self.postQueueChangeNotification()
-                self.scheduleAutomaticBackgroundProcessing(earliestBeginDate: nil)
-                if !self.isProcessing {
-                    self.processNext()
+                let finishHandoff = {
+                    self.acknowledgeAutomaticDiscovery(discoveryHashesToAcknowledge)
+                    guard shouldStartAfterPersistence else { return }
+                    self.postQueueChangeNotification()
+                    self.scheduleAutomaticBackgroundProcessing(earliestBeginDate: nil)
+                    if !self.isProcessing {
+                        self.processNext()
+                    }
+                }
+                if automaticBackend == "server" {
+                    ServerTranscriptionManager.shared.whenQueuePersisted { serverError in
+                        guard serverError == nil else { return }
+                        finishHandoff()
+                    }
+                } else {
+                    finishHandoff()
                 }
             }
         }
@@ -1218,6 +1324,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
     /// Remove an episode from the queue. Cancels transcription if currently processing.
     @objc func dequeue(episodeHash: String) {
+        guard queueLoadError == nil else { postQueueChangeNotification(); return }
         chapterGen.cancelOpenAIBackgroundAnalysis(for: episodeHash)
         // If dequeuing the currently processing item, cancel its transcription
         var needsProcessNext = false
@@ -1278,6 +1385,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
     /// Remove all items from the queue and cancel current transcription.
     @objc func cancelAll() {
+        guard queueLoadError == nil else { postQueueChangeNotification(); return }
         let cancelledEpisodeHashes = Set(items.map(\.episodeHash))
         for episodeHash in cancelledEpisodeHashes {
             chapterGen.cancelOpenAIBackgroundAnalysis(for: episodeHash)
@@ -1453,12 +1561,12 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             NSLog("[TranscriptionQueue] Episode %@ already in queue, skipping chapter generation", episodeHash)
             return false
         }
-        items.removeAll { $0.episodeHash == episodeHash && ($0.status == .completed || $0.status == .failed) }
-
         guard hasChapterGenerationTranscript(episodeHash: episodeHash) else {
             NSLog("[TranscriptionQueue] No usable transcript for %@", episodeHash)
             return false
         }
+        guard admitQueueItem(episodeHash: episodeHash, automatic: false) else { return false }
+        items.removeAll { $0.episodeHash == episodeHash && ($0.status == .completed || $0.status == .failed || $0.status == .canceled) }
 
         // Add to queue with special "chapters only" status
         let item = ICTranscriptionQueueItem(
@@ -2825,7 +2933,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     }
 
     private func firstTranscriptTextValue(in dict: [String: Any]) -> String? {
-        for key in ["text", "value", "line", "cue", "utterance", "transcript"] {
+        for key in ["text", "value", "line", "cue", "utterance", "transcript", "body"] {
             if let value = dict[key] as? String, !value.isEmpty {
                 return value
             }
@@ -2898,8 +3006,10 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
     /// Resume processing (called on app launch or foreground).
     @objc func resumeIfNeeded() {
-        guard ICAITranscriptionFeaturesAvailable() else { return }
         ServerTranscriptionManager.shared.resumeIfNeeded()
+        if queueLoadError != nil { loadPersistedQueue() }
+        guard queueLoadError == nil else { postQueueChangeNotification(); return }
+        guard ICAITranscriptionFeaturesAvailable() else { return }
         guard reconcilePendingCacheDeletionsIfReady() else { return }
         recoverOrphanedAutomaticCheckpoints()
         chapterGen.resumePendingOpenAIBackgroundCancellations()
@@ -3115,6 +3225,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     @objc func retry(episodeHash: String) {
         guard let item = items.first(where: { $0.episodeHash == episodeHash }) else { return }
         guard item.status == .failed || item.status == .queued else { return }
+        if item.status == .failed && !admitQueueItem(episodeHash: episodeHash, automatic: false) { return }
 
         clearCrashGuard()
         backgroundPausedEpisodeHashes.remove(episodeHash)
@@ -3190,13 +3301,13 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     @objc var count: Int { items.count }
 
     @objc var activeItemCount: Int {
-        displayItems.filter { $0.status != .completed && $0.status != .failed }.count
+        displayItems.filter { $0.status != .completed && $0.status != .failed && $0.status != .canceled }.count
     }
 
     @objc(modelMutationBlockReasonForRole:)
     func modelMutationBlockReason(for role: ICDownloadableModelRole) -> String? {
         let blocksRole = items.contains { item in
-            guard item.status != .completed && item.status != .failed else { return false }
+            guard item.status != .completed && item.status != .failed && item.status != .canceled else { return false }
             switch role {
             case .voiceToText:
                 return !item.chapterOnly && (
@@ -3231,12 +3342,13 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     @objc var hasVisibleItems: Bool {
         pruneExpiredCompletedItems()
         ServerTranscriptionManager.shared.pruneExpiredCompletedItems()
-        return !displayItems.isEmpty
+        return queueStorageError != nil || ServerTranscriptionManager.shared.queueStorageError != nil ||
+            !displayItems.isEmpty || capacitySkippedCount > 0 || ServerTranscriptionManager.shared.hasPendingCancellations
     }
 
     /// Currently processing item
     @objc var currentItem: ICTranscriptionQueueItem? {
-        items.first { $0.status != .completed && $0.status != .failed && $0.status != .queued }
+        items.first { $0.status != .completed && $0.status != .failed && $0.status != .canceled && $0.status != .queued }
             ?? items.first {
                 $0.status == .queued &&
                     !$0.requiresExplicitRetryAfterCrash &&
@@ -3297,73 +3409,102 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         }
     }
 
+    private var automaticSchedulingInFlight = false
+    private var automaticSchedulingNeedsUpdate = false
+    private var automaticSchedulingRevision = 0
+
     private func scheduleAutomaticBackgroundProcessing(earliestBeginDate: Date?) {
-        guard ICAITranscriptionFeaturesAvailable() else { return }
+        guard ICAITranscriptionFeaturesAvailable() || ServerTranscriptionManager.shared.hasRetryableCancellations else { return }
         let automaticItems = items.filter {
             $0.automaticallyScheduled && $0.status == .queued
         }
-        let hasCancellationWork = chapterGen.hasPendingOpenAIBackgroundCancellationWork
+        let hasCancellationWork = chapterGen.hasPendingOpenAIBackgroundCancellationWork || ServerTranscriptionManager.shared.hasRetryableCancellations
         let serverAutomaticItems = ServerTranscriptionManager.shared.items.filter {
-            $0.automaticallyScheduled && $0.status != .completed && $0.status != .failed
+            $0.automaticallyScheduled && $0.status != .completed && $0.status != .failed && $0.status != .canceled
         }
         guard !automaticItems.isEmpty || !serverAutomaticItems.isEmpty || hasCancellationWork else { return }
         if let continuedPath = UserDefaults.standard.string(forKey: "ICTranscriptionActiveContinuedPath"),
-           continuedPath.hasPrefix("continued-") {
-            ICDiagnosticLogger.shared.logEvent(
-                "background-task",
-                message: "Automatischer BGProcessingTask wartet auf sichtbaren Continued-Lauf",
-                metadata: [
-                    "continuedPath": continuedPath,
-                    "automaticQueueCount": automaticItems.count,
-                ] as NSDictionary
-            )
+           continuedPath.hasPrefix("continued-") { return }
+        if automaticSchedulingInFlight {
+            automaticSchedulingNeedsUpdate = true
             return
         }
 
-        let request = BGProcessingTaskRequest(identifier: Self.automaticProcessingTaskIdentifier)
-        request.requiresExternalPower = false
-        request.requiresNetworkConnectivity = hasCancellationWork || automaticItems.contains { item in
-            item.chapterOnly ||
-                item.audioURL == nil ||
+        let requiresNetwork = hasCancellationWork || automaticItems.contains { item in
+            item.chapterOnly || item.audioURL == nil ||
                 (item.shouldGenerateAnalysis && ICDownloadableModelStore.selectedModel(for: .textToChapters).usesRemoteChapterService)
         } || !serverAutomaticItems.isEmpty
-        request.earliestBeginDate = [earliestBeginDate, earliestAutomaticBackgroundWorkDate()]
-            .compactMap { $0 }
-            .min() ?? Date()
+        let requestedDate = [earliestBeginDate, earliestAutomaticBackgroundWorkDate()]
+            .compactMap { $0 }.min() ?? Date()
+        let identifier = Self.automaticProcessingTaskIdentifier
+        let automaticCount = automaticItems.count
+        let serverCount = serverAutomaticItems.count
+        let revision = automaticSchedulingRevision
+        automaticSchedulingInFlight = true
 
-        do {
-            try BGTaskScheduler.shared.submit(request)
-            ICDiagnosticLogger.shared.logEvent("background-task", message: "Automatischer BGProcessingTask geplant", metadata: [
-                "identifier": Self.automaticProcessingTaskIdentifier,
-                "earliestBeginDate": Self.debugTimestampString(request.earliestBeginDate ?? Date()),
-                "requiresNetwork": request.requiresNetworkConnectivity,
-                "automaticQueueCount": automaticItems.count,
-                "serverAutomaticQueueCount": serverAutomaticItems.count,
-                "pendingCancellation": hasCancellationWork,
-            ] as NSDictionary)
-        } catch {
-            ICDiagnosticLogger.shared.logEvent("background-task", message: "Automatischer BGProcessingTask konnte nicht geplant werden", metadata: [
-                "identifier": Self.automaticProcessingTaskIdentifier,
-                "earliestBeginDate": Self.debugTimestampString(request.earliestBeginDate ?? Date()),
-                "error": Self.detailedErrorMessage(for: error),
-                "automaticQueueCount": automaticItems.count,
-                "pendingCancellation": hasCancellationWork,
-            ] as NSDictionary)
+        // The OS owns pending requests and consumes them on delivery. Query that
+        // state instead of resubmitting on every server poll or caching a stale flag.
+        BGTaskScheduler.shared.getPendingTaskRequests { requests in
+            let pending = requests.first { $0.identifier == identifier } as? BGProcessingTaskRequest
+            let pendingDate = pending.map { $0.earliestBeginDate ?? Date.distantPast }
+            let pendingNetwork = pending?.requiresNetworkConnectivity
+            let pendingPower = pending?.requiresExternalPower
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer {
+                    self.automaticSchedulingInFlight = false
+                    if self.automaticSchedulingNeedsUpdate {
+                        self.automaticSchedulingNeedsUpdate = false
+                        self.scheduleAutomaticBackgroundProcessingIfNeeded()
+                    }
+                }
+                guard revision == self.automaticSchedulingRevision else { return }
+                if let continuedPath = UserDefaults.standard.string(forKey: "ICTranscriptionActiveContinuedPath"),
+                   continuedPath.hasPrefix("continued-") { return }
+                if let pendingDate, pendingDate <= requestedDate,
+                   pendingNetwork == requiresNetwork, pendingPower == false { return }
+
+                let request = BGProcessingTaskRequest(identifier: identifier)
+                request.requiresExternalPower = false
+                request.requiresNetworkConnectivity = requiresNetwork
+                request.earliestBeginDate = requestedDate
+                do {
+                    try BGTaskScheduler.shared.submit(request)
+                    ICDiagnosticLogger.shared.logEvent("background-task", message: "Automatischer BGProcessingTask geplant", metadata: [
+                        "identifier": identifier,
+                        "earliestBeginDate": Self.debugTimestampString(requestedDate),
+                        "requiresNetwork": requiresNetwork,
+                        "automaticQueueCount": automaticCount,
+                        "serverAutomaticQueueCount": serverCount,
+                        "pendingCancellation": hasCancellationWork,
+                    ] as NSDictionary)
+                } catch {
+                    ICDiagnosticLogger.shared.logEvent("background-task", message: "Automatischer BGProcessingTask konnte nicht geplant werden", metadata: [
+                        "identifier": identifier,
+                        "earliestBeginDate": Self.debugTimestampString(requestedDate),
+                        "error": Self.detailedErrorMessage(for: error),
+                        "automaticQueueCount": automaticCount,
+                        "pendingCancellation": hasCancellationWork,
+                    ] as NSDictionary)
+                }
+            }
         }
     }
 
     @objc(scheduleAutomaticBackgroundProcessingIfNeeded)
     func scheduleAutomaticBackgroundProcessingIfNeeded() {
-        guard ICAITranscriptionFeaturesAvailable() else {
+        guard ICAITranscriptionFeaturesAvailable() || ServerTranscriptionManager.shared.hasRetryableCancellations else {
+            automaticSchedulingRevision += 1
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.automaticProcessingTaskIdentifier)
             return
         }
         let automaticItems = items.filter {
             $0.automaticallyScheduled && $0.status == .queued
         }
-        let hasCancellationWork = chapterGen.hasPendingOpenAIBackgroundCancellationWork
+        let hasCancellationWork = chapterGen.hasPendingOpenAIBackgroundCancellationWork || ServerTranscriptionManager.shared.hasRetryableCancellations
         let hasServerAutomaticItems = ServerTranscriptionManager.shared.hasPendingAutomaticItems
         guard !automaticItems.isEmpty || hasServerAutomaticItems || hasCancellationWork else {
+            automaticSchedulingRevision += 1
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.automaticProcessingTaskIdentifier)
             ICDiagnosticLogger.shared.logEvent("background-task", message: "Kein automatischer BGProcessingTask erforderlich", metadata: [
                 "identifier": Self.automaticProcessingTaskIdentifier,
@@ -4037,6 +4178,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     }
 
     private func processNext() {
+        guard queueLoadError == nil else { return }
         guard ICAITranscriptionFeaturesAvailable() else { return }
         guard !cacheClearInProgress else { return }
         guard !isProcessing else { return }
@@ -4946,6 +5088,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         case .generatingChapters: return "generatingChapters"
         case .completed: return "completed"
         case .failed: return "failed"
+        case .canceled: return "canceled"
         @unknown default: return "unknown"
         }
     }
@@ -5195,6 +5338,11 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
     private func persistQueue(cacheDeletionPreparation: ICCacheDeletionPreparation? = nil,
                               completion: (@Sendable (NSError?) -> Void)? = nil) {
+        if let queueLoadError {
+            cacheDeletionPreparation?.finishPreparation(withError: queueLoadError)
+            completion?(queueLoadError)
+            return
+        }
         let now = Date()
         let persistable = PersistedQueue(
             items: items.compactMap { item -> PersistedQueue.PersistedItem? in
@@ -5280,8 +5428,14 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     }
 
     private func loadPersistedQueue() {
-        guard let data = try? Data(contentsOf: queueFileURL),
-              let persisted = try? JSONDecoder().decode(PersistedQueue.self, from: data) else {
+        let persisted: PersistedQueue
+        do {
+            let saved = try ICQueueSnapshotStorage.read(PersistedQueue.self, from: queueFileURL)
+            queueLoadError = nil
+            guard let saved else { return }
+            persisted = saved
+        } catch {
+            queueLoadError = ICQueueSnapshotStorage.loadError(error)
             return
         }
         pendingCacheDeletionHashes = Set(persisted.pendingCacheDeletionHashes ?? [])

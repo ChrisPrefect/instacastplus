@@ -1,0 +1,61 @@
+{
+  "health": {
+    "ok": true,
+    "queued_jobs": 0,
+    "running_jobs": 1,
+    "episodes": 106,
+    "transcription_workers": {
+      "transcript-instacast-worker.service": true,
+      "transcript-instacast-worker-2.service": false
+    },
+    "service_status": null
+  },
+  "global_limit": 250,
+  "client_limit": 25,
+  "active_job_states": [
+    "queued",
+    "running",
+    "paused"
+  ],
+  "audio_processing_contract": {
+    "max_audio_bytes": 786432000,
+    "max_duration_seconds": 86400.0,
+    "duration_authority": "Finite positive duration measured from the downloaded audio; client/feed duration is advisory.",
+    "download_timeout_seconds": 3600.0,
+    "probe_timeout_seconds": 60.0,
+    "terminal_errors": [
+      "audio_too_large",
+      "audio_duration_exceeded",
+      "audio_duration_invalid",
+      "source_audio_unavailable",
+      "no_speech",
+      "unsupported_language"
+    ],
+    "source_unavailable": "Audio HTTP404/410 fails this job once; it does not cancel the client request or other requests.",
+    "resources_unavailable": "Disk pressure or ENOSPC/EDQUOT pauses the same accepted job without consuming an attempt; completed checkpoints are preserved.",
+    "language": "Only explicitly configured unsupported languages are rejected. Automatic detection cannot guarantee recognition of unsupported spoken content.",
+    "resume": "Each claim has private immutable snapshots of completed chunks bound to the exact source SHA-256 and ASR settings."
+  },
+  "rate_limits": {
+    "status_poll_seconds": 15,
+    "read_requests_per_minute": {
+      "client": 250,
+      "ip": 2500,
+      "token": 12000
+    },
+    "cancel_requests_per_minute": {
+      "client": 50,
+      "ip": 500,
+      "token": 500
+    },
+    "submission_requests_per_hour": {
+      "client": 240,
+      "episode_token": 2000,
+      "podcast_token": 300
+    },
+    "isolation": "Reads, submissions and cancellation use independent bounded buckets; exhausting reads or submissions does not disable authenticated cancellation."
+  },
+  "old_episode_status": "canceled",
+  "unknown_request_http_status": 404,
+  "production_jobs_created": 0
+}

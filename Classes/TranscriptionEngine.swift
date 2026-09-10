@@ -9,8 +9,10 @@
 //
 
 import Foundation
+import CryptoKit
 import AVFoundation
 import NaturalLanguage
+import enum WhisperKit.Constants
 import UIKit
 import Darwin
 import Darwin.Mach
@@ -733,11 +735,75 @@ private struct ICDiagnosticLogLine: Encodable {
 
 // MARK: - Checkpoint
 
+enum ICAudioIdentity {
+    struct Fingerprint: Sendable {
+        let sha256: String
+        let fileState: [String]
+    }
+
+    static func canResume(checkpointSHA256: String?, sourceSHA256: String) -> Bool {
+        checkpointSHA256 == sourceSHA256 && sourceSHA256.count == 64
+    }
+
+    private static func fileState(_ url: URL) throws -> [String] {
+        guard url.isFileURL else { throw CocoaError(.fileReadUnsupportedScheme) }
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard attributes[.type] as? FileAttributeType == .typeRegular,
+              (attributes[.size] as? NSNumber)?.int64Value ?? 0 > 0 else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        guard let device = attributes[.systemNumber] as? NSNumber,
+              let inode = attributes[.systemFileNumber] as? NSNumber,
+              let size = attributes[.size] as? NSNumber,
+              let modified = attributes[.modificationDate] as? Date else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return [device.stringValue, inode.stringValue, size.stringValue, String(modified.timeIntervalSince1970)]
+    }
+
+    static func fingerprint(of url: URL) async throws -> Fingerprint {
+        let work = Task.detached(priority: .utility) {
+            let before = try fileState(url)
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            var digest = SHA256()
+            while let data = try handle.read(upToCount: 1_048_576), !data.isEmpty {
+                try Task.checkCancellation()
+                digest.update(data: data)
+            }
+            guard before == (try fileState(url)) else { throw CocoaError(.fileReadCorruptFile) }
+            return Fingerprint(sha256: digest.finalize().map { String(format: "%02x", $0) }.joined(), fileState: before)
+        }
+        return try await withTaskCancellationHandler(operation: { try await work.value }, onCancel: { work.cancel() })
+    }
+
+    static func sha256(of url: URL) async throws -> String {
+        try await fingerprint(of: url).sha256
+    }
+
+    static func isUnchanged(_ fingerprint: Fingerprint, at url: URL) async throws -> Bool {
+        try await Task.detached(priority: .utility) { fingerprint.fileState == (try fileState(url)) }.value
+    }
+}
+
 private struct TranscriptionCheckpoint: Codable {
     var lastTimestamp: Double
     var cues: [CuePersist]
     var engineType: Int
     var consecutiveFailures: Int
+    var sourceAudioSHA256: String? = nil
+
+    func isValid(forDuration duration: Double) -> Bool {
+        guard duration.isFinite, duration > 0, lastTimestamp.isFinite,
+              lastTimestamp >= 0, lastTimestamp <= duration else { return false }
+        var previousEnd = 0.0
+        for cue in cues {
+            guard cue.start.isFinite, cue.end.isFinite, cue.start >= previousEnd,
+                  cue.end > cue.start, cue.end <= duration else { return false }
+            previousEnd = cue.end
+        }
+        return lastTimestamp == previousEnd
+    }
 
     struct CuePersist: Codable {
         let start: Double
@@ -788,6 +854,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
     }
 
     private static let transcriptOriginAttributeName = "com.iteconomy.instacastplus.transcript-origin"
+    private static let transcriptAudioAttributeName = "com.iteconomy.instacastplus.source-audio-sha256"
 
     @objc var engineType: ICTranscriptionEngineType {
         get {
@@ -812,6 +879,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
     private var currentCheckpointAccumulator: ICTranscriptCheckpointAccumulator?
     private var currentCheckpointEpisodeHash: String?
     private var currentCheckpointEngineType: ICTranscriptionEngineType?
+    private var currentSourceAudioSHA256: String?
     private var checkpointCache: [String: TranscriptionCheckpoint] = [:]
 
     nonisolated static func isBackgroundGPUExecutionError(_ error: Error) -> Bool {
@@ -897,11 +965,6 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         currentCompletion = completion
         currentTranscriptionRunID = transcriptionRunID
 
-        // Load checkpoint if exists
-        let checkpoint = loadCheckpoint(for: episodeHash)
-        let startOffset = checkpoint?.lastTimestamp ?? 0
-        let existingCues = checkpoint?.cues.map { ICTranscriptCue(start: $0.start, end: $0.end, text: $0.text) } ?? []
-
         // Get audio duration for progress calculation
         let asset = AVURLAsset(url: audioURL)
 
@@ -909,12 +972,29 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
             guard let self = self else { return }
 
             do {
+                let sourceIdentity = try await ICAudioIdentity.fingerprint(of: audioURL)
+                try Task.checkCancellation()
+                guard self.currentTranscriptionRunID == transcriptionRunID else { throw CancellationError() }
+                let sourceAudioSHA256 = sourceIdentity.sha256
+                var checkpoint = self.loadCheckpoint(for: episodeHash)
+                if !ICAudioIdentity.canResume(checkpointSHA256: checkpoint?.sourceAudioSHA256, sourceSHA256: sourceAudioSHA256) {
+                    self.removeCheckpoint(for: episodeHash)
+                    checkpoint = nil
+                }
+                self.currentSourceAudioSHA256 = sourceAudioSHA256
                 let duration = try await asset.load(.duration)
                 let totalDuration = CMTimeGetSeconds(duration)
-                guard totalDuration > 0 else {
+                guard totalDuration.isFinite, totalDuration > 0 else {
                     throw NSError(domain: "TranscriptionEngine", code: 4,
                                   userInfo: [NSLocalizedDescriptionKey: "Invalid audio duration"])
                 }
+
+                if let candidate = checkpoint, !candidate.isValid(forDuration: totalDuration) {
+                    self.removeCheckpoint(for: episodeHash)
+                    checkpoint = nil
+                }
+                let startOffset = checkpoint?.lastTimestamp ?? 0
+                let existingCues = checkpoint?.cues.map { ICTranscriptCue(start: $0.start, end: $0.end, text: $0.text) } ?? []
 
                 // Determine effective engine based on failure counter
                 let effectiveEngine = self.effectiveEngine(for: episodeHash, checkpoint: checkpoint)
@@ -1005,10 +1085,20 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
 
                 // Post-process: merge short fragments, split long segments
                 let allCues = self.postProcessCues(rawCues)
+                guard !allCues.isEmpty else {
+                    throw NSError(domain: "TranscriptionEngine.Input", code: 5,
+                                  userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Speech recognition returned no text. No transcript was created for this episode.", comment: ""),
+                                             "transcriptionErrorCode": "no_speech"])
+                }
 
                 // Save SRT file
+                guard try await ICAudioIdentity.isUnchanged(sourceIdentity, at: audioURL) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                try Task.checkCancellation()
+                guard self.currentTranscriptionRunID == transcriptionRunID else { throw CancellationError() }
                 let srtURL = self.srtURL(for: episodeHash)
-                try self.writeSRT(cues: allCues, to: srtURL, origin: .appGenerated)
+                try self.writeSRT(cues: allCues, to: srtURL, origin: .appGenerated, sourceAudioSHA256: sourceAudioSHA256)
                 self.invalidateSRTCache(for: episodeHash)
 
                 // Remove checkpoint
@@ -1016,6 +1106,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
                 self.currentCheckpointAccumulator = nil
                 self.currentCheckpointEpisodeHash = nil
                 self.currentCheckpointEngineType = nil
+                self.currentSourceAudioSHA256 = nil
 
                 // Reset failure counter
                 self.resetFailureCounter(for: episodeHash)
@@ -1048,6 +1139,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
                     self.currentCheckpointAccumulator = nil
                     self.currentCheckpointEpisodeHash = nil
                     self.currentCheckpointEngineType = nil
+                    self.currentSourceAudioSHA256 = nil
                     // Only call completion if not already called by cancelTranscription()
                     if let completionHandler = self.currentCompletion {
                         self.currentCompletion = nil
@@ -1083,6 +1175,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         currentCheckpointAccumulator = nil
         currentCheckpointEpisodeHash = nil
         currentCheckpointEngineType = nil
+        currentSourceAudioSHA256 = nil
         isTranscribing = false
         currentStatus = .none
         // Call completion so withCheckedContinuation in the queue doesn't hang
@@ -1185,8 +1278,17 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
     /// Reads the exact canonical SRT written by this engine. `nil` means no
     /// transcript exists; an empty array means the persisted timeline is
     /// malformed and must not validate revision-bound semantic artifacts.
+    // Only the most recently committed server transcript is retained. Its exact
+    // file identity makes the immediate analysis commit reuse validated cues.
+    private var validatedServerTranscript: (episodeHash: String, snapshot: String, cues: [ICTranscriptCue])?
+
     func persistedTranscriptCues(for episodeHash: String) throws -> [ICTranscriptCue]? {
         let url = srtURL(for: episodeHash)
+        if let cached = validatedServerTranscript,
+           cached.episodeHash == episodeHash,
+           cached.snapshot == Self.artifactSnapshotIdentifier(at: url) {
+            return cached.cues
+        }
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let content = try String(contentsOf: url, encoding: .utf8)
         return try parsePersistedSRT(content)
@@ -1208,7 +1310,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         parsePersistedSRTDetailed(content).cues
     }
 
-    private func parsePersistedSRTDetailed(
+    nonisolated private func parsePersistedSRTDetailed(
         _ content: String,
         requiresCanonicalTimeLines: Bool = false
     ) -> (cues: [ICTranscriptCue], rejection: ICSRTRejection?) {
@@ -1265,7 +1367,8 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
             }
             guard start >= 0 else { return reject(timeLineIndex, "negative Startzeit") }
             guard end > start else { return reject(timeLineIndex, "Endzeit ist nicht größer als die Startzeit") }
-            guard start >= previousEnd - 0.001 else {
+            let overlapTolerance = requiresCanonicalTimeLines ? 0.0 : 0.001
+            guard start >= previousEnd - overlapTolerance else {
                 return reject(timeLineIndex, String(format: "Cue überlappt den vorherigen (Start %.3f < vorheriges Ende %.3f)", start, previousEnd))
             }
             guard !text.isEmpty else { return reject(timeLineIndex, "Cue ohne Text") }
@@ -1278,7 +1381,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
     /// Validates a server-delivered SRT without changing the current transcript.
     /// The caller can therefore validate every semantic artifact before committing
     /// any part of a ready server result.
-    func validateServerSRTData(_ data: Data, for episodeHash: String) throws -> [ICTranscriptCue] {
+    nonisolated func validateServerSRTData(_ data: Data, for episodeHash: String) throws -> [ICTranscriptCue] {
         guard !episodeHash.isEmpty,
               let content = String(data: data, encoding: .utf8),
               !content.contains("\r") else {
@@ -1309,11 +1412,22 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         return cues
     }
 
-    private func isCanonicalServerSRTTimeLine(_ line: String) -> Bool {
+    nonisolated private func isCanonicalServerSRTTimeLine(_ line: String) -> Bool {
         line.range(
             of: "^[0-9]{2}:[0-5][0-9]:[0-5][0-9],[0-9]{3} --> [0-9]{2}:[0-5][0-9]:[0-5][0-9],[0-9]{3}$",
             options: .regularExpression
         ) != nil
+    }
+
+    /// Stable identity of one atomic file snapshot, including in-place mutations.
+    @objc nonisolated static func artifactSnapshotIdentifier(at url: URL?) -> String? {
+        var info = stat()
+        guard let url, url.isFileURL, stat(url.path, &info) == 0 else { return nil }
+        return "\(info.st_dev):\(info.st_ino):\(info.st_size):\(info.st_mtimespec.tv_sec):\(info.st_mtimespec.tv_nsec):\(info.st_ctimespec.tv_sec):\(info.st_ctimespec.tv_nsec)"
+    }
+
+    @objc func transcriptSnapshotIdentifier(for episodeHash: String) -> String? {
+        Self.artifactSnapshotIdentifier(at: ICTranscriptionPaths.srtURL(for: episodeHash))
     }
 
     /// Persists the exact bytes that were validated. Reformatting parsed Double
@@ -1321,17 +1435,23 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
     /// longer match the server's sponsor artifacts.
     func saveValidatedServerSRTData(_ data: Data,
                                     cues: [ICTranscriptCue],
-                                    for episodeHash: String) throws {
+                                    for episodeHash: String,
+                                    sourceAudioSHA256: String? = nil) throws {
         guard !episodeHash.isEmpty, !cues.isEmpty else {
             throw NSError(domain: "TranscriptionEngine.ServerImport", code: 3,
                           userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Das Server-Transkript ist ungültig.", comment: "")])
         }
         let url = ICTranscriptionPaths.srtURL(for: episodeHash)
         do {
-            try replaceSRT(at: url, origin: .server) { temporaryURL in
+            try replaceSRT(at: url, origin: .server, sourceAudioSHA256: sourceAudioSHA256) { temporaryURL in
                 try data.write(to: temporaryURL, options: .atomic)
             }
             invalidateSRTCache(for: episodeHash)
+            if let snapshot = Self.artifactSnapshotIdentifier(at: url),
+               (try? Data(contentsOf: url)) == data,
+               snapshot == Self.artifactSnapshotIdentifier(at: url) {
+                validatedServerTranscript = (episodeHash, snapshot, cues)
+            }
             ChapterGenerator.shared.invalidateAnalysisCache(for: episodeHash)
             ICDiagnosticLogger.shared.logFileEvent("file-write",
                                                    message: "Validiertes Server-SRT geschrieben",
@@ -1363,7 +1483,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         return cues
     }
 
-    private func parsePersistedSRTTime(_ value: String) -> Double {
+    nonisolated private func parsePersistedSRTTime(_ value: String) -> Double {
         let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: ",", with: ".")
         let parts = normalized.components(separatedBy: ":")
@@ -1376,6 +1496,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
 
     /// Invalidate cached hasSRT result (call after SRT creation/deletion).
     private func invalidateSRTCache(for episodeHash: String) {
+        if validatedServerTranscript?.episodeHash == episodeHash { validatedServerTranscript = nil }
         _srtCache.removeValue(forKey: episodeHash)
     }
 
@@ -1414,7 +1535,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         invalidateSRTCache(for: episodeHash)
         removeTranscriptCacheFiles(for: episodeHash)
         TranscriptionLogger.shared.clearLog(episodeHash: episodeHash)
-        ChapterGenerator.shared.invalidateChaptersCache(for: episodeHash)
+        ChapterGenerator.shared.invalidateAnalysisCache(for: episodeHash)
         removeCheckpoint(for: episodeHash)
         ICDiagnosticLogger.shared.logEpisodeArtifacts(episodeHash: episodeHash, reason: "transcript-removed")
     }
@@ -1451,16 +1572,28 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
 
     // MARK: - WhisperKit Backend
 
+    private static func validatedWhisperLanguage(_ language: String?) throws -> String? {
+        guard let language = language?.trimmingCharacters(in: .whitespacesAndNewlines), !language.isEmpty else { return nil }
+        let code = language.lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).first.map(String.init) ?? ""
+        guard Constants.languageCodes.contains(code) else {
+            throw NSError(domain: "TranscriptionEngine.Input", code: 6,
+                          userInfo: [NSLocalizedDescriptionKey: String(format: NSLocalizedString("The podcast specifies an unsupported speech-recognition language ('%@'). No transcript was created.", comment: ""), language),
+                                     "transcriptionErrorCode": "unsupported_language"])
+        }
+        return code
+    }
+
     private func transcribeWithWhisperKit(audioURL: URL, startOffset: Double, totalDuration: Double,
                                           language: String?,
                                           statusDetail: @escaping @Sendable (String) -> Void,
                                           progress: @escaping @Sendable (Float) -> Void,
                                           segmentCallback: @escaping @Sendable (ICTranscriptCue) -> Void) async throws -> [ICTranscriptCue] {
+        let validatedLanguage = try Self.validatedWhisperLanguage(language)
         return try await WhisperKitBackend.shared.transcribe(
             audioURL: audioURL,
             startOffset: startOffset,
             totalDuration: totalDuration,
-            language: language,
+            language: validatedLanguage,
             statusUpdate: statusDetail,
             progress: progress,
             segmentCallback: segmentCallback
@@ -1835,7 +1968,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
 
     // MARK: - SRT Writing
 
-    private func writeSRT(cues: [ICTranscriptCue], to url: URL, origin: TranscriptOrigin) throws {
+    private func writeSRT(cues: [ICTranscriptCue], to url: URL, origin: TranscriptOrigin, sourceAudioSHA256: String? = nil) throws {
         var srt = ""
         for (index, cue) in cues.enumerated() {
             srt += "\(index + 1)\n"
@@ -1844,9 +1977,10 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         }
         let episodeHash = url.deletingPathExtension().lastPathComponent
         do {
-            try replaceSRT(at: url, origin: origin) { temporaryURL in
+            try replaceSRT(at: url, origin: origin, sourceAudioSHA256: sourceAudioSHA256) { temporaryURL in
                 try srt.write(to: temporaryURL, atomically: true, encoding: .utf8)
             }
+            invalidateSRTCache(for: episodeHash)
             ChapterGenerator.shared.invalidateAnalysisCache(for: episodeHash)
             ICDiagnosticLogger.shared.logFileEvent("file-write",
                                                    message: "SRT geschrieben",
@@ -1890,6 +2024,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
 
     private func replaceSRT(at url: URL,
                             origin: TranscriptOrigin,
+                            sourceAudioSHA256: String? = nil,
                             writer: (URL) throws -> Void) throws {
         let temporaryURL = url.deletingLastPathComponent().appendingPathComponent(
             ".\(url.lastPathComponent).\(UUID().uuidString).tmp"
@@ -1898,6 +2033,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
 
         try writer(temporaryURL)
         try setTranscriptOrigin(origin, at: temporaryURL)
+        try setTranscriptSourceAudioSHA256(sourceAudioSHA256, at: temporaryURL)
 
         let fileManager = FileManager.default
         if fileManager.fileExists(atPath: url.path) {
@@ -1926,6 +2062,28 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
                 userInfo: [NSFilePathErrorKey: url.path]
             )
         }
+    }
+
+    private func setTranscriptSourceAudioSHA256(_ value: String?, at url: URL) throws {
+        guard let value else { return }
+        guard value.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        let result = Array(value.utf8).withUnsafeBytes {
+            setxattr(url.path, Self.transcriptAudioAttributeName, $0.baseAddress, $0.count, 0, 0)
+        }
+        guard result == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+    }
+
+    func transcriptSourceAudioSHA256(for episodeHash: String) -> String? {
+        let url = srtURL(for: episodeHash)
+        var bytes = [UInt8](repeating: 0, count: 64)
+        let count = bytes.withUnsafeMutableBytes {
+            getxattr(url.path, Self.transcriptAudioAttributeName, $0.baseAddress, $0.count, 0, 0)
+        }
+        guard count == 64, let value = String(bytes: bytes, encoding: .utf8),
+              value.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else { return nil }
+        return value
     }
 
     private func transcriptOrigin(at url: URL) -> TranscriptOrigin? {
@@ -2007,7 +2165,8 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
             lastTimestamp: cues.last?.end ?? 0,
             cues: cues.map { .init(start: $0.start, end: $0.end, text: $0.text) },
             engineType: engineType,
-            consecutiveFailures: loadCheckpoint(for: episodeHash)?.consecutiveFailures ?? 0
+            consecutiveFailures: loadCheckpoint(for: episodeHash)?.consecutiveFailures ?? 0,
+            sourceAudioSHA256: currentSourceAudioSHA256
         )
         _ = writeCheckpoint(checkpoint, episodeHash: episodeHash, message: "Checkpoint geschrieben")
     }
@@ -2063,7 +2222,8 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
             lastTimestamp: cues.last?.end ?? 0,
             cues: cues.map { .init(start: $0.start, end: $0.end, text: $0.text) },
             engineType: engineType,
-            consecutiveFailures: existing?.consecutiveFailures ?? 0
+            consecutiveFailures: existing?.consecutiveFailures ?? 0,
+            sourceAudioSHA256: currentSourceAudioSHA256
         )
         return writeCheckpoint(checkpoint, episodeHash: episodeHash, message: "Checkpoint aktualisiert")
     }

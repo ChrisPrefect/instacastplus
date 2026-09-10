@@ -1,0 +1,17 @@
+{
+  "checked_at": "2026-09-06T00:06:49.120483+00:00",
+  "configuration": "Release",
+  "version": "4.0",
+  "build": "37",
+  "bundle_id": "com.iteconomy.instacastplus",
+  "device": "Chris iPhone17Pro",
+  "build_succeeded": true,
+  "codesign_verified": true,
+  "embedded_watch_audio_verified": true,
+  "unchanged_source_file_count": 1380,
+  "source_inventory_sha256": "4ad256414ce474bcd4ede8eeaea7f6acbc29aed1deffb545a85e540e6d302bf2",
+  "installed": true,
+  "testflight_upload": false,
+  "common_app_scripts_passed": 84,
+  "launched": true
+}

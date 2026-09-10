@@ -2611,7 +2611,10 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
     persitentEpisode.deeplinkURL = parserEpisode.deeplink;
     persitentEpisode.video = parserEpisode.video;
     persitentEpisode.explicitContent = parserEpisode.explicitContent;
-    persitentEpisode.duration = (int32_t)parserEpisode.duration;
+    if (parserEpisode.duration > 0 && persitentEpisode.lastPlayed == nil &&
+        persitentEpisode.duration != (int32_t)parserEpisode.duration) {
+        persitentEpisode.duration = (int32_t)parserEpisode.duration;
+    }
 }
 
 - (void) _copyMediumValuesFrom:(ICMedia*)parserMedium to:(CDMedium*)persitentMedium

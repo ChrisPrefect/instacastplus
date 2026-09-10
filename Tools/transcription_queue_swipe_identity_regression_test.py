@@ -57,4 +57,26 @@ current = [("L", False), ("N", False), ("S", True)]
 require(captured == ("S", True) and current[1] == ("N", False),
         "The fixture must reproduce mixed-queue identity drift.")
 
+# UIKit's row count and touch handlers must stay on the same rendered membership
+# while the underlying queue changes behind an open swipe.
+require(
+    "return self.displayedItems.count;" in SOURCE
+    and "[TranscriptionQueue shared].displayItems[indexPath.row]" not in SOURCE
+    and "[TranscriptionQueue shared].displayItems[row]" not in SOURCE,
+    "Row counts, taps, progress and accessory actions must share a stable displayedItems snapshot.",
+)
+queue_changed = method_body("- (void)_queueChanged")
+require(
+    "afterDelay:" not in queue_changed
+    and "isEqualToArray:items" in queue_changed
+    and queue_changed.index("self.displayedItems = items") < queue_changed.index("reloadData")
+    and "_progressUpdated" in queue_changed,
+    "Queue membership changes must render immediately; status-only changes must preserve existing cells.",
+)
+flush = method_body("- (void)_endSwipeInteractionAndFlushDeferredUpdate")
+require(
+    flush.index("self.displayedItems =") < flush.index("reloadData"),
+    "The deferred reload must publish its matching snapshot before UIKit asks for rows.",
+)
+
 print("Transcription queue swipe identity regression checks passed")

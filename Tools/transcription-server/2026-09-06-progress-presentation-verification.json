@@ -1,0 +1,115 @@
+{
+  "checked_at": "2026-09-06T00:35:00.361102+00:00",
+  "schema_revision": "2026-09-06.2",
+  "health": {
+    "ok": true,
+    "queued_jobs": 0,
+    "running_jobs": 0,
+    "episodes": 107,
+    "transcription_workers": {
+      "transcript-instacast-worker.service": true,
+      "transcript-instacast-worker-2.service": false
+    },
+    "service_status": null
+  },
+  "active_progress_schema": {
+    "type": "null"
+  },
+  "ready_progress": 1.0,
+  "canceled_progress": null,
+  "worker_not_restarted": true,
+  "production_test_jobs_created": 0,
+  "version": "4.0",
+  "build": "37",
+  "binary_sha256": "8d8ace426217dba0868daacad17e44b6e460b602dd6030a1688c5e87c971b071",
+  "transcription_availability_binary_check": "enabled",
+  "codesign_verified": true,
+  "unchanged_source_files": 1380,
+  "install": {
+    "info": {
+      "arguments": [
+        "devicectl",
+        "device",
+        "install",
+        "app",
+        "--device",
+        "943DD226-88E3-57DD-B2B2-E128005AC50D",
+        "/Users/Chris/Library/Developer/Xcode/DerivedData/Instacast-cgtqgggsjixnfbdsmznxtbkjogvj/Build/Products/Release-iphoneos/InstacastPlus.app",
+        "--json-output",
+        "/tmp/instacast-progress-install.json"
+      ],
+      "commandType": "devicectl.device.install.app",
+      "environment": {
+        "TERM": "dumb"
+      },
+      "jsonVersion": 3,
+      "outcome": "success",
+      "version": "518.33"
+    },
+    "result": {
+      "deviceIdentifier": "943DD226-88E3-57DD-B2B2-E128005AC50D",
+      "installedApplications": [
+        {
+          "bundleID": "com.iteconomy.instacastplus",
+          "databaseSequenceNumber": 2904,
+          "databaseUUID": "9B8D6318-DC70-4B8D-9016-C96202840012",
+          "installationURL": "file:///private/var/containers/Bundle/Application/B500C7D4-3DB3-41A1-8353-2F03D3E81732/InstacastPlus.app/",
+          "launchServicesIdentifier": "unknown",
+          "options": {}
+        }
+      ]
+    }
+  },
+  "launch": {
+    "info": {
+      "arguments": [
+        "devicectl",
+        "device",
+        "process",
+        "launch",
+        "--device",
+        "943DD226-88E3-57DD-B2B2-E128005AC50D",
+        "com.iteconomy.instacastplus",
+        "--json-output",
+        "/tmp/instacast-progress-launch.json"
+      ],
+      "commandType": "devicectl.device.process.launch",
+      "environment": {
+        "TERM": "dumb"
+      },
+      "jsonVersion": 3,
+      "outcome": "success",
+      "version": "518.33"
+    },
+    "result": {
+      "deviceIdentifier": "943DD226-88E3-57DD-B2B2-E128005AC50D",
+      "launchOptions": {
+        "activatedWhenStarted": true,
+        "arguments": [],
+        "environmentVariables": {
+          "TERM": "dumb"
+        },
+        "platformSpecificOptions": {},
+        "startStopped": false,
+        "terminateExistingInstances": false,
+        "user": {
+          "active": true
+        }
+      },
+      "process": {
+        "auditToken": [
+          4294967295,
+          501,
+          501,
+          501,
+          501,
+          5099,
+          0,
+          13301
+        ],
+        "executable": "file:///private/var/containers/Bundle/Application/B500C7D4-3DB3-41A1-8353-2F03D3E81732/InstacastPlus.app/InstacastPlus",
+        "processIdentifier": 5099
+      }
+    }
+  }
+}

@@ -2188,10 +2188,10 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (void)carPlayPlayEpisode:(CDEpisode*)episode at:(NSTimeInterval)startTime
 {
-    CDEpisode* currentEpisode = [AudioSession sharedAudioSession].episode;
+    PlaybackManager* pman = [PlaybackManager playbackManager];
 
-    if (currentEpisode == episode) {
-        PlaybackManager* pman = [PlaybackManager playbackManager];
+    // A restored AudioSession selection does not mean its media is loaded.
+    if (pman.playingEpisode == episode) {
         if (pman.isPaused) {
             [pman play];
         }

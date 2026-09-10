@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "schema_version": 1,
+  "transcript_revision": "sha256:ca6aaf87e65f3b5474eabc117bb471016edd5e79fa5e364699778ae2ca37ca43",
+  "audio_duration_seconds": 114.836,
+  "segments": [
+    {
+      "start": 44.31,
+      "end": 71.69,
+      "title": "Sponsor: Beispiel Kaffee"
+    }
+  ]
+}

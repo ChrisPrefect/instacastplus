@@ -2130,7 +2130,10 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
     persistentEpisode.deeplinkURL = parserEpisode.deeplink;
     persistentEpisode.video = parserEpisode.video;
     persistentEpisode.explicitContent = parserEpisode.explicitContent;
-    persistentEpisode.duration = (int32_t)parserEpisode.duration;
+    if (parserEpisode.duration > 0 && persistentEpisode.lastPlayed == nil &&
+        persistentEpisode.duration != (int32_t)parserEpisode.duration) {
+        persistentEpisode.duration = (int32_t)parserEpisode.duration;
+    }
 }
 
 - (void)_copyMediumValuesFrom:(ICMedia*)parserMedium toPersistentMedium:(CDMedium*)persistentMedium

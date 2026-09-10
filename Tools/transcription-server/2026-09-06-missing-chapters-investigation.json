@@ -1,0 +1,124 @@
+{
+  "checked_at": "2026-09-06T04:23:49Z",
+  "episode_hash": "7b4c55b92e641069251323a3a67f8934",
+  "chapter_count": 4,
+  "downloaded_audio_bytes": 11076565,
+  "downloaded_audio_sha256": "a6a74e60d84fbe1b839e38f573c81fa7896f573c341d92026f341e6578df6b82",
+  "analysis_source_sha256": "a6a74e60d84fbe1b839e38f573c81fa7896f573c341d92026f341e6578df6b82",
+  "chapter_intervals": [
+    [
+      0,
+      235.86
+    ],
+    [
+      235.86,
+      571.58
+    ],
+    [
+      571.58,
+      691.492
+    ],
+    [
+      691.492,
+      772.843
+    ]
+  ],
+  "footer_before": {
+    "height": 28,
+    "multiline": false,
+    "fits": false
+  },
+  "footer_after": {
+    "height": 57.66666793823242,
+    "multiline": true,
+    "fits": true
+  },
+  "footer_after_width_320": {
+    "height": 75.66666412353516,
+    "multiline": true,
+    "fits": true
+  },
+  "version": "4.0",
+  "build": "37",
+  "build_succeeded": true,
+  "transcription_enabled_binary_check": true,
+  "signature_verified": true,
+  "install": {
+    "info": {
+      "arguments": [
+        "devicectl",
+        "device",
+        "install",
+        "app",
+        "--device",
+        "943DD226-88E3-57DD-B2B2-E128005AC50D",
+        "/Users/Chris/Library/Developer/Xcode/DerivedData/Instacast-cgtqgggsjixnfbdsmznxtbkjogvj/Build/Products/Release-iphoneos/InstacastPlus.app",
+        "--json-output",
+        "/tmp/instacast-source-bound-retry-install.json"
+      ],
+      "commandType": "devicectl.device.install.app",
+      "environment": {
+        "TERM": "dumb"
+      },
+      "jsonVersion": 3,
+      "outcome": "success",
+      "version": "518.33"
+    },
+    "result": {
+      "deviceIdentifier": "943DD226-88E3-57DD-B2B2-E128005AC50D",
+      "installedApplications": [
+        {
+          "bundleID": "com.iteconomy.instacastplus",
+          "databaseSequenceNumber": 2944,
+          "databaseUUID": "9B8D6318-DC70-4B8D-9016-C96202840012",
+          "installationURL": "file:///private/var/containers/Bundle/Application/80432328-00CD-405F-8FEA-73053FCACDEE/InstacastPlus.app/",
+          "launchServicesIdentifier": "unknown",
+          "options": {}
+        }
+      ]
+    }
+  },
+  "launch_succeeded": true,
+  "launch_blocker": null,
+  "chapter_root_cause_confirmed": true,
+  "diagnostic_action": "inspectPlayback",
+  "diagnostic_action_autostart": false,
+  "notice_state_fix": {
+    "pending_was_reported_as_failure": true,
+    "publisher_transcript_was_reported_as_generated_failure": true,
+    "red_test": "/tmp/instacast-notice-state-red.log",
+    "runtime_state_cases_passed": 4,
+    "localization_checked": [
+      "de",
+      "en"
+    ],
+    "layout_width": 320,
+    "layout_font_sizes": [
+      13,
+      44
+    ],
+    "installed": true,
+    "server_preflight_implemented": false
+  },
+  "root_cause": {
+    "kind": "container_duration_includes_mp3_padding",
+    "asset_duration": 772.843174603,
+    "old_last_chapter_end": 772.885,
+    "corrected_last_chapter_end": 772.843,
+    "server_fix_deployed": true
+  },
+  "device_verified": {
+    "audio_identity": true,
+    "timeline": true,
+    "chapter_count": 4,
+    "transcript_cue_count": 117,
+    "screenshot_visually_checked": true,
+    "screenshot_path": "/tmp/instacast-final-iphone.png"
+  },
+  "source_binding": {
+    "pre_artifact_download": true,
+    "player_load_and_cache": true,
+    "retry_ready_result_without_new_asr": true,
+    "pre_asr_client_hash_admission": false
+  }
+}

@@ -7,6 +7,8 @@
 //
 
 #import <AudioToolbox/AudioToolbox.h>
+#import <execinfo.h>
+#import <dlfcn.h>
 #import <AVFoundation/AVFoundation.h>
 #import <MediaPlayer/MPNowPlayingInfoCenter.h>
 #if !TARGET_OS_MACCATALYST
@@ -47,6 +49,16 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent
 preservingPlaybackSource:(BOOL)preservingPlaybackSource;
 
 @property (nonatomic, strong) NSTimer* playbackTimer;
+@property (nonatomic, copy) NSString* sleepTimerDiagnosticReason;
+@property (nonatomic, copy) NSString* lastSleepTimerDiagnosticReason;
+@property (nonatomic, strong) NSDate* lastSleepTimerDiagnosticDate;
+@property (nonatomic) PlaybackStopTimeValue lastLoggedSleepTimerValue;
+@property (nonatomic, strong) NSDate* lastSleepTimerTick;
+@property (nonatomic, strong) NSDate* lastSleepTimerResetDate;
+@property (nonatomic, copy) NSString* lastSleepTimerResetReason;
+@property (nonatomic) NSUInteger sleepTimerTouchResetCount;
+@property (nonatomic) NSUInteger sleepTimerMotionResetCount;
+@property (nonatomic) NSUInteger sleepTimerVolumeResetCount;
 @property (nonatomic, strong) NSDate* stopDate;
 @property BOOL playerWasPlayingBeforeWentToBackground;
 @property BOOL continuousPlaybackTemporarilyDisabled;
@@ -213,6 +225,7 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
 }
 - (void)applicationDidEnterBackgroundNotification:(UIApplication *)application
 {
+    [self _logSleepTimerEvent:@"entered-background" metadata:@{}];
     [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(resumePlayback) userInfo:nil repeats:NO];
 }
 
@@ -874,6 +887,110 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
 #pragma mark -
 #pragma mark Playback Timer
 
+- (NSDictionary*)sleepTimerDiagnosticsMetadata
+{
+    return @{
+        @"episodeHash": self.episode.objectHash ?: @"",
+        @"timerValue": @(self.timerValue),
+        @"timerValid": @(self.playbackTimer.valid),
+        @"stopDate": @(self.stopDate.timeIntervalSince1970),
+        @"remainingSeconds": @(self.stopDate ? self.stopDate.timeIntervalSinceNow : 0),
+        @"lastTimerTick": @(self.lastSleepTimerTick.timeIntervalSince1970),
+        @"lastResetDate": @(self.lastSleepTimerResetDate.timeIntervalSince1970),
+        @"lastResetReason": self.lastSleepTimerResetReason ?: @"",
+        @"touchResetCount": @(self.sleepTimerTouchResetCount),
+        @"motionResetCount": @(self.sleepTimerMotionResetCount),
+        @"volumeResetCount": @(self.sleepTimerVolumeResetCount),
+        @"alwaysActive": @([USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive]),
+        @"intelligentActive": @([USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive]),
+        @"touchEnabled": @([USER_DEFAULTS boolForKey:ScreenTouchIntelligentSleep]),
+        @"motionEnabled": @([USER_DEFAULTS boolForKey:DeviceMovementIntelligentSleep]),
+        @"volumeEnabled": @([USER_DEFAULTS boolForKey:VolumeChangeIntelligentSleep]),
+        @"motionThreshold": @([USER_DEFAULTS doubleForKey:DeviceMovementSensitivity]),
+        @"disableInCarPlay": @([USER_DEFAULTS boolForKey:DisableSleepTimerInCarPlay]),
+        @"carPlayConnected": @([self _isCarPlaySceneConnected]),
+        @"defaultMinutes": @([USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer]),
+        @"lastSelectedMinutes": @([USER_DEFAULTS integerForKey:LastSelectedSleepTimer]),
+        @"uncompletedSeconds": [USER_DEFAULTS objectForKey:UncompletedSleepTimeInterval] ?: @"absent",
+        @"applicationState": @(App.applicationState),
+        @"playbackPaused": @([PlaybackManager playbackManager].paused),
+        @"playbackTime": @([PlaybackManager playbackManager].time),
+    };
+}
+
+- (void)_logSleepTimerEvent:(NSString*)reason metadata:(NSDictionary*)extraMetadata
+{
+    NSDate* now = [NSDate date];
+    BOOL sensorReset = [reason isEqualToString:@"touch"] || [reason isEqualToString:@"motion"] || [reason isEqualToString:@"volume"];
+    if (sensorReset) {
+        if ([reason isEqualToString:@"touch"]) self.sleepTimerTouchResetCount++;
+        if ([reason isEqualToString:@"motion"]) self.sleepTimerMotionResetCount++;
+        if ([reason isEqualToString:@"volume"]) self.sleepTimerVolumeResetCount++;
+        self.lastSleepTimerResetDate = now;
+        self.lastSleepTimerResetReason = reason;
+        // Count every reset; summarize repeated sensor events without flooding overnight logs.
+        if ([self.lastSleepTimerDiagnosticReason isEqualToString:reason] &&
+            self.lastLoggedSleepTimerValue == self.timerValue &&
+            self.lastSleepTimerDiagnosticDate && [now timeIntervalSinceDate:self.lastSleepTimerDiagnosticDate] < 30.0) {
+            return;
+        }
+    }
+    self.lastSleepTimerDiagnosticDate = now;
+    self.lastSleepTimerDiagnosticReason = reason;
+    self.lastLoggedSleepTimerValue = self.timerValue;
+    NSMutableDictionary* metadata = [[self sleepTimerDiagnosticsMetadata] mutableCopy];
+    [metadata addEntriesFromDictionary:extraMetadata];
+    metadata[@"eventDate"] = @(now.timeIntervalSince1970);
+    // Raw addresses allow offline symbolication with this build's dSYM; no symbol lookup on main.
+    void* addresses[8];
+    int count = backtrace(addresses, 8);
+    Dl_info info;
+    if (count > 0 && dladdr(addresses[0], &info)) {
+        metadata[@"imageLoadAddress"] = [NSString stringWithFormat:@"%p", info.dli_fbase];
+    }
+    for (int index = 0; index < count; index++) {
+        metadata[[NSString stringWithFormat:@"caller.%02d", index]] = [NSString stringWithFormat:@"%p", addresses[index]];
+    }
+    [[ICDiagnosticLogger shared] logEvent:@"sleep-timer" message:reason metadata:metadata];
+}
+
+- (void)setTimerValue:(PlaybackStopTimeValue)timerValue diagnosticReason:(NSString*)reason
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self setTimerValue:timerValue diagnosticReason:reason];
+        });
+        return;
+    }
+    self.sleepTimerDiagnosticReason = reason;
+    self.timerValue = timerValue;
+    self.sleepTimerDiagnosticReason = nil;
+}
+
+- (void)startSleepTimerIfNeeded
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self startSleepTimerIfNeeded];
+        });
+        return;
+    }
+
+    // All playback entry points must rearm Always Active after a timer expiry.
+    // Preserve an existing deadline across buffering, chapter changes and repeated Play.
+    if (![PlaybackManager playbackManager].isPodcastPlaying || self.stopDate ||
+        ![USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive] || [self _shouldDisableSleepTimerForCarPlay]) {
+        return;
+    }
+
+    NSInteger timer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
+    if (timer == PlaybackStopTimeNoValue) {
+        NSInteger lastTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
+        timer = lastTimer > 0 ? lastTimer : PlaybackStopTime5min;
+    }
+    [self setTimerValue:timer diagnosticReason:@"playback-start"];
+}
+
 - (NSTimeInterval) timerRemainingTime
 {
     if (self.stopDate) {
@@ -917,6 +1034,8 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
         return;
     }
 
+    PlaybackStopTimeValue requestedValue = timerValue;
+    NSTimeInterval previousStopDate = self.stopDate.timeIntervalSince1970;
     if ([self _shouldDisableSleepTimerForCarPlay]) {
         timerValue = PlaybackStopTimeNoValue;
     }
@@ -957,6 +1076,8 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
         self.stopDate = nil;
     }
     
+    [self _logSleepTimerEvent:self.sleepTimerDiagnosticReason ?: @"timer-value"
+                    metadata:@{@"requestedMinutes": @(requestedValue), @"previousStopDate": @(previousStopDate)}];
     [self willChangeValueForKey:@"timerRemainingTime"];
     [self didChangeValueForKey:@"timerRemainingTime"];
 }
@@ -983,18 +1104,21 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
         self.stopDate = nil;
     }
 
+    [self _logSleepTimerEvent:@"timer-duration" metadata:@{@"requestedSeconds": @(seconds)}];
     [self willChangeValueForKey:@"timerRemainingTime"];
     [self didChangeValueForKey:@"timerRemainingTime"];
 }
 
 - (void)stopPlaybackTimer:(NSTimer*)timer
 {
+    self.lastSleepTimerTick = [NSDate date];
     [self willChangeValueForKey:@"timerRemainingTime"];
     [self didChangeValueForKey:@"timerRemainingTime"];
 
     NSDate* now = [NSDate date];
     if (self.stopDate && [self.stopDate earlierDate:now] == self.stopDate)
     {
+        [self _logSleepTimerEvent:@"expired" metadata:@{}];
         [self.playbackTimer invalidate];
         self.playbackTimer = nil;
         if (self.timerValue != PlaybackStopTimeNoValue)
@@ -1028,6 +1152,7 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
             self.playerWasPlayingBeforeWentToBackground = NO;
             [PlaybackManager playbackManager].hasBeenPlayingWhenInterrupted = NO;
             self.stopDate = nil;
+            [self _logSleepTimerEvent:@"pause-completed" metadata:@{}];
             [[NSNotificationCenter defaultCenter] postNotificationName:AudioSessionSleepTimerDidExpireNotification object:self];
         }
     }

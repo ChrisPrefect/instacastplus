@@ -45,7 +45,6 @@ process_next = function_body(MANAGER, "private func processNext()")
 apply = function_body(MANAGER, "private func apply(_ envelope:")
 handle = function_body(MANAGER, "private func handle(error:")
 for detail in [
-    "Server verarbeitet die Episode.",
     "Server-Ergebnis wird geprüft und übernommen.",
     "Server-Ergebnis konnte vorübergehend nicht geladen werden. Neuer Versuch ist geplant.",
 ]:

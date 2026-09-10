@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "schema_version": 1,
+  "transcript_revision": "sha256:ca6aaf87e65f3b5474eabc117bb471016edd5e79fa5e364699778ae2ca37ca43",
+  "audio_duration_seconds": 114.836,
+  "chapters": [
+    {
+      "start": 0.0,
+      "end": 75.05,
+      "title": "Besuch in der Stadtbibliothek",
+      "is_sponsor": false
+    },
+    {
+      "start": 75.05,
+      "end": 114.836,
+      "title": "Der neue Lesekreis",
+      "is_sponsor": false
+    }
+  ]
+}

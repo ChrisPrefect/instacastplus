@@ -1,0 +1,11 @@
+{
+  "job_id": 2475,
+  "status": "running",
+  "phase": "postprocessing",
+  "progress": 0.86,
+  "attempts": 1,
+  "raw_checkpoint_preserved": true,
+  "raw_files_verified": 4,
+  "audio_identity_preserved": true,
+  "asr_not_repeated": true
+}

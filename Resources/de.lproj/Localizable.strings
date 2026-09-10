@@ -1373,11 +1373,11 @@
 "Server-Verarbeitung läuft weiter." = "Server-Verarbeitung läuft weiter.";
 "Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant." = "Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant.";
 "Server-Transkription fehlgeschlagen" = "Server-Transkription fehlgeschlagen";
-"Server: Warteschlange" = "Server: Warteschlange";
-"Server lädt Audio." = "Server lädt Audio.";
-"Server transkribiert." = "Server transkribiert.";
-"Server erstellt Kapitel, Sponsoren und Zusammenfassung." = "Server erstellt Kapitel, Sponsoren und Zusammenfassung.";
-"Server bereitet das Ergebnis vor." = "Server bereitet das Ergebnis vor.";
+"Waiting for processing" = "Wartet auf Verarbeitung";
+"Step 1 of 4 · Downloading audio" = "Schritt 1 von 4 · Audio wird geladen";
+"Step 2 of 4 · Transcribing audio" = "Schritt 2 von 4 · Transkript wird erstellt";
+"Step 3 of 4 · Analyzing transcript" = "Schritt 3 von 4 · Transkript wird analysiert";
+"Step 4 of 4 · Preparing results" = "Schritt 4 von 4 · Ergebnisse werden vorbereitet";
 "Die URL der Server-Transkription fehlt." = "Die URL der Server-Transkription fehlt.";
 "Der Server lieferte einen unbekannten Verarbeitungsstatus." = "Der Server lieferte einen unbekannten Verarbeitungsstatus.";
 "Der Transkriptionsserver lieferte keine HTTP-Antwort." = "Der Transkriptionsserver lieferte keine HTTP-Antwort.";
@@ -1867,8 +1867,6 @@
 "e.g. Ads, Intro, Sponsor" = "z. B. Werbung, Intro, Sponsor";
 "Der Transkriptionsserver lieferte eine unbekannte API-Version." = "Der Transkriptionsserver lieferte eine unbekannte API-Version.";
 "Der Transkriptionsserver lieferte eine unbekannte Verarbeitungsphase." = "Der Transkriptionsserver lieferte eine unbekannte Verarbeitungsphase.";
-"Der Transkriptionsserver lieferte einen ungültigen oder rückläufigen Fortschritt." = "Der Transkriptionsserver lieferte einen ungültigen oder rückläufigen Fortschritt.";
-"Der Transkriptionsserver lieferte keinen Fortschritt für den laufenden Auftrag." = "Der Transkriptionsserver lieferte keinen Fortschritt für den laufenden Auftrag.";
 "Server-Zeitmarken sind nicht zuverlässig: %@" = "Server-Zeitmarken sind nicht zuverlässig: %@";
 "Server-Ergebnis konnte vorübergehend nicht geladen werden. Neuer Versuch ist geplant." = "Server-Ergebnis konnte vorübergehend nicht geladen werden. Neuer Versuch ist geplant.";
 "Der Transkriptionsserver lieferte keinen gültigen Zeitpunkt für die nächste Statusabfrage." = "Der Transkriptionsserver lieferte keinen gültigen Zeitpunkt für die nächste Statusabfrage.";
@@ -1889,3 +1887,147 @@
 "Server-Ergebnis ist bereit." = "Server-Ergebnis ist bereit.";
 "Server-Verarbeitung ist fehlgeschlagen." = "Server-Verarbeitung ist fehlgeschlagen.";
 "Server-Verarbeitung wurde abgebrochen." = "Server-Verarbeitung wurde abgebrochen.";
+
+"Transcription queue limit reached" = "Transkriptionswarteschlange voll";
+
+"The queue already contains %ld open jobs (limit: %ld). Wait for a job to finish or remove an entry." = "Die Warteschlange enthält bereits %ld offene Aufträge (Limit: %ld). Warte, bis ein Auftrag abgeschlossen ist, oder entferne einen Eintrag.";
+
+"%ld of %ld open jobs · %ld local · %ld server" = "%ld von %ld offenen Aufträgen · %ld lokal · %ld Server";
+
+"%ld episodes were not added automatically because the queue was full. You can add them manually later." = "%ld Episoden wurden nicht automatisch hinzugefügt, weil die Warteschlange voll war. Du kannst sie später manuell hinzufügen.";
+
+"Existing jobs remain visible and will finish. New jobs can be added when fewer than %ld remain." = "Bestehende Aufträge bleiben sichtbar und werden abgearbeitet. Neue Aufträge können hinzugefügt werden, sobald weniger als %ld übrig sind.";
+
+
+"The transcription server has no available worker. It will retry automatically." = "Der Transkriptionsserver kann derzeit keine Aufträge verarbeiten. Der Auftrag wird automatisch erneut versucht.";
+
+"Server processing is paused. The operator must restore service; your job will retry automatically." = "Die Server-Verarbeitung ist pausiert. Der Betreiber muss den Dienst wiederherstellen; dein Auftrag wird automatisch erneut versucht.";
+
+"The server transcription queue is full. Your job will retry automatically when capacity is available." = "Die Warteschlange des Transkriptionsservers ist voll. Dein Auftrag wird automatisch erneut versucht, sobald Kapazität verfügbar ist.";
+
+"Dismiss notice" = "Hinweis schließen";
+
+"Episode already in transcription queue" = "Episode bereits in der Transkriptionswarteschlange";
+
+"The server cancellation has no request identity." = "Dem Server-Abbruch fehlt die Auftragskennung.";
+
+"The server did not confirm cancellation of this request." = "Der Server hat den Abbruch dieses Auftrags nicht bestätigt.";
+
+"The server request identity is missing." = "Die Kennung des Server-Auftrags fehlt.";
+
+"The server returned a different request identity." = "Der Server hat einen anderen Auftrag zurückgegeben.";
+
+"This job was canceled on the server." = "Dieser Auftrag wurde auf dem Server abgebrochen.";
+
+"This job was canceled or removed on the server." = "Dieser Auftrag wurde auf dem Server abgebrochen oder entfernt.";
+
+"%ld cancellations are waiting for server confirmation. They remain saved while offline." = "%ld Abbrüche warten auf die Bestätigung des Servers. Sie bleiben auch offline gespeichert.";
+
+"Server cancellation: %@" = "Server-Abbruch: %@";
+
+"Retry server cancellations" = "Server-Abbrüche erneut versuchen";
+
+"Canceled" = "Abgebrochen";
+
+"Sending transcription request." = "Transkription wird angefragt …";
+
+"Sending automatic transcription request." = "Automatische Transkription wird angefragt …";
+
+"Not added: no internet connection. Try again when you are online." = "Nicht hinzugefügt: keine Internetverbindung. Versuche es erneut, sobald du online bist.";
+
+"The server response could not confirm this request." = "Die Serverantwort konnte diese Anfrage nicht bestätigen.";
+
+"The server accepted the transcription request." = "Der Server hat den Transkriptionsauftrag angenommen.";
+
+"The server has not confirmed the request yet. The status will be checked again automatically." = "Noch keine Bestätigung vom Server. Der Status wird automatisch erneut geprüft.";
+
+"Server processing is paused because server resources are unavailable. Your accepted job will retry automatically." = "Die Serververarbeitung ist wegen fehlender Ressourcen pausiert. Dein angenommener Auftrag wird automatisch fortgesetzt.";
+
+"The server queue is full. Try again later." = "Die Serverwarteschlange ist voll. Versuche es später erneut.";
+
+"Server processing is unavailable. The operator must restore service. Try again later." = "Die Serververarbeitung ist nicht verfügbar. Der Betreiber muss den Dienst wiederherstellen. Versuche es später erneut.";
+
+"The server currently has no processing capacity. Try again later." = "Der Server hat derzeit keine Verarbeitungskapazität. Versuche es später erneut.";
+
+"Not added: %@" = "Nicht hinzugefügt: %@";
+
+"A server request for this episode is already being checked or processed." = "Eine Serveranfrage für diese Episode wird bereits geprüft oder verarbeitet.";
+
+
+
+"Not added" = "Nicht hinzugefügt";
+
+"%ld transcription requests are awaiting confirmation." = "%ld Transkriptionsanfragen warten auf Bestätigung.";
+
+"Automatic chapter skipping is paused because this audio version could not be verified." = "Automatisches Kapitelüberspringen ist pausiert, weil diese Audioversion nicht bestätigt werden konnte.";
+
+"Server transcription" = "Server-Transkription";
+
+
+"Not added: the request could not be saved on this device. %@" = "Nicht hinzugefügt: Die Anfrage konnte auf diesem Gerät nicht gespeichert werden. %@";
+
+"Not added: the app stopped before this request was submitted. Try again explicitly." = "Nicht hinzugefügt: Die App wurde vor dem Absenden dieser Anfrage beendet. Bitte erneut versuchen.";
+
+"Speech recognition returned no text. No transcript was created for this episode." = "Die Spracherkennung hat keinen Text geliefert. Für diese Episode wurde kein Transkript erstellt.";
+
+"The podcast specifies an unsupported speech-recognition language ('%@'). No transcript was created." = "Der Podcast gibt eine nicht unterstützte Sprache für die Spracherkennung an ('%@'). Es wurde kein Transkript erstellt.";
+
+"The audio file exceeds the server limit of %@." = "Die Audiodatei überschreitet das Serverlimit von %@.";
+
+"The audio file is too large for server transcription." = "Die Audiodatei ist für die Server-Transkription zu groß.";
+
+"The audio exceeds the server limit of %@ hours." = "Die Audiodatei überschreitet das Serverlimit von %@ Stunden.";
+
+"The audio is too long for server transcription." = "Die Audiodatei ist für die Server-Transkription zu lang.";
+
+"The audio duration could not be read. No transcript was created." = "Die Dauer der Audiodatei konnte nicht ermittelt werden. Es wurde kein Transkript erstellt.";
+
+"The episode's audio file is unavailable from the publisher (HTTP %ld)." = "Die Audiodatei der Episode ist beim Herausgeber nicht verfügbar (HTTP %ld).";
+
+"The episode's audio file is unavailable from the publisher." = "Die Audiodatei der Episode ist beim Herausgeber nicht verfügbar.";
+
+"The configured speech-recognition language is not supported. No transcript was created." = "Die eingestellte Sprache wird von der Spracherkennung nicht unterstützt. Es wurde kein Transkript erstellt.";
+
+"Processing exceeded the server time limit. Try again later." = "Die Verarbeitung hat das Zeitlimit des Servers überschritten. Bitte später erneut versuchen.";
+
+"Server transcription could not be completed. Try again later." = "Die Server-Transkription konnte nicht abgeschlossen werden. Bitte später erneut versuchen.";
+
+"Chapters could not be loaded." = "Die Kapitel konnten nicht geladen werden.";
+"Jumping to transcript passages is unavailable." = "Das Springen zu Textstellen ist nicht verfügbar.";
+
+"The saved transcription queue is damaged or incompatible. Existing data has not been replaced." = "Die gespeicherte Transkriptionsqueue ist beschädigt oder inkompatibel. Bestehende Daten wurden nicht ersetzt.";
+
+"The saved transcription queue could not be read. Existing jobs and cancellations remain protected. Unlock the device or resolve the storage problem, then retry." = "Die gespeicherte Transkriptionsqueue konnte nicht gelesen werden. Bestehende Aufträge und Abbrüche bleiben geschützt. Bitte das Gerät entsperren oder das Speicherproblem beheben und erneut versuchen.";
+
+"The saved server request owner is unavailable. Existing requests cannot be reassigned." = "Die gespeicherte Besitzerkennung der Serveraufträge fehlt. Bestehende Aufträge können keinem neuen Besitzer zugeordnet werden.";
+
+"The server returned an invalid retry interval. This request remains saved. Check its status again explicitly." = "Der Server hat ein ungültiges Wiederholungsintervall geliefert. Dieser Auftrag bleibt gespeichert. Bitte seinen Status erneut prüfen.";
+
+"The server returned an invalid retry interval. The cancellation remains saved. Retry it explicitly." = "Der Server hat ein ungültiges Wiederholungsintervall geliefert. Der Abbruch bleibt gespeichert. Bitte erneut versuchen.";
+
+"Retry storage access" = "Speicherzugriff erneut versuchen";
+
+"Check server status again" = "Serverstatus erneut prüfen";
+
+"Check again" = "Erneut prüfen";
+
+"%ld cancellations are waiting. Recent queue changes could not be saved." = "%ld Abbrüche warten. Die letzten Queue-Änderungen konnten nicht gespeichert werden.";
+
+"The transcription server response exceeds the permitted size." = "Die Antwort des Transkriptionsservers überschreitet die erlaubte Größe.";
+
+"The server transcript has no valid measured audio duration." = "Das Server-Transkript hat keine gültige gemessene Audiodauer.";
+
+"The server transcript contains timestamps beyond the audio duration." = "Das Server-Transkript enthält Zeitmarken außerhalb der Audiodauer.";
+
+"The server result could not be verified." = "Das Server-Ergebnis konnte nicht geprüft werden.";
+"Download the complete episode before retrieving its transcript." = "Lade die Folge vollständig herunter, bevor du das Transkript abrufst.";
+"The server transcript does not match the downloaded episode." = "Das Server-Transkript passt nicht zur heruntergeladenen Folge.";
+"The transcript could not be loaded. Please try again." = "Das Transkript konnte nicht geladen werden. Bitte versuche es erneut.";
+
+"Download the complete episode before starting transcription." = "Lade die Folge vollständig herunter, bevor du die Transkription startest.";
+"Checking audio file." = "Audiodatei wird geprüft.";
+"The audio file could not be verified. Download the episode again." = "Die Audiodatei konnte nicht geprüft werden. Lade die Folge erneut herunter.";
+"The audio file has changed. Start a new transcription request." = "Die Audiodatei hat sich geändert. Starte die Transkription erneut.";
+"This episode was delivered in a different audio version. Server transcription is unavailable for this download." = "Diese Folge wurde in unterschiedlichen Audioversionen ausgeliefert. Für deinen Download ist die Server-Transkription nicht verfügbar.";
+
+"Start transcription again so the audio file can be verified." = "Starte die Transkription erneut, damit die Audiodatei geprüft werden kann.";

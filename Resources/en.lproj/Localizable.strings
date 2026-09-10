@@ -1373,11 +1373,11 @@
 "Server-Verarbeitung läuft weiter." = "Server processing continues.";
 "Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant." = "The server is temporarily unavailable. Another attempt is scheduled.";
 "Server-Transkription fehlgeschlagen" = "Server transcription failed";
-"Server: Warteschlange" = "Server: Queued";
-"Server lädt Audio." = "The server is downloading audio.";
-"Server transkribiert." = "The server is transcribing.";
-"Server erstellt Kapitel, Sponsoren und Zusammenfassung." = "The server is creating chapters, sponsor segments, and a summary.";
-"Server bereitet das Ergebnis vor." = "The server is preparing the result.";
+"Waiting for processing" = "Waiting for processing";
+"Step 1 of 4 · Downloading audio" = "Step 1 of 4 · Downloading audio";
+"Step 2 of 4 · Transcribing audio" = "Step 2 of 4 · Transcribing audio";
+"Step 3 of 4 · Analyzing transcript" = "Step 3 of 4 · Analyzing transcript";
+"Step 4 of 4 · Preparing results" = "Step 4 of 4 · Preparing results";
 "Die URL der Server-Transkription fehlt." = "The server-transcription URL is missing.";
 "Der Server lieferte einen unbekannten Verarbeitungsstatus." = "The server returned an unknown processing status.";
 "Der Transkriptionsserver lieferte keine HTTP-Antwort." = "The transcription server did not return an HTTP response.";
@@ -1867,8 +1867,6 @@
 "e.g. Ads, Intro, Sponsor" = "e.g. Ads, Intro, Sponsor";
 "Der Transkriptionsserver lieferte eine unbekannte API-Version." = "The transcription server returned an unknown API version.";
 "Der Transkriptionsserver lieferte eine unbekannte Verarbeitungsphase." = "The transcription server returned an unknown processing phase.";
-"Der Transkriptionsserver lieferte einen ungültigen oder rückläufigen Fortschritt." = "The transcription server returned invalid or regressing progress.";
-"Der Transkriptionsserver lieferte keinen Fortschritt für den laufenden Auftrag." = "The transcription server returned no progress for the active job.";
 "Server-Zeitmarken sind nicht zuverlässig: %@" = "Server timestamps are unreliable: %@";
 "Server-Ergebnis konnte vorübergehend nicht geladen werden. Neuer Versuch ist geplant." = "The server result is temporarily unavailable. A retry is scheduled.";
 "Der Transkriptionsserver lieferte keinen gültigen Zeitpunkt für die nächste Statusabfrage." = "The transcription server returned no valid time for the next status check.";
@@ -1889,3 +1887,147 @@
 "Server-Ergebnis ist bereit." = "Server result is ready.";
 "Server-Verarbeitung ist fehlgeschlagen." = "Server processing failed.";
 "Server-Verarbeitung wurde abgebrochen." = "Server processing was canceled.";
+
+"Transcription queue limit reached" = "Transcription queue limit reached";
+
+"The queue already contains %ld open jobs (limit: %ld). Wait for a job to finish or remove an entry." = "The queue already contains %ld open jobs (limit: %ld). Wait for a job to finish or remove an entry.";
+
+"%ld of %ld open jobs · %ld local · %ld server" = "%ld of %ld open jobs · %ld local · %ld server";
+
+"%ld episodes were not added automatically because the queue was full. You can add them manually later." = "%ld episodes were not added automatically because the queue was full. You can add them manually later.";
+
+"Existing jobs remain visible and will finish. New jobs can be added when fewer than %ld remain." = "Existing jobs remain visible and will finish. New jobs can be added when fewer than %ld remain.";
+
+
+"The transcription server has no available worker. It will retry automatically." = "The transcription server has no available worker. It will retry automatically.";
+
+"Server processing is paused. The operator must restore service; your job will retry automatically." = "Server processing is paused. The operator must restore service; your job will retry automatically.";
+
+"The server transcription queue is full. Your job will retry automatically when capacity is available." = "The server transcription queue is full. Your job will retry automatically when capacity is available.";
+
+"Dismiss notice" = "Dismiss notice";
+
+"Episode already in transcription queue" = "Episode already in transcription queue";
+
+"The server cancellation has no request identity." = "The server cancellation has no request identity.";
+
+"The server did not confirm cancellation of this request." = "The server did not confirm cancellation of this request.";
+
+"The server request identity is missing." = "The server request identity is missing.";
+
+"The server returned a different request identity." = "The server returned a different request identity.";
+
+"This job was canceled on the server." = "This job was canceled on the server.";
+
+"This job was canceled or removed on the server." = "This job was canceled or removed on the server.";
+
+"%ld cancellations are waiting for server confirmation. They remain saved while offline." = "%ld cancellations are waiting for server confirmation. They remain saved while offline.";
+
+"Server cancellation: %@" = "Server cancellation: %@";
+
+"Retry server cancellations" = "Retry server cancellations";
+
+"Canceled" = "Canceled";
+
+"Sending transcription request." = "Sending transcription request.";
+
+"Sending automatic transcription request." = "Sending automatic transcription request.";
+
+"Not added: no internet connection. Try again when you are online." = "Not added: no internet connection. Try again when you are online.";
+
+"The server response could not confirm this request." = "The server response could not confirm this request.";
+
+"The server accepted the transcription request." = "The server accepted the transcription request.";
+
+"The server has not confirmed the request yet. The status will be checked again automatically." = "The server has not confirmed the request yet. The status will be checked again automatically.";
+
+"Server processing is paused because server resources are unavailable. Your accepted job will retry automatically." = "Server processing is paused because server resources are unavailable. Your accepted job will retry automatically.";
+
+"The server queue is full. Try again later." = "The server queue is full. Try again later.";
+
+"Server processing is unavailable. The operator must restore service. Try again later." = "Server processing is unavailable. The operator must restore service. Try again later.";
+
+"The server currently has no processing capacity. Try again later." = "The server currently has no processing capacity. Try again later.";
+
+"Not added: %@" = "Not added: %@";
+
+"A server request for this episode is already being checked or processed." = "A server request for this episode is already being checked or processed.";
+
+
+
+"Not added" = "Not added";
+
+"%ld transcription requests are awaiting confirmation." = "%ld transcription requests are awaiting confirmation.";
+
+"Automatic chapter skipping is paused because this audio version could not be verified." = "Automatic chapter skipping is paused because this audio version could not be verified.";
+
+"Server transcription" = "Server transcription";
+
+
+"Not added: the request could not be saved on this device. %@" = "Not added: the request could not be saved on this device. %@";
+
+"Not added: the app stopped before this request was submitted. Try again explicitly." = "Not added: the app stopped before this request was submitted. Try again explicitly.";
+
+"Speech recognition returned no text. No transcript was created for this episode." = "Speech recognition returned no text. No transcript was created for this episode.";
+
+"The podcast specifies an unsupported speech-recognition language ('%@'). No transcript was created." = "The podcast specifies an unsupported speech-recognition language ('%@'). No transcript was created.";
+
+"The audio file exceeds the server limit of %@." = "The audio file exceeds the server limit of %@.";
+
+"The audio file is too large for server transcription." = "The audio file is too large for server transcription.";
+
+"The audio exceeds the server limit of %@ hours." = "The audio exceeds the server limit of %@ hours.";
+
+"The audio is too long for server transcription." = "The audio is too long for server transcription.";
+
+"The audio duration could not be read. No transcript was created." = "The audio duration could not be read. No transcript was created.";
+
+"The episode's audio file is unavailable from the publisher (HTTP %ld)." = "The episode's audio file is unavailable from the publisher (HTTP %ld).";
+
+"The episode's audio file is unavailable from the publisher." = "The episode's audio file is unavailable from the publisher.";
+
+"The configured speech-recognition language is not supported. No transcript was created." = "The configured speech-recognition language is not supported. No transcript was created.";
+
+"Processing exceeded the server time limit. Try again later." = "Processing exceeded the server time limit. Try again later.";
+
+"Server transcription could not be completed. Try again later." = "Server transcription could not be completed. Try again later.";
+
+"Chapters could not be loaded." = "Chapters could not be loaded.";
+"Jumping to transcript passages is unavailable." = "Jumping to transcript passages is unavailable.";
+
+"The saved transcription queue is damaged or incompatible. Existing data has not been replaced." = "The saved transcription queue is damaged or incompatible. Existing data has not been replaced.";
+
+"The saved transcription queue could not be read. Existing jobs and cancellations remain protected. Unlock the device or resolve the storage problem, then retry." = "The saved transcription queue could not be read. Existing jobs and cancellations remain protected. Unlock the device or resolve the storage problem, then retry.";
+
+"The saved server request owner is unavailable. Existing requests cannot be reassigned." = "The saved server request owner is unavailable. Existing requests cannot be reassigned.";
+
+"The server returned an invalid retry interval. This request remains saved. Check its status again explicitly." = "The server returned an invalid retry interval. This request remains saved. Check its status again explicitly.";
+
+"The server returned an invalid retry interval. The cancellation remains saved. Retry it explicitly." = "The server returned an invalid retry interval. The cancellation remains saved. Retry it explicitly.";
+
+"Retry storage access" = "Retry storage access";
+
+"Check server status again" = "Check server status again";
+
+"Check again" = "Check again";
+
+"%ld cancellations are waiting. Recent queue changes could not be saved." = "%ld cancellations are waiting. Recent queue changes could not be saved.";
+
+"The transcription server response exceeds the permitted size." = "The transcription server response exceeds the permitted size.";
+
+"The server transcript has no valid measured audio duration." = "The server transcript has no valid measured audio duration.";
+
+"The server transcript contains timestamps beyond the audio duration." = "The server transcript contains timestamps beyond the audio duration.";
+
+"The server result could not be verified." = "The server result could not be verified.";
+"Download the complete episode before retrieving its transcript." = "Download the complete episode before retrieving its transcript.";
+"The server transcript does not match the downloaded episode." = "The server transcript does not match the downloaded episode.";
+"The transcript could not be loaded. Please try again." = "The transcript could not be loaded. Please try again.";
+
+"Download the complete episode before starting transcription." = "Download the complete episode before starting transcription.";
+"Checking audio file." = "Checking audio file.";
+"The audio file could not be verified. Download the episode again." = "The audio file could not be verified. Download the episode again.";
+"The audio file has changed. Start a new transcription request." = "The audio file has changed. Start a new transcription request.";
+"This episode was delivered in a different audio version. Server transcription is unavailable for this download." = "This episode was delivered in a different audio version. Server transcription is unavailable for this download.";
+
+"Start transcription again so the audio file can be verified." = "Start transcription again so the audio file can be verified.";

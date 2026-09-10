@@ -625,9 +625,9 @@
         BOOL hasSRT = [[TranscriptionEngine shared] hasSRTFor:episode.objectHash];
         BOOL isQueued = NO;
         if (!hasSRT) {
-            // Check if episode is in the transcription queue (array is small, O(n) is fine)
+            // Include server jobs so every visible queue entry has an indicator.
             NSString* hash = episode.objectHash;
-            for (ICTranscriptionQueueItem* item in [TranscriptionQueue shared].items) {
+            for (ICTranscriptionQueueItem* item in [TranscriptionQueue shared].displayItems) {
                 if ([item.episodeHash isEqualToString:hash]) {
                     isQueued = YES;
                     break;

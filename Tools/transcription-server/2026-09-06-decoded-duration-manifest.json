@@ -1,0 +1,27 @@
+[
+  {
+    "path": "app/worker.py",
+    "before": "18bbc9736872afd0b7ee5fe1017a81b9216f3bc12873c345ff5c2fc9a04581c5",
+    "after": "36cb6016531b9a51b88e14036e7c788462e35fe5cbfc8269507773ba953de786"
+  },
+  {
+    "path": "tools/transcribe_podcast_parallel.py",
+    "before": "6518370e4a21d0c1c06b16c9be3296a70d37deecf61d391953cc6c7b91f493cd",
+    "after": "7b10862dfd31d63b21857bc4a31ecdbef99d49b48cb34eb0b806329c59fb737b"
+  },
+  {
+    "path": "tools/worker_edge_cases_regression.py",
+    "before": "49c99ba47f71020f04c48879f0fdbdb89acb185be011077b6892e82bf534bee0",
+    "after": "f5001560c9d5c7ccbfaeb5bfc7108d98ee184cc4e549316353ba15cfa264b811"
+  },
+  {
+    "path": "tools/decoded_audio_duration.py",
+    "before": null,
+    "after": "c8e046471418cadbdd8cae29a5a351ea9662964fc21b432ccc7f4e5ce8b43fa5"
+  },
+  {
+    "path": "tools/decoded_audio_duration_regression.py",
+    "before": null,
+    "after": "401545b8b70f76e822e5cf1a425a6d630187b54259a6cc1a81565803ce088d75"
+  }
+]

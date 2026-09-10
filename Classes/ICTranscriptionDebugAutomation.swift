@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import UIKit
 
 @MainActor
 @objc class ICTranscriptionDebugAutomation: NSObject {
@@ -243,6 +244,59 @@ import Foundation
                 break
             }
             response["inspection"] = queue.debugInspection(episodeHash: episodeHash)
+        case "snapshotUI":
+            guard let window = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .filter({ $0.activationState == .foregroundActive })
+                .flatMap(\.windows).first(where: \.isKeyWindow) else {
+                response = errorResponse(action: action, message: "Kein aktives App-Fenster.")
+                break
+            }
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let destination = automationDirectory().appendingPathComponent("snapshot.png")
+            do {
+                guard let data = image.pngData() else { throw CocoaError(.fileWriteUnknown) }
+                try data.write(to: destination, options: .atomic)
+                response["snapshotPath"] = destination.path
+                func scrollStates(_ view: UIView) -> [[String: Any]] {
+                    let own = (view as? UITableView).map {
+                        [["scrollEnabled": $0.isScrollEnabled,
+                          "contentOffsetY": $0.contentOffset.y,
+                          "contentHeight": $0.contentSize.height]]
+                    } ?? []
+                    return own + view.subviews.flatMap(scrollStates)
+                }
+                response["tableScrollStates"] = scrollStates(window)
+            } catch {
+                response = errorResponse(action: action, message: error.localizedDescription)
+            }
+        case "inspectPlayback":
+            guard let episodeHash,
+                  let session = AudioSession.shared(),
+                  let episode = session.episode,
+                  episode.objectHash == episodeHash else {
+                response = errorResponse(action: action, message: "Die angefragte Episode ist nicht im Player ausgewählt.")
+                break
+            }
+            // Reproduce chapter loading for the selected episode without starting
+            // audio or recording a new playback intent. Results go to Diagnostics.
+            session.restorePlaybackEpisode(episode, queueUpCurrent: false,
+                                           at: TimeInterval(episode.position), autostart: false)
+            response["playbackInspectionStarted"] = true
+        case "enqueueServer":
+            guard let episodeHash,
+                  let episode = AudioSession.shared()?.episode,
+                  episode.objectHash == episodeHash else {
+                response = errorResponse(action: action, message: "Die angefragte Episode ist nicht im Player ausgewählt.")
+                break
+            }
+            response["started"] = ServerTranscriptionManager.shared.enqueueEpisode(episode) { accepted, message in
+                ICDiagnosticLogger.shared.logEvent("debug-automation", message: "Serveranfrage beantwortet",
+                                                   metadata: ["episodeHash": episodeHash, "accepted": accepted,
+                                                              "message": message] as NSDictionary)
+            }
         case "enqueue", "transcribe":
             guard let episodeHash else {
                 response = errorResponse(action: action, message: "episodeHash fehlt")

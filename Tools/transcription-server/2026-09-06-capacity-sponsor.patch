@@ -1,0 +1,1244 @@
+--- a/app/config.py
++++ b/app/config.py
+@@ -38,8 +38,24 @@
+ MAX_AUDIO_BYTES = int(os.environ.get("INSTACAST_MAX_AUDIO_BYTES", str(750 * 1024 * 1024)))
+ MAX_AUDIO_REDIRECTS = int(os.environ.get("INSTACAST_MAX_AUDIO_REDIRECTS", "20"))
+ MAX_FEED_EPISODES_PER_REQUEST = int(os.environ.get("INSTACAST_MAX_FEED_EPISODES_PER_REQUEST", "25"))
+-MAX_QUEUED_TRANSCRIBE_JOBS = int(os.environ.get("INSTACAST_MAX_QUEUED_TRANSCRIBE_JOBS", "75"))
++MAX_QUEUED_TRANSCRIBE_JOBS = int(os.environ.get("INSTACAST_MAX_QUEUED_TRANSCRIBE_JOBS", "250"))
+ MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS = int(os.environ.get("INSTACAST_MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS", "25"))
++# A full client queue can poll every advertised interval, download four result
++# artifacts, and reconcile twice per episode within one minute.
++API_STATUS_POLL_SECONDS = int(os.environ.get("INSTACAST_API_STATUS_POLL_SECONDS", "15"))
++if API_STATUS_POLL_SECONDS <= 0:
++    raise ValueError("INSTACAST_API_STATUS_POLL_SECONDS must be positive")
++_API_READS_PER_EPISODE_MINUTE = (60 + API_STATUS_POLL_SECONDS - 1) // API_STATUS_POLL_SECONDS + 4 + 2
++API_CLIENT_READ_LIMIT_PER_MINUTE = int(os.environ.get("INSTACAST_API_CLIENT_READ_LIMIT_PER_MINUTE", str(MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS * _API_READS_PER_EPISODE_MINUTE)))
++API_IP_READ_LIMIT_PER_MINUTE = int(os.environ.get("INSTACAST_API_IP_READ_LIMIT_PER_MINUTE", str(MAX_QUEUED_TRANSCRIBE_JOBS * _API_READS_PER_EPISODE_MINUTE)))
++API_CLIENT_CANCEL_LIMIT_PER_MINUTE = int(os.environ.get("INSTACAST_API_CLIENT_CANCEL_LIMIT_PER_MINUTE", str(MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS * 2)))
++API_IP_CANCEL_LIMIT_PER_MINUTE = int(os.environ.get("INSTACAST_API_IP_CANCEL_LIMIT_PER_MINUTE", str(MAX_QUEUED_TRANSCRIBE_JOBS * 2)))
++API_TOKEN_CANCEL_LIMIT_PER_MINUTE = int(os.environ.get("INSTACAST_API_TOKEN_CANCEL_LIMIT_PER_MINUTE", str(MAX_QUEUED_TRANSCRIBE_JOBS * 2)))
++if min(API_CLIENT_READ_LIMIT_PER_MINUTE, API_IP_READ_LIMIT_PER_MINUTE,
++       API_CLIENT_CANCEL_LIMIT_PER_MINUTE, API_IP_CANCEL_LIMIT_PER_MINUTE,
++       API_TOKEN_CANCEL_LIMIT_PER_MINUTE, API_TOKEN_RATE_LIMIT_PER_MINUTE) <= 0:
++    raise ValueError("API polling and cancellation limits must be positive")
++
+ TRANSCRIPTION_WORKER_UNITS = tuple(
+     unit.strip() for unit in os.environ.get(
+         "INSTACAST_TRANSCRIPTION_WORKER_UNITS",
+@@ -93,6 +109,8 @@
+ )
+ WORKER_POLL_SECONDS = float(os.environ.get("INSTACAST_WORKER_POLL_SECONDS", "3"))
+ JOB_LEASE_SECONDS = int(os.environ.get("INSTACAST_JOB_LEASE_SECONDS", "900"))
++COMMAND_MAX_SECONDS = int(os.environ.get("INSTACAST_COMMAND_MAX_SECONDS", "21600"))
++COMMAND_STALL_SECONDS = int(os.environ.get("INSTACAST_COMMAND_STALL_SECONDS", "1800"))
+ AUTO_SCAN_INTERVAL_SECONDS = int(os.environ.get("INSTACAST_AUTO_SCAN_INTERVAL_SECONDS", "1800"))
+ AUTO_SCAN_POLL_SECONDS = int(os.environ.get("INSTACAST_AUTO_SCAN_POLL_SECONDS", "60"))
+ RETENTION_CLEANUP_INTERVAL_SECONDS = int(os.environ.get("INSTACAST_RETENTION_CLEANUP_INTERVAL_SECONDS", "3600"))
+--- a/app/db.py
++++ b/app/db.py
+@@ -669,6 +669,7 @@
+             ensure_column(con, "episodes", "last_client_audio_bytes", "BIGINT")
+             ensure_column(con, "episodes", "last_client_audio_etag", "TEXT")
+             ensure_column(con, "episodes", "audio_bytes", "BIGINT")
++            ensure_column(con, "episodes", "audio_sha256", "CHAR(64)")
+             ensure_column(con, "episodes", "audio_etag", "TEXT")
+             ensure_column(con, "episodes", "content_length_delta_bytes", "BIGINT")
+             ensure_column(con, "episodes", "variant_warning", "TEXT")
+@@ -683,6 +684,7 @@
+         ensure_column(con, "episodes", "last_client_audio_bytes", "INTEGER")
+         ensure_column(con, "episodes", "last_client_audio_etag", "TEXT")
+         ensure_column(con, "episodes", "audio_bytes", "INTEGER")
++        ensure_column(con, "episodes", "audio_sha256", "TEXT")
+         ensure_column(con, "episodes", "audio_etag", "TEXT")
+         ensure_column(con, "episodes", "content_length_delta_bytes", "INTEGER")
+         ensure_column(con, "episodes", "variant_warning", "TEXT")
+--- a/app/main.py
++++ b/app/main.py
+@@ -21,7 +21,7 @@
+ from .db import connect, init_db, loads, now_iso, tx
+ from .rss import fetch_feed
+ from .security import (
+-    check_login_allowed,
++    check_login_allowed, api_request_class, enforce_api_request_rate,
+     hash_token,
+     client_id_label,
+     clear_login_failures,
+@@ -53,7 +53,7 @@
+     job_error,
+     record_client_request,
+     queue_admission_transaction,
+-    transcription_worker_status,
++    transcription_worker_status, transcription_resource_status,
+     transcription_provider_status,
+     request_record, client_request_receipt, reject_terminal_request, store_client_request,
+     migrate_legacy_episode_interests, cancel_episode_jobs, cancel_request_interest,
+@@ -142,6 +142,8 @@
+             "message": str(detail.get("message") or detail.get("detail") or "Request failed."),
+             "retryable": bool(detail.get("retryable", default_retryable(status_code))),
+         }
++        if isinstance(detail.get("admitted"), bool):
++            error["admitted"] = detail["admitted"]
+         if "details" in detail:
+             error["details"] = detail["details"]
+     else:
+@@ -189,7 +191,7 @@
+     retry_after = retry_after_seconds_for_status(status.get("status"))
+     service_status = None
+     if status.get("status") in {"queued", "running"}:
+-        service_status = transcription_provider_status()
++        service_status = transcription_provider_status() or transcription_resource_status()
+         if service_status is None and not any(transcription_worker_status().values()):
+             service_status = {"available": False, "code": "worker_unavailable",
+                               "message": "Die Server-Verarbeitung wartet auf einen verfügbaren Worker.",
+@@ -300,12 +302,9 @@
+                     ),
+                 )
+         if request.url.path != "/health":
+-            rate_limit(
+-                f"http:{client_ip(request)}",
+-                config.HTTP_RATE_LIMIT_PER_MINUTE,
+-                60,
+-                detail="too many requests",
+-            )
++            kind = api_request_class(request) if is_api_request(request) else "http"
++            limit = config.API_IP_READ_LIMIT_PER_MINUTE if kind == "read" else config.API_IP_CANCEL_LIMIT_PER_MINUTE if kind == "cancel" else config.HTTP_RATE_LIMIT_PER_MINUTE
++            rate_limit(f"http_{kind}:{client_ip(request)}",limit,60,detail="too many " + kind + " requests")
+         if request.method in {"POST", "PUT", "PATCH", "DELETE"} and (
+             request.url.path == "/login" or request.url.path.startswith("/admin")
+         ):
+@@ -611,37 +610,47 @@
+     if not client_hash:
+         raise HTTPException(status_code=422, detail={"code":"invalid_request", "message":"A client identity is required.", "retryable":False})
+     legacy_episodes = con.execute("""SELECT DISTINCT jobs.episode_id FROM jobs JOIN client_requests ON client_requests.episode_id=jobs.episode_id
+-        WHERE jobs.status IN ('queued','running') AND jobs.job_type='transcribe' AND client_requests.client_id=?""", (client_label,)).fetchall()
++        WHERE jobs.status IN ('queued','running','paused') AND jobs.job_type='transcribe' AND client_requests.client_id=?""", (client_label,)).fetchall()
+     for legacy in legacy_episodes:
+         migrate_legacy_episode_interests(con, int(legacy["episode_id"]))
+     own = con.execute("SELECT 1 FROM transcription_requests WHERE client_hash=? AND episode_id=? AND state='active' LIMIT 1",
+                       (client_hash, episode_id)).fetchone()
+     if own and active_transcribe_job(con, episode_id):
+         return
++    ensure_transcription_ready()
+     row = con.execute("""SELECT COUNT(DISTINCT jobs.episode_id) AS count FROM jobs
+         JOIN transcription_requests ON transcription_requests.episode_id=jobs.episode_id
+-        WHERE jobs.job_type='transcribe' AND jobs.status IN ('queued','running')
++        WHERE jobs.job_type='transcribe' AND jobs.status IN ('queued','running','paused')
+           AND transcription_requests.client_hash=? AND transcription_requests.state='active'""", (client_hash,)).fetchone()
+     if int(row["count"]) >= config.MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS:
+         raise HTTPException(status_code=409, detail={"code":"client_queue_full",
+-            "message":f"At most {config.MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS} active episodes are allowed per client.", "retryable":True},
++            "message":f"At most {config.MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS} active episodes are allowed per client.", "retryable":True,"admitted":False},
+             headers={"Retry-After":"300"})
+ 
+ 
+-def ensure_transcribe_queue_capacity(con, requested: int = 1) -> None:
++def ensure_transcription_ready() -> None:
+     provider_status = transcription_provider_status()
+     if provider_status:
+         raise HTTPException(status_code=503, detail={
+-            "code": provider_status["code"], "message": provider_status["message"], "retryable": True,
++            "code": provider_status["code"], "message": provider_status["message"], "retryable": True, "admitted":False,
+         }, headers={"Retry-After": "300"})
+     if not any(transcription_worker_status().values()):
+         raise HTTPException(status_code=503, detail={
+-            "code": "worker_unavailable", "message": "No transcription worker is running.", "retryable": True,
++            "code": "worker_unavailable", "message": "No transcription worker is running.", "retryable": True, "admitted":False,
+         }, headers={"Retry-After": "30"})
++    resource_status = transcription_resource_status()
++    if resource_status:
++        raise HTTPException(status_code=503, detail={
++            "code":resource_status["code"],"message":resource_status["message"],"retryable":True,"admitted":False,
++        }, headers={"Retry-After":str(resource_status["retry_after_seconds"])})
++
++
++def ensure_transcribe_queue_capacity(con, requested: int = 1) -> None:
++    ensure_transcription_ready()
+     row = con.execute(
+         """
+         SELECT COUNT(*) AS count FROM jobs
+-        WHERE job_type='transcribe' AND status IN ('queued', 'running')
++        WHERE job_type='transcribe' AND status IN ('queued', 'running', 'paused')
+         """
+     ).fetchone()
+     if int(row["count"]) + requested > config.MAX_QUEUED_TRANSCRIBE_JOBS:
+@@ -650,7 +659,7 @@
+             detail={
+                 "code": "queue_full",
+                 "message": "Transcription queue is full.",
+-                "retryable": True,
++                "retryable": True, "admitted":False,
+             },
+             headers={"Retry-After": "30"},
+         )
+@@ -722,7 +731,7 @@
+         running = con.execute("SELECT COUNT(*) AS count FROM jobs WHERE status='running'").fetchone()["count"]
+         episodes = con.execute("SELECT COUNT(*) AS count FROM episodes").fetchone()["count"]
+     workers = transcription_worker_status()
+-    provider_status = transcription_provider_status()
++    provider_status = transcription_provider_status() or transcription_resource_status()
+     available = any(workers.values()) and provider_status is None
+     return JSONResponse(status_code=200 if available else 503, content={
+         "ok": available, "queued_jobs": queued, "running_jobs": running, "episodes": episodes,
+@@ -748,14 +757,24 @@
+         "admission_contract": {
+             "max_active_episodes_per_client": config.MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS,
+             "max_active_transcription_jobs": config.MAX_QUEUED_TRANSCRIBE_JOBS,
+-            "active_job_states": ["queued", "running"],
++            "active_job_states": ["queued", "running", "paused"],
+             "client_queue_full": {"http_status": 409, "retryable": True, "retry_after_seconds": 300},
+             "queue_full": {"http_status": 503, "retryable": True, "retry_after_seconds": 30},
+             "worker_unavailable": {"http_status": 503, "retryable": True, "retry_after_seconds": 30},
+             "provider_unavailable": {"http_status": 503, "retryable": True, "retry_after_seconds": 300},
+             "service_status": "Pending episode envelopes include service_status with available=false, code, message and retry_after_seconds while the AI provider is blocked; episode identity and progress are preserved.",
+             "existing_acceptance": "Same-client active episode reuse and ready results remain available at capacity or while workers are unavailable.",
+-            "shared_episodes": "The first association with an active shared episode consumes one client slot.",
++            "shared_episodes": "The first association with an active shared episode consumes one client slot and requires service readiness. Existing owners keep access.",
++            "resources_unavailable": {"http_status":503,"retryable":True,"retry_after_seconds":60},
++            "refused": "An error includes admitted=false only when this request was definitively not accepted. Transport/proxy/after-commit uncertainty omits the field.",
++            "unconfirmed": "A reserved UUID has state=unconfirmed until atomic admission. GET returns404 request_not_found while unbound; replay or cancel the same UUID.",
++        },
++        "rate_limit_contract": {
++            "status_poll_seconds":config.API_STATUS_POLL_SECONDS,
++            "read_requests_per_minute":{"client":config.API_CLIENT_READ_LIMIT_PER_MINUTE,"ip":config.API_IP_READ_LIMIT_PER_MINUTE,"token":config.API_TOKEN_RATE_LIMIT_PER_MINUTE},
++            "cancel_requests_per_minute":{"client":config.API_CLIENT_CANCEL_LIMIT_PER_MINUTE,"ip":config.API_IP_CANCEL_LIMIT_PER_MINUTE,"token":config.API_TOKEN_CANCEL_LIMIT_PER_MINUTE},
++            "submission_requests_per_hour":{"client":config.APP_CLIENT_LIMIT_PER_HOUR,"episode_token":config.API_SUBMIT_LIMIT_PER_HOUR,"podcast_token":config.API_PODCAST_LIMIT_PER_HOUR},
++            "isolation":"Reads, submissions and cancellation use independent bounded buckets; exhausting reads or submissions does not disable authenticated cancellation.",
+         },
+         "time_contract": {
+             "unit": "seconds",
+@@ -844,6 +863,10 @@
+             "rate_limited",
+             "queue_full",
+             "queue_unavailable",
++            "client_queue_full", "worker_unavailable", "provider_unavailable", "resources_unavailable",
++            "request_conflict", "request_not_found", "request_canceled", "request_deleted",
++            "episode_not_found", "episode_deleted", "request_ownership_unknown", "request_ownership_ambiguous",
++            "processing_timeout",
+             "service_unavailable",
+             "too_many_redirects",
+             "redirect_loop",
+@@ -1021,6 +1044,9 @@
+                     },
+                     "audio_bytes": {"type": ["integer", "null"], "minimum": 0},
+                     "audio_etag": {"type": ["string", "null"]},
++                    "media": {"type":"object","additionalProperties":False,"properties":{
++                        "audio_sha256":{"type":["string","null"],"pattern":"^[0-9a-f]{64}$",
++                            "description":"SHA-256 of the exact source audio used for this transcript; null for unverified legacy results."}}},
+                     "warnings": {"type": "array", "items": {"$ref": "#/schemas/Warning"}},
+                     "error": {"anyOf": [{"$ref": "#/schemas/EpisodeError"}, {"type": "null"}]},
+                     "artifacts": {"type": "array", "items": {"$ref": "#/schemas/ArtifactDescriptor"}},
+@@ -1209,6 +1235,7 @@
+                     "code": {"type": "string"},
+                     "message": {"type": "string"},
+                     "retryable": {"type": "boolean"},
++                    "admitted": {"type":"boolean","description":"False only when this request was definitively not admitted; omitted for uncertain outcomes."},
+                     "retry_after_seconds": {"type": "integer", "minimum": 0},
+                     "retry_endpoint": {"type": "string", "pattern": "^https?://"},
+                     "details": {},
+@@ -1460,7 +1487,7 @@
+             else:
+                 prior_receipt = {"state":existing["status"]}
+         elif request_id:
+-            store_client_request(con, client_hash, request_id, None, "active", url_hash)
++            store_client_request(con, client_hash, request_id, None, "unconfirmed", url_hash)
+         explicit_restart = bool(request_id and payload.force and existing and existing["status"] in {"canceled","deleted","failed"})
+         reuse_shared = bool(request_id and existing and (active_transcribe_job(con, int(existing["id"])) or (existing["status"] == "ready" and has_required_client_artifacts(con, int(existing["id"])))))
+     if payload.force and reuse_shared:
+@@ -1475,7 +1502,10 @@
+     if not payload.force:
+         with queue_admission_transaction() as con:
+             if request_id:
+-                reject_terminal_request(request_record(con, client_hash, request_id))
++                current_request = request_record(con, client_hash, request_id)
++                reject_terminal_request(current_request)
++                if current_request and current_request["episode_id"] is not None:
++                    return client_request_response(dict(current_request))
+             existing = find_episode_row_by_url(con, payload.episode_url)
+             if existing:
+                 if existing["status"] in {"canceled","deleted"}:
+@@ -1566,7 +1596,10 @@
+ 
+     with queue_admission_transaction() as con:
+         if request_id:
+-            reject_terminal_request(request_record(con, client_hash, request_id))
++            current_request = request_record(con, client_hash, request_id)
++            reject_terminal_request(current_request)
++            if current_request and current_request["episode_id"] is not None:
++                return client_request_response(dict(current_request))
+         podcast_id = None
+         if payload.podcast_url:
+             podcast_id = ensure_podcast(
+@@ -1917,12 +1950,7 @@
+     if authorization:
+         token_id = verify_api_token(authorization, request)
+         client_uuid = require_api_client_headers(request)
+-        rate_limit(
+-            f"api_client:{client_uuid}",
+-            config.APP_CLIENT_LIMIT_PER_HOUR * 4,
+-            3600,
+-            detail="too many client requests",
+-        )
++        enforce_api_request_rate(request,token_id,client_uuid)
+         with tx() as con:
+             register_api_client(con, client_uuid, request)
+         return "api"
+--- a/app/security.py
++++ b/app/security.py
+@@ -5,6 +5,7 @@
+ import hmac
+ import ipaddress
+ import os
++import re
+ import secrets
+ import socket
+ import time
+@@ -17,7 +18,7 @@
+ import requests
+ 
+ from . import config
+-from .db import connect, now_iso
++from .db import connect, now_iso, is_mysql
+ 
+ 
+ REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+@@ -217,30 +218,29 @@
+         con.execute("BEGIN IMMEDIATE")
+         try:
+             con.execute("DELETE FROM rate_limits WHERE window_start < ?", (cutoff,))
++            # Upsert first obtains the row's write lock even on the first concurrent
++            # request. No check-then-insert race or stale count can exceed the limit.
++            insert = "INSERT INTO rate_limits (bucket,window_start,count,updated_at) VALUES (?,?,0,?)"
++            insert += " ON DUPLICATE KEY UPDATE bucket=VALUES(bucket)" if is_mysql() else " ON CONFLICT(bucket,window_start) DO NOTHING"
++            con.execute(insert,(bucket_key,window_start,now_iso()))
+             row = con.execute(
+-                "SELECT count FROM rate_limits WHERE bucket=? AND window_start=?",
++                "SELECT count FROM rate_limits WHERE bucket=? AND window_start=?" + (" FOR UPDATE" if is_mysql() else ""),
+                 (bucket_key, window_start),
+             ).fetchone()
+-            count = int(row["count"]) if row else 0
++            count = int(row["count"])
+             if count >= limit:
+                 blocked = True
+             elif increment:
+-                if row:
+-                    con.execute(
+-                        "UPDATE rate_limits SET count=count+1, updated_at=? WHERE bucket=? AND window_start=?",
+-                        (now_iso(), bucket_key, window_start),
+-                    )
+-                else:
+-                    con.execute(
+-                        "INSERT INTO rate_limits (bucket, window_start, count, updated_at) VALUES (?, ?, 1, ?)",
+-                        (bucket_key, window_start, now_iso()),
+-                    )
++                con.execute(
++                    "UPDATE rate_limits SET count=count+1, updated_at=? WHERE bucket=? AND window_start=?",
++                    (now_iso(), bucket_key, window_start),
++                )
+             con.execute("COMMIT")
+         except Exception:
+             con.execute("ROLLBACK")
+             raise
+     if blocked:
+-        raise HTTPException(status_code=429, detail=detail, headers={"Retry-After": str(window_seconds)})
++        raise HTTPException(status_code=429, detail=detail, headers={"Retry-After": str(max(1, window_start + window_seconds - now))})
+ 
+ 
+ def clear_rate_limit(bucket: str, window_seconds: int) -> None:
+@@ -397,18 +397,35 @@
+         return int(row["id"])
+ 
+ 
++def api_request_class(request: Request) -> str:
++    path = request.url.path
++    if request.method == "DELETE" and (path.startswith("/api/v1/client-requests/") or re.fullmatch(r"/api/v1/episodes/[^/]+/client-request",path)):
++        return "cancel"
++    return "read" if request.method in {"GET","HEAD"} else "submit"
++
++
++def enforce_api_request_rate(request: Request, token_id: int, client_id: str) -> None:
++    kind = api_request_class(request)
++    if kind == "read":
++        client_limit = config.API_CLIENT_READ_LIMIT_PER_MINUTE
++        token_limit = config.API_TOKEN_RATE_LIMIT_PER_MINUTE
++    elif kind == "cancel":
++        client_limit = config.API_CLIENT_CANCEL_LIMIT_PER_MINUTE
++        token_limit = config.API_TOKEN_CANCEL_LIMIT_PER_MINUTE
++    else:
++        # Write endpoints already enforce their own client/token submission quotas.
++        return
++    rate_limit(f"api_{kind}:client:{client_id}",client_limit,60,detail="too many client " + kind + " requests")
++    rate_limit(f"api_{kind}:token:{token_id}",token_limit,60,detail="too many API " + kind + " requests")
++
++
+ async def require_api_token(
+     request: Request,
+     authorization: str | None = Header(default=None),
+ ) -> int:
+     token_id = verify_api_token(authorization, request)
+     client_id = require_api_client_headers(request)
+-    rate_limit(
+-        f"api_client:{client_id}",
+-        config.APP_CLIENT_LIMIT_PER_HOUR * 4,
+-        3600,
+-        detail="too many client requests",
+-    )
++    enforce_api_request_rate(request,token_id,client_id)
+     with connect() as con:
+         register_api_client(con, client_id, request)
+     return token_id
+--- a/app/service.py
++++ b/app/service.py
+@@ -1,6 +1,8 @@
+ from __future__ import annotations
+ 
+ import hashlib
++import os
++import shutil
+ import re
+ import sqlite3
+ import subprocess
+@@ -20,7 +22,7 @@
+ from .db import connect, dumps, is_mysql, loads, now_iso
+ from .storage import episode_dir, slug_from_url, slugify
+ from .security import guarded_get, hash_token
+-from .settings import ai_monthly_spend, get_ai_settings
++from .settings import ai_monthly_spend, get_ai_settings, get_setting, set_setting
+ 
+ 
+ @contextmanager
+@@ -73,6 +75,27 @@
+     return states
+ 
+ 
++def transcription_resource_status() -> dict[str, Any] | None:
++    """Resource pressure is distinct from a healthy, normally occupied worker."""
++    message = None
++    try:
++        free_disk = shutil.disk_usage(config.STORAGE_DIR).free / 2**30
++        memory = next(float(line.split()[1]) / 2**20 for line in Path("/proc/meminfo").read_text().splitlines()
++                      if line.startswith("MemAvailable:"))
++        load = os.getloadavg()[0]
++        if free_disk < config.MIN_FREE_DISK_GIB:
++            message = f"Die Server-Verarbeitung pausiert wegen zu wenig freiem Plattenplatz ({free_disk:.1f} GiB)."
++        elif memory < config.MIN_FREE_MEM_GIB:
++            message = f"Die Server-Verarbeitung pausiert wegen zu wenig freiem Arbeitsspeicher ({memory:.1f} GiB)."
++        elif load > config.MAX_LOAD_1M:
++            message = "Die Server-Verarbeitung pausiert wegen hoher Systemlast."
++    except (OSError, ValueError, StopIteration):
++        message = "Die freien Server-Ressourcen konnten nicht zuverlässig geprüft werden."
++    if message:
++        return {"available":False,"code":"resources_unavailable","message":message,"retry_after_seconds":60}
++    return None
++
++
+ class TranscriptionProviderUnavailable(RuntimeError):
+     """A provider-wide block must not consume an episode's failure attempts."""
+ 
+@@ -90,8 +113,30 @@
+         _provider_status_cache.clear()
+ 
+ 
++def provider_configuration_fingerprint(settings: dict[str, Any]) -> str:
++    values = [settings.get(key) for key in ("provider","kimi_model","kimi_base_url","kimi_api_key","codex_catalog_path")]
++    return hashlib.sha256(dumps(values).encode()).hexdigest()
++
++
++def block_transcription_provider(settings: dict[str, Any], message: str, retry_after: float = 300) -> None:
++    """Persist observed provider failure across API and worker processes."""
++    set_setting("transcription_provider_block", dumps({
++        "configuration":provider_configuration_fingerprint(settings),
++        "until":time.time() + max(30, retry_after),"message":message}))
++    invalidate_transcription_provider_status()
++
++
++def transcription_provider_runtime_status(settings: dict[str, Any]) -> dict[str, Any] | None:
++    block = loads(get_setting("transcription_provider_block", "{}"), {})
++    if block.get("configuration") == provider_configuration_fingerprint(settings) and block.get("until",0) > time.time():
++        return provider_unavailable_status(block["message"])
++    return None
++
++
+ def transcription_provider_status() -> dict[str, Any] | None:
+     settings = get_ai_settings()
++    if blocked := transcription_provider_runtime_status(settings):
++        return blocked
+     provider = str(settings["provider"]).lower()
+     if provider == "openai_codex":
+         from .codex_provider import CodexProviderError, provider_readiness
+@@ -207,7 +252,7 @@
+                 (now, now, episode_id))
+     episode = con.execute("SELECT episode_url FROM episodes WHERE id=?", (episode_id,)).fetchone()
+     url_hash = hashlib.sha256(episode["episode_url"].encode()).hexdigest() if episode else None
+-    con.execute("UPDATE transcription_requests SET state=?,episode_id=COALESCE(episode_id,?),updated_at=? WHERE (episode_id=? OR (episode_id IS NULL AND url_hash=?)) AND state='active'",
++    con.execute("UPDATE transcription_requests SET state=?,episode_id=COALESCE(episode_id,?),updated_at=? WHERE (episode_id=? OR (episode_id IS NULL AND url_hash=?)) AND state IN ('active','unconfirmed')",
+                 (state, episode_id, now, episode_id, url_hash))
+     con.execute("UPDATE episodes SET status=?,updated_at=? WHERE id=? AND status!='ready'",
+                 (state, now, episode_id))
+@@ -488,7 +533,7 @@
+             SELECT id FROM jobs
+             WHERE job_type=? AND COALESCE(episode_id, 0)=COALESCE(?, 0)
+               AND COALESCE(podcast_id, 0)=COALESCE(?, 0)
+-              AND status IN ('queued', 'running')
++              AND status IN ('queued', 'running', 'paused')
+             ORDER BY id DESC LIMIT 1
+             """,
+             (job_type, episode_id, podcast_id),
+@@ -679,7 +724,7 @@
+ 
+ def retry_after_seconds_for_status(status: str | None) -> int | None:
+     if status in {"queued", "running"}:
+-        return 15
++        return config.API_STATUS_POLL_SECONDS
+     return None
+ 
+ 
+@@ -761,6 +806,8 @@
+     elif "Audio-Datei ist zu gross" in diagnostic:
+         code = "audio_too_large"
+         retryable = False
++    elif "Zeitlimit" in diagnostic or "Timeout" in diagnostic or "kein Fortschritt" in diagnostic:
++        code = "processing_timeout"
+     elif "Audio" in diagnostic or "download" in diagnostic.lower():
+         code = "audio_download_failed"
+     elif "AI-" in diagnostic or "Monatslimit" in diagnostic:
+@@ -772,6 +819,7 @@
+         "audio_download_failed": "Die Audiodatei konnte nicht heruntergeladen werden.",
+         "ai_processing_failed": "Die AI-Analyse konnte nicht abgeschlossen werden.",
+         "transcription_failed": "Die Transkription konnte nicht abgeschlossen werden.",
++        "processing_timeout": "Die Server-Verarbeitung hat ihr Zeitlimit überschritten oder keinen Fortschritt mehr gemacht.",
+     }
+     message = messages[code]
+     result: dict[str, Any] = {"code": code, "message": message, "retryable": retryable}
+@@ -874,6 +922,7 @@
+             "duration_delta_seconds": canonical_number(episode["duration_delta_seconds"]),
+             "audio_bytes": episode["audio_bytes"],
+             "audio_etag": episode["audio_etag"],
++            "media": {"audio_sha256": episode["audio_sha256"]},
+             "warnings": structured_warnings(episode),
+             "error": error,
+             "artifacts": artifacts,
+--- a/app/worker.py
++++ b/app/worker.py
+@@ -38,7 +38,7 @@
+ from .rss import fetch_feed
+ from .security import guarded_get, guarded_post_raw
+ from .service import (artifact_file_sha256, ensure_episode, enqueue_job, episode_status, update_duration_warning,
+-                      TranscriptionProviderUnavailable, invalidate_transcription_provider_status, transcription_provider_status, queue_admission_transaction)
++                      TranscriptionProviderUnavailable, invalidate_transcription_provider_status, transcription_provider_status, transcription_resource_status, block_transcription_provider, queue_admission_transaction)
+ from .settings import (
+     ai_monthly_spend,
+     delete_audio_after_transcribe,
+@@ -117,40 +117,12 @@
+     return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).replace(microsecond=0).isoformat()
+ 
+ 
+-def available_memory_gib() -> float:
+-    try:
+-        for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+-            if line.startswith("MemAvailable:"):
+-                return float(line.split()[1]) / 1024 / 1024
+-    except OSError:
+-        return 99.0
+-    return 99.0
+-
+-
+-def available_disk_gib(path: Path = config.ROOT) -> float:
+-    try:
+-        usage = shutil.disk_usage(path)
+-        return usage.free / 1024 / 1024 / 1024
+-    except OSError:
+-        return 99.0
+-
+-
+ def transcribe_block_reason(con) -> str | None:
+-    running = con.execute(
+-        "SELECT COUNT(*) AS count FROM jobs WHERE status='running' AND job_type='transcribe'"
+-    ).fetchone()["count"]
++    running = con.execute("SELECT COUNT(*) AS count FROM jobs WHERE status='running' AND job_type='transcribe'").fetchone()["count"]
+     if running >= config.MAX_RUNNING_TRANSCRIPTIONS:
+         return "Maximale Anzahl paralleler Transkriptionen erreicht."
+-    load_1m = os.getloadavg()[0]
+-    if load_1m > config.MAX_LOAD_1M:
+-        return f"Systemlast {load_1m:.1f} ist höher als Limit {config.MAX_LOAD_1M:.1f}."
+-    free_gib = available_memory_gib()
+-    if free_gib < config.MIN_FREE_MEM_GIB:
+-        return f"Freier Speicher {free_gib:.1f} GiB ist unter Limit {config.MIN_FREE_MEM_GIB:.1f} GiB."
+-    free_disk_gib = available_disk_gib(config.ROOT)
+-    if free_disk_gib < config.MIN_FREE_DISK_GIB:
+-        return f"Freier Plattenplatz {free_disk_gib:.1f} GiB ist unter Limit {config.MIN_FREE_DISK_GIB:.1f} GiB."
+-    return None
++    status = transcription_resource_status()
++    return status["message"] if status else None
+ 
+ 
+ def adaptive_chunk_workers() -> int:
+@@ -168,10 +140,12 @@
+ 
+ 
+ def transcribe_queue_has_capacity(con, requested: int = 1) -> bool:
++    if transcription_provider_status() or transcription_resource_status():
++        return False
+     row = con.execute(
+         """
+         SELECT COUNT(*) AS count FROM jobs
+-        WHERE job_type='transcribe' AND status IN ('queued', 'running')
++        WHERE job_type='transcribe' AND status IN ('queued', 'running', 'paused')
+         """
+     ).fetchone()
+     return int(row["count"] or 0) + requested <= config.MAX_QUEUED_TRANSCRIBE_JOBS
+@@ -180,57 +154,25 @@
+ def reset_stale_jobs(reset_running: bool = False) -> None:
+     now = now_iso()
+     with queue_admission_transaction() as con:
+-        if reset_running:
+-            stale = con.execute(
+-                "SELECT id, episode_id FROM jobs WHERE status='running'"
+-            ).fetchall()
+-        else:
+-            stale = con.execute(
+-                """
+-                SELECT id, episode_id FROM jobs
+-                WHERE status='running' AND lease_until IS NOT NULL AND lease_until < ?
+-                """,
+-                (now,),
+-            ).fetchall()
+-        if not stale:
+-            return
+-        if reset_running:
+-            con.execute(
+-                """
+-                UPDATE jobs SET status='queued', locked_by=NULL, lease_until=NULL, updated_at=?,
+-                    error='Nach Worker-Neustart erneut eingereiht.'
+-                WHERE status='running'
+-                """,
+-                (now,),
+-            )
+-        else:
+-            con.execute(
+-                """
+-                UPDATE jobs SET status='queued', locked_by=NULL, lease_until=NULL, updated_at=?,
+-                    error='Nach Neustart oder abgelaufener Lease erneut eingereiht.'
+-                WHERE status='running' AND lease_until IS NOT NULL AND lease_until < ?
+-                """,
+-                (now, now),
+-            )
+-        episode_ids = [row["episode_id"] for row in stale if row["episode_id"]]
+-        if episode_ids:
+-            placeholders = ",".join("?" for _ in episode_ids)
+-            con.execute(
+-                f"""
+-                UPDATE episodes SET
+-                    status=CASE
+-                        WHEN status IN ('downloading', 'transcribing', 'postprocessing', 'finalizing') THEN status
+-                        ELSE 'queued'
+-                    END,
+-                    processing_progress=CASE
+-                        WHEN status IN ('downloading', 'transcribing', 'postprocessing', 'finalizing') THEN processing_progress
+-                        ELSE 0.0
+-                    END,
+-                    updated_at=?
+-                WHERE id IN ({placeholders})
+-                """,
+-                (now, *episode_ids),
+-            )
++        clause = "status='running'" if reset_running else "status='running' AND lease_until IS NOT NULL AND lease_until < ?"
++        params = () if reset_running else (now,)
++        stale = con.execute("SELECT * FROM jobs WHERE " + clause, params).fetchall()
++        for row in stale:
++            terminal = int(row["attempts"]) >= int(row["max_attempts"])
++            state = "failed" if terminal else "queued"
++            current_lease = "" if reset_running else " AND lease_until IS NOT NULL AND lease_until < ?"
++            lease_params = () if reset_running else (now,)
++            changed = con.execute("""UPDATE jobs SET status=?,claim_token=NULL,locked_by=NULL,lease_until=NULL,
++                updated_at=?,finished_at=?,error=? WHERE id=? AND status='running'""" + current_lease,
++                (state,now,now if terminal else None,"Worker-Lease abgelaufen; Zeitlimit der Verarbeitung überschritten.",row["id"],*lease_params))
++            if changed.rowcount != 1:
++                continue
++            if row["episode_id"]:
++                con.execute("""UPDATE episodes SET status=CASE WHEN ?='failed' THEN 'failed'
++                    WHEN status IN ('downloading','transcribing','postprocessing','finalizing') THEN status ELSE 'queued' END,
++                    processing_progress=CASE WHEN ?='failed' THEN NULL ELSE processing_progress END,updated_at=? WHERE id=?""",
++                    (state,state,now,row["episode_id"]))
++
+ 
+ 
+ class JobClaimLost(RuntimeError):
+@@ -265,10 +207,11 @@
+ 
+ 
+ def claim_job(worker_id: str) -> dict[str, Any] | None:
++    reset_stale_jobs()
+     with connect() as check:
+         has_transcription = check.execute("SELECT 1 FROM jobs WHERE status='queued' AND job_type='transcribe' LIMIT 1").fetchone() is not None
+     provider_status = transcription_provider_status() if has_transcription else None
+-    with tx() as con:
++    with queue_admission_transaction() as con:
+         rows = con.execute(
+             """
+             SELECT * FROM jobs
+@@ -454,6 +397,8 @@
+     heartbeat_status: str = "transcribing",
+     heartbeat_progress: float | None = None,
+ ) -> None:
++    if STOP:
++        raise TranscriptionProviderUnavailable("Worker wird beendet; angenommener Auftrag bleibt erhalten.")
+     env = os.environ.copy()
+     env.setdefault("OMP_NUM_THREADS", str(config.THREADS_PER_WORKER))
+     env.setdefault("OPENBLAS_NUM_THREADS", str(config.THREADS_PER_WORKER))
+@@ -462,6 +407,9 @@
+         log.write("\n$ " + " ".join(cmd) + "\n")
+         log.flush()
+         proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
++        started = last_progress_at = time.monotonic()
++        last_log_size = log_path.stat().st_size
++        best_progress = -1.0
+         resource_state = None
+         next_resource_sample = time.monotonic() + RESOURCE_SAMPLE_SECONDS
+         if monitor_resources:
+@@ -475,8 +423,27 @@
+                 monitor_resources = False
+         try:
+             while True:
++                now = time.monotonic()
++                if STOP:
++                    raise TranscriptionProviderUnavailable("Worker wird beendet; angenommener Auftrag bleibt erhalten.")
++                log_size = log_path.stat().st_size
++                observed = None
++                if progress_path and progress_path.is_file():
++                    state = load_json(progress_path, {})
++                    observed = transcription_progress(state) if isinstance(state, dict) else None
++                if log_size > last_log_size or (observed is not None and observed > best_progress):
++                    last_progress_at = now
++                    last_log_size = log_size
++                    if observed is not None:
++                        best_progress = max(best_progress, observed)
++                deadline_remaining = config.COMMAND_MAX_SECONDS - (now - started)
++                stall_remaining = config.COMMAND_STALL_SECONDS - (now - last_progress_at)
++                if deadline_remaining <= 0:
++                    raise RuntimeError("Zeitlimit der Verarbeitung überschritten.")
++                if stall_remaining <= 0:
++                    raise RuntimeError("Zeitlimit: Die Verarbeitung macht keinen Fortschritt mehr.")
+                 try:
+-                    return_code = proc.wait(timeout=10)
++                    return_code = proc.wait(timeout=min(10, deadline_remaining, stall_remaining))
+                     break
+                 except subprocess.TimeoutExpired:
+                     if heartbeat_job_id is not None:
+@@ -500,12 +467,18 @@
+                             log.write(f"[resource-monitor] deaktiviert: {exc}\n")
+                             log.flush()
+                             monitor_resources = False
+-        except JobClaimLost:
+-            os.killpg(proc.pid, signal.SIGTERM)
++        except BaseException:
++            try:
++                os.killpg(proc.pid, signal.SIGTERM)
++            except ProcessLookupError:
++                pass
+             try:
+                 proc.wait(timeout=5)
+             except subprocess.TimeoutExpired:
+-                os.killpg(proc.pid, signal.SIGKILL)
++                try:
++                    os.killpg(proc.pid, signal.SIGKILL)
++                except ProcessLookupError:
++                    pass
+                 proc.wait()
+             raise
+         if return_code != 0:
+@@ -2129,6 +2102,8 @@
+             )
+             continue
+ 
++        if response.status_code in {401,403,402,429} or response.status_code >= 500:
++            return response, attempt
+         if response.status_code not in AI_RETRYABLE_STATUS_CODES or attempt >= attempts:
+             return response, attempt
+         wait_for_ai_retry(
+@@ -2168,7 +2143,17 @@
+             record_ai_usage(episode_id, provider, model, int(exc.usage.get("input_tokens", 0)),
+                 int(exc.usage.get("output_tokens", 0)), 0, "error",
+                 {**meta, "usage": exc.usage, "error_code": exc.code, "error": str(exc), "cost_usd": None})
+-            if exc.code in {"configuration", "authentication", "quota", "tool_policy", "cancelled"}:
++            if exc.code in {"configuration", "authentication", "quota", "tool_policy", "provider", "timeout"}:
++                messages = {
++                    "authentication":"Die Server-Verarbeitung wartet auf die OpenAI-Anmeldung des Betreibers.",
++                    "quota":"Die Server-Verarbeitung pausiert, bis wieder OpenAI-Inklusivvolumen verfügbar ist.",
++                    "configuration":"Die OpenAI-Konfiguration des Servers muss vom Betreiber geprüft werden.",
++                    "tool_policy":"Die Server-Verarbeitung pausiert wegen einer unzulässigen Provider-Antwort.",
++                    "provider":"OpenAI ist vorübergehend nicht für die Server-Verarbeitung verfügbar.",
++                    "timeout":"Die Server-Verarbeitung pausiert nach einer Zeitüberschreitung bei OpenAI.",
++                }
++                block_transcription_provider(settings, messages[exc.code], getattr(exc,"retry_after_seconds",None) or 300)
++            if exc.code in {"configuration", "authentication", "quota", "tool_policy", "provider", "cancelled"}:
+                 raise TranscriptionProviderUnavailable(str(exc)) from exc
+             raise RuntimeError(f"AI-{purpose} fehlgeschlagen: {exc}") from exc
+         record_ai_usage(episode_id, provider, model, result["input_tokens"], result["output_tokens"],
+@@ -2213,9 +2198,20 @@
+             base_url + "/chat/completions",
+             {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "User-Agent": config.USER_AGENT},
+             payload, heartbeat_job_id=heartbeat_job_id, episode_id=episode_id, progress=progress)
+-        if response.status_code == 402:
+-            invalidate_transcription_provider_status()
+-            raise TranscriptionProviderUnavailable("Die Server-Verarbeitung pausiert, weil das AI-Guthaben aufgebraucht ist. Der Serverbetreiber muss das Guthaben aufladen.")
++        if response.status_code in {401,403,402,429} or response.status_code >= 500:
++            messages = {
++                401:"Die Server-Verarbeitung wartet auf gültige AI-Zugangsdaten des Betreibers.",
++                403:"Die AI-Zugriffsberechtigung des Servers muss vom Betreiber geprüft werden.",
++                402:"Die Server-Verarbeitung pausiert, weil das AI-Guthaben aufgebraucht ist.",
++                429:"Die Server-Verarbeitung pausiert wegen eines AI-Anfragelimits.",
++            }
++            message = messages.get(response.status_code,"Der AI-Dienst ist vorübergehend nicht verfügbar.")
++            try:
++                retry_after = float(getattr(response,"headers",{}).get("Retry-After",300))
++            except (TypeError,ValueError):
++                retry_after = 300
++            block_transcription_provider(settings,message,retry_after)
++            raise TranscriptionProviderUnavailable(message)
+         try:
+             response.raise_for_status()
+         except requests.HTTPError as exc:
+@@ -2239,6 +2235,13 @@
+             "output_tokens": output_tokens, "cost_usd": cost_usd, "billing_mode": "api_estimate"}
+     except (TranscriptionProviderUnavailable, JobClaimLost):
+         raise
++    except requests.Timeout as exc:
++        block_transcription_provider(settings,"Die Server-Verarbeitung pausiert nach einer Zeitüberschreitung beim AI-Dienst.")
++        raise RuntimeError(f"AI-{purpose}: Zeitlimit der Provider-Anfrage überschritten.") from exc
++    except requests.RequestException as exc:
++        message = "Die Verbindung zum AI-Dienst ist vorübergehend nicht verfügbar."
++        block_transcription_provider(settings,message)
++        raise TranscriptionProviderUnavailable(message) from exc
+     except Exception as exc:
+         record_ai_usage(episode_id, provider, model, input_tokens, output_tokens, cost_usd, "error",
+             {**meta, "usage": usage, "usage_reported": bool(usage), "request_attempts": request_attempts,
+@@ -6369,6 +6372,9 @@
+             if enqueue_latest:
+                 episode_row = con.execute("SELECT status FROM episodes WHERE id=?", (episode_id,)).fetchone()
+                 if episode_row and episode_row["status"] not in {"ready", "canceled", "deleted"}:
++                    active = con.execute("SELECT 1 FROM jobs WHERE episode_id=? AND job_type='transcribe' AND status IN ('queued','running','paused') LIMIT 1",(episode_id,)).fetchone()
++                    if active:
++                        continue
+                     if not transcribe_queue_has_capacity(con):
+                         break
+                     enqueue_job(
+@@ -6643,8 +6649,8 @@
+             server_audio_etag,
+         )
+         con.execute(
+-            "UPDATE episodes SET detected_duration_seconds=?, result_dir=?, updated_at=? WHERE id=?",
+-            (detected_duration, str(result_dir), now_iso(), episode_id),
++            "UPDATE episodes SET detected_duration_seconds=?, result_dir=?, audio_sha256=?, updated_at=? WHERE id=?",
++            (detected_duration, str(result_dir), audio_sha256, now_iso(), episode_id),
+         )
+ 
+     touch_job(job_id)
+--- a/tools/provider_polling_regression.py
++++ b/tools/provider_polling_regression.py
+@@ -16,7 +16,8 @@
+         settings = {'provider': 'openai_codex', 'kimi_model': 'gpt-5.6-sol',
+                     'codex_catalog_path': '/unused-test-catalog.json'}
+         service.invalidate_transcription_provider_status()
+-        with patch.object(service, 'get_ai_settings', return_value=settings), \
++        with patch.object(service, 'get_setting', return_value='{}'), \
++             patch.object(service, 'get_ai_settings', return_value=settings), \
+              patch.object(codex_provider, 'provider_readiness', side_effect=error):
+             return service.transcription_provider_status()
+ 
+--- a/tools/queue_admission_mysql_regression.py
++++ b/tools/queue_admission_mysql_regression.py
+@@ -24,6 +24,8 @@
+ def main() -> int:
+     parser = argparse.ArgumentParser()
+     parser.add_argument('--lifecycle', action='store_true')
++    parser.add_argument('--reliability', action='store_true')
++    parser.add_argument('--rates', action='store_true')
+     parser.add_argument('--admin-config', default='/etc/webmin/mysql/config')
+     args = parser.parse_args()
+     auth = dict(line.split('=', 1) for line in Path(args.admin_config).read_text().splitlines() if '=' in line)
+@@ -39,6 +41,12 @@
+         if args.lifecycle:
+             from lifecycle_regression import LifecycleTests
+             base = LifecycleTests
++        if args.reliability:
++            from server_reliability_regression import ReliabilityTests
++            base = ReliabilityTests
++        if args.rates:
++            from rate_limit_regression import RateLimitTests
++            base = RateLimitTests
+         class MySQLAdmissionTests(base):
+             def setUp(self):
+                 super().setUp()
+--- a/tools/queue_admission_regression.py
++++ b/tools/queue_admission_regression.py
+@@ -31,7 +31,7 @@
+         root = Path(self.temp.name)
+         for key, value in dict(ROOT=root, VAR_DIR=root / 'var', DB_PATH=root / 'test.sqlite',
+                                STORAGE_DIR=root / 'storage', DB_BACKEND='sqlite',
+-                               MAX_QUEUED_TRANSCRIBE_JOBS=75,
++                               MAX_QUEUED_TRANSCRIBE_JOBS=250,
+                                MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS=25).items():
+             self.contexts.enter_context(patch.object(config, key, value, create=True))
+         init_db()
+@@ -92,8 +92,8 @@
+         self.assertEqual(202, self.submit(100, 'client-b').status_code)
+ 
+     def test_global_capacity_and_existing_reads(self):
+-        for n in range(3): self.seed(25, f'client-{n}', n * 25)
+-        self.assert_error(lambda: self.submit(100, 'client-new'), 503, 'queue_full')
++        for n in range(10): self.seed(25, f'client-{n}', n * 25)
++        self.assert_error(lambda: self.submit(1000, 'client-new'), 503, 'queue_full')
+         self.assertEqual(202, self.submit(0, 'client-0').status_code)
+         self.assertEqual(202, self.submit(0, 'client-new').status_code)
+ 
+@@ -156,7 +156,7 @@
+     def test_schema_exposes_admission_contract(self):
+         contract = main.api_schema(1)['admission_contract']
+         self.assertEqual(25, contract['max_active_episodes_per_client'])
+-        self.assertEqual(75, contract['max_active_transcription_jobs'])
++        self.assertEqual(250, contract['max_active_transcription_jobs'])
+         self.assertEqual({'http_status': 409, 'retryable': True, 'retry_after_seconds': 300}, contract['client_queue_full'])
+         self.assertEqual(503, contract['worker_unavailable']['http_status'])
+ 
+@@ -171,12 +171,12 @@
+                     self.assertEqual({'worker': available}, service.transcription_worker_status())
+ 
+     def test_admin_and_api_share_global_admission_limit(self):
+-        self.seed(74, 'existing-client')
++        self.seed(249, 'existing-client')
+         with tx() as con:
+             episode_id = service.ensure_episode(con, 'https://example.org/admin.mp3', title='admin')
+         def attempt(kind):
+             try:
+-                response = self.submit(100, 'new-client') if kind == 'api' else main.admin_transcribe_episode(episode_id, {})
++                response = self.submit(1000, 'new-client') if kind == 'api' else main.admin_transcribe_episode(episode_id, {})
+                 return response.status_code
+             except HTTPException as exc:
+                 return exc.status_code
+@@ -185,7 +185,7 @@
+         self.assertEqual(1, results.count(503))
+         self.assertEqual(1, sum(status in (202, 303) for status in results))
+         with tx() as con:
+-            self.assertEqual(75, con.execute('SELECT COUNT(*) AS n FROM jobs').fetchone()['n'])
++            self.assertEqual(250, con.execute('SELECT COUNT(*) AS n FROM jobs').fetchone()['n'])
+ 
+     def test_provider_balance_blocks_health_and_admission(self):
+         blocked = {'available': False, 'code': 'provider_unavailable', 'message': 'AI-Guthaben fehlt.', 'retry_after_seconds': 300}
+--- /dev/null
++++ b/tools/rate_limit_regression.py
+@@ -0,0 +1,85 @@
++#!/usr/bin/env python3
++"""Polling capacity, independent cancellation quota and atomic concurrent counters."""
++import asyncio
++import concurrent.futures
++from contextlib import ExitStack,contextmanager
++from pathlib import Path
++import sys
++import tempfile
++import threading
++import unittest
++from unittest.mock import patch
++sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
++from fastapi import HTTPException
++from starlette.requests import Request
++from starlette.responses import JSONResponse
++from app import config,main,security,service
++from app.db import init_db,tx
++
++class RateLimitTests(unittest.TestCase):
++    def setUp(self):
++        self.contexts=ExitStack();self.addCleanup(self.contexts.close)
++        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
++        root=Path(self.temp.name)
++        for key,value in {'ROOT':root,'VAR_DIR':root/'var','DB_PATH':root/'test.sqlite','STORAGE_DIR':root/'storage','DB_BACKEND':'sqlite'}.items():
++            self.contexts.enter_context(patch.object(config,key,value))
++        init_db()
++        self.contexts.enter_context(patch.object(security,'verify_api_token',return_value=1))
++        self.client='11111111-1111-4111-8111-111111111111'
++    def request(self,method='GET'):
++        path='/api/v1/episodes/1' if method=='GET' else '/api/v1/episodes' if method=='POST' else '/api/v1/client-requests/'+self.client
++        headers={'accept':'application/json','authorization':'Bearer test','content-type':'application/json',
++            config.CLIENT_ID_HEADER:self.client,config.CLIENT_VERSION_HEADER:'test',config.CLIENT_PLATFORM_HEADER:'iOS'}
++        return Request({'type':'http','method':method,'path':path,'scheme':'https','server':('test',443),
++            'client':('127.0.0.1',1),'headers':[(k.lower().encode(),v.encode()) for k,v in headers.items()]})
++    def through_guards(self,method):
++        async def endpoint(request):
++            token=await security.require_api_token(request,'Bearer test')
++            if method=='POST':main.enforce_submit_limit(request,token,'episode',self.client)
++            return JSONResponse({'ok':True})
++        return asyncio.run(main.security_middleware(self.request(method),endpoint))
++    def test_read_budget_matches_25_jobs_polling_and_result_downloads(self):
++        calls=[]
++        with patch.object(security,'rate_limit',side_effect=lambda bucket,limit,window,**kwargs:calls.append((bucket,limit,window))):
++            asyncio.run(security.require_api_token(self.request(),'Bearer test'))
++        client_limits=[limit*60/window for bucket,limit,window in calls if self.client in bucket]
++        expected=config.MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS*(60/service.retry_after_seconds_for_status('queued')+4+2)
++        self.assertTrue(client_limits)
++        self.assertGreaterEqual(min(client_limits),expected)
++    def test_cancel_survives_exhausted_read_and_admission_buckets(self):
++        self.assertEqual(200,self.through_guards('GET').status_code)
++        self.assertEqual(200,self.through_guards('POST').status_code)
++        with tx() as con:con.execute('UPDATE rate_limits SET count=1000000')
++        self.assertEqual(429,self.through_guards('GET').status_code)
++        self.assertEqual(429,self.through_guards('POST').status_code)
++        self.assertEqual(200,self.through_guards('DELETE').status_code)
++    def test_cancel_still_requires_valid_authentication(self):
++        with patch.object(security,'verify_api_token',side_effect=HTTPException(status_code=401,detail='invalid')):
++            self.assertEqual(401,self.through_guards('DELETE').status_code)
++    def test_concurrent_first_requests_count_atomically(self):
++        original=security.connect;barrier=threading.Barrier(2)
++        @contextmanager
++        def connected():
++            with original() as con:
++                class Connection:
++                    def execute(self,sql,params=()):
++                        cursor=con.execute(sql,params)
++                        if sql.strip().startswith('SELECT count FROM rate_limits'):
++                            class Cursor:
++                                def fetchone(self):
++                                    row=cursor.fetchone()
++                                    try:barrier.wait(timeout=1)
++                                    except threading.BrokenBarrierError:pass
++                                    return row
++                            return Cursor()
++                        return cursor
++                yield Connection()
++        def attempt(_):
++            try:security.rate_limit('parallel-test',1,60);return 'accepted'
++            except HTTPException as exc:return 'limited' if exc.status_code==429 else str(exc.status_code)
++            except Exception as exc:return type(exc).__name__
++        with patch.object(security,'connect',connected),concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
++            results=list(pool.map(attempt,[0,1]))
++        self.assertEqual(['accepted','limited'],sorted(results))
++
++if __name__=='__main__':unittest.main()
+--- /dev/null
++++ b/tools/server_capacity_policy_regression.py
+@@ -0,0 +1,25 @@
++#!/usr/bin/env python3
++"""The deployed default permits 250 server jobs, while each client stays at 25."""
++import importlib
++import os
++import sys
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++from app import config
++
++
++class ServerCapacityPolicyTests(unittest.TestCase):
++    def test_default_capacity_is_250_server_jobs_and_25_per_client(self):
++        with patch.dict(os.environ, clear=False):
++            os.environ.pop('INSTACAST_MAX_QUEUED_TRANSCRIBE_JOBS', None)
++            os.environ.pop('INSTACAST_MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS', None)
++            importlib.reload(config)
++            self.assertEqual(250, config.MAX_QUEUED_TRANSCRIBE_JOBS)
++            self.assertEqual(25, config.MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS)
++
++
++if __name__ == '__main__':
++    unittest.main()
+--- /dev/null
++++ b/tools/server_reliability_regression.py
+@@ -0,0 +1,198 @@
++#!/usr/bin/env python3
++"""Admission, concurrent claims, resource readiness and bounded execution proofs."""
++import concurrent.futures
++from contextlib import contextmanager
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++import threading
++import unittest
++from unittest.mock import patch
++sys.path.insert(0,str(Path(__file__).resolve().parent))
++from lifecycle_regression import LifecycleTests
++from app import config, main, service, worker
++from app.db import tx
++from app.security import hash_token
++
++class ReliabilityTests(LifecycleTests):
++    def test_paused_work_counts_against_client_and_global_limits(self):
++        self.seed(25)
++        with tx() as con:con.execute("UPDATE jobs SET status='paused'")
++        self.assert_error(lambda:self.submit(1000),409,'client_queue_full')
++        for n in range(1,10):self.seed(25,f'client-{n}',n*25)
++        with tx() as con:con.execute("UPDATE jobs SET status='paused'")
++        self.assert_error(lambda:self.submit(1001,'new-client'),503,'queue_full')
++
++    def test_refused_request_is_unconfirmed_and_authoritatively_not_admitted(self):
++        rid='11111111-1111-4111-8111-111111111111'
++        self.workers.return_value={'worker':False}
++        error=self.assert_error(lambda:self.post_request(1000,rid),503,'worker_unavailable')
++        self.assertIs(False,main.api_error_content(error.status_code,error.detail)['error'].get('admitted'))
++        with tx() as con:
++            row=service.request_record(con,hash_token('client-a'),rid)
++            self.assertEqual('unconfirmed',row['state'])
++            self.assertIsNone(row['episode_id'])
++            self.assertEqual(0,con.execute('SELECT COUNT(*) AS n FROM jobs').fetchone()['n'])
++        self.assert_error(lambda:main.get_client_request(rid,self.request(),1),404,'request_not_found')
++        self.assertNotIn('admitted',main.api_error_content(500,'unknown after commit')['error'])
++
++    def test_new_shared_interest_requires_readiness_but_owner_does_not(self):
++        self.seed(1)
++        self.workers.return_value={'worker':False}
++        self.assertEqual(202,self.submit(0).status_code)
++        self.assert_error(lambda:self.submit(0,'client-b'),503,'worker_unavailable')
++
++    def test_disk_pressure_blocks_health_and_admission(self):
++        with patch.object(__import__('shutil'),'disk_usage',return_value=type('Disk',(),{'free':0})()):
++            self.assertEqual(503,main.health().status_code)
++            self.assert_error(lambda:self.submit(1000),503,'resources_unavailable')
++
++    def test_two_workers_obey_running_limit(self):
++        self.seed(2)
++        barrier=threading.Barrier(2);seen=set();guard=threading.Lock()
++        original=worker.transcribe_block_reason
++        def blocked(con):
++            result=original(con)
++            with guard:
++                first=threading.get_ident() not in seen;seen.add(threading.get_ident())
++            if first:
++                try:barrier.wait(timeout=1)
++                except threading.BrokenBarrierError:pass
++            return result
++        with patch.object(worker,'transcription_provider_status',return_value=None),patch.object(config,'MAX_RUNNING_TRANSCRIPTIONS',1),patch.object(worker,'transcribe_block_reason',side_effect=blocked):
++            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
++                list(pool.map(worker.claim_job,['worker-a','worker-b']))
++        with tx() as con:self.assertEqual(1,con.execute("SELECT COUNT(*) AS n FROM jobs WHERE status='running'").fetchone()['n'])
++
++    def test_surviving_worker_reclaims_expired_lease_but_bounds_attempts(self):
++        self.seed(1)
++        with tx() as con:con.execute("UPDATE jobs SET status='running',lease_until='2000-01-01T00:00:00+00:00',attempts=max_attempts-1")
++        with patch.object(worker,'transcription_provider_status',return_value=None),patch.object(worker,'transcribe_block_reason',return_value=None):
++            last=worker.claim_job('survivor')
++            self.assertIsNotNone(last)
++            with tx() as con:con.execute("UPDATE jobs SET lease_until='2000-01-01T00:00:00+00:00'")
++            self.assertIsNone(worker.claim_job('survivor'))
++        with tx() as con:
++            job=con.execute('SELECT * FROM jobs').fetchone()
++            self.assertEqual('failed',job['status'])
++            self.assertEqual(job['max_attempts'],job['attempts'])
++
++    def test_hung_subprocess_is_terminated_at_deadline(self):
++        log=Path(self.temp.name)/'command.log'
++        real_popen=subprocess.Popen;children=[]
++        def tracked(*args,**kwargs):
++            child=real_popen(*args,**kwargs);children.append(child);return child
++        with patch.object(config,'COMMAND_MAX_SECONDS',0.1,create=True),patch.object(config,'COMMAND_STALL_SECONDS',1,create=True),patch.object(worker.subprocess,'Popen',side_effect=tracked):
++            with self.assertRaisesRegex(RuntimeError,'Zeitlimit|deadline|Timeout'):
++                worker.run_command([sys.executable,'-c','import time; time.sleep(1)'],log,cwd=Path(self.temp.name))
++        self.assertIsNotNone(children[0].poll())
++
++    def test_source_audio_hash_is_server_measured_and_survives_audio_cleanup(self):
++        self.seed(1)
++        with patch.object(worker,'transcription_provider_status',return_value=None),patch.object(worker,'transcribe_block_reason',return_value=None):
++            job=worker.claim_job('hash-worker')
++        audio_bytes=b'exact audio source bytes'
++        paths=[]
++        def download(url,target,**kwargs):
++            target.write_bytes(audio_bytes);paths.append(target)
++            return target,{'audio_bytes':len(audio_bytes),'audio_etag':'source-v1'}
++        with worker.job_claim(job),patch.object(worker,'download_audio',side_effect=download),patch.object(worker,'audio_duration',return_value=10),patch.object(worker,'run_command',side_effect=RuntimeError('stop before ASR')):
++            with self.assertRaisesRegex(RuntimeError,'stop before ASR'):worker.run_transcribe(job,{})
++        expected=worker.hashlib.sha256(audio_bytes).hexdigest()
++        with tx() as con:self.assertEqual(expected,dict(con.execute('SELECT * FROM episodes').fetchone()).get('audio_sha256'))
++        paths[0].unlink()
++        self.assertEqual(expected,service.episode_status(job['episode_id'])['media']['audio_sha256'])
++
++    def test_provider_http_auth_and_quota_failures_pause_without_draining_jobs(self):
++        settings={'provider':'kimi','kimi_api_key':'test','kimi_base_url':'https://example.invalid',
++                  'kimi_model':'test','monthly_limit_usd':100,'input_usd_per_1m':1,'output_usd_per_1m':1}
++        for status in [401,403,429,503]:
++            response=worker.requests.Response();response.status_code=status;response.headers={'Retry-After':'600'};response._content=b'provider error'
++            with patch.object(worker,'get_ai_settings',return_value=settings),patch.object(service,'get_ai_settings',return_value=settings),patch.object(worker,'ai_monthly_spend',return_value=0),patch.object(worker,'post_ai_with_retries',return_value=(response,1)):
++                with self.assertRaises(service.TranscriptionProviderUnavailable):
++                    worker.call_ai_json(None,'sponsors','test','test',max_tokens=10)
++                self.assertEqual('provider_unavailable',service.transcription_provider_status()['code'])
++
++    def test_automatic_feed_scan_does_not_admit_when_provider_blocked(self):
++        feed={'feed_url':'https://example.org/feed.xml','title':'test','episodes':[
++            {'episode_url':'https://example.org/new.mp3','title':'test','guid':'test','published_at':None}]}
++        with tx() as con:
++            podcast=service.ensure_podcast(con,feed['feed_url'],title='test',auto_enabled=True)
++            service.enqueue_job(con,'feed_scan',podcast_id=podcast)
++        job=worker.claim_job('feed-worker')
++        blocked={'available':False,'code':'provider_unavailable','message':'unavailable','retry_after_seconds':300}
++        with patch.object(worker,'fetch_feed',return_value=feed),patch.object(worker,'transcription_provider_status',return_value=blocked),worker.job_claim(job):
++            worker.run_feed_scan(job,{'source':'auto_scan','enqueue_latest':True})
++        with tx() as con:self.assertEqual(0,con.execute("SELECT COUNT(*) AS n FROM jobs WHERE job_type='transcribe'").fetchone()['n'])
++
++    def test_lease_reaper_rechecks_a_renewal_before_mutation(self):
++        self.seed(1)
++        with tx() as con:con.execute("UPDATE jobs SET status='running',lease_until='2000-01-01T00:00:00+00:00'")
++        original=worker.queue_admission_transaction
++        @contextmanager
++        def renewed_transaction():
++            with original() as con:
++                class Connection:
++                    def execute(self,sql,params=()):
++                        cursor=con.execute(sql,params)
++                        if sql.startswith('SELECT * FROM jobs WHERE'):
++                            class Cursor:
++                                def fetchall(self):
++                                    rows=cursor.fetchall()
++                                    con.execute("UPDATE jobs SET lease_until='2099-01-01T00:00:00+00:00' WHERE status='running'")
++                                    return rows
++                            return Cursor()
++                        return cursor
++                yield Connection()
++        with patch.object(worker,'queue_admission_transaction',renewed_transaction):worker.reset_stale_jobs()
++        with tx() as con:self.assertEqual('running',con.execute('SELECT status FROM jobs').fetchone()['status'])
++
++    def test_overlapping_post_rechecks_bound_receipt_before_refusal_or_reenqueue(self):
++        rid='11111111-1111-4111-8111-111111111111'
++        url='https://example.org/replay.mp3'
++        def completed_replay(feed_url):
++            with service.queue_admission_transaction() as con:
++                episode=service.ensure_episode(con,url,title='already accepted')
++                service.enqueue_job(con,'transcribe',episode_id=episode)
++                con.execute("UPDATE jobs SET status='failed',attempts=max_attempts,error='fixture failure'")
++                con.execute("UPDATE episodes SET status='failed' WHERE id=?",(episode,))
++                service.store_client_request(con,hash_token('client-a'),rid,episode,'active',worker.hashlib.sha256(url.encode()).hexdigest())
++            self.workers.return_value={'worker':False}
++            return {'feed_url':feed_url,'title':'test','episodes':[]}
++        payload=main.EpisodeRequest(episode_url=url,podcast_url='https://example.org/feed.xml',
++            title='test',client_duration_seconds=0,wait_seconds=0,client_request_id=rid,force=False)
++        with patch.object(main,'fetch_feed',side_effect=completed_replay):
++            response=main.submit_episode(payload,self.request(),1)
++        self.assertEqual('failed',json.loads(response.body)['episode']['status'])
++        self.assertEqual(rid,json.loads(response.body)['client_request']['id'])
++        with tx() as con:self.assertEqual(1,con.execute('SELECT COUNT(*) AS n FROM jobs').fetchone()['n'])
++
++    def test_feed_scan_preserves_existing_paused_and_running_work(self):
++        feed={'feed_url':'https://example.org/feed.xml','title':'test','episodes':[
++            {'episode_url':'https://example.org/current.mp3','title':'test','guid':'test','published_at':None}]}
++        with tx() as con:
++            podcast=service.ensure_podcast(con,feed['feed_url'],title='test',auto_enabled=True)
++            episode=service.ensure_episode(con,feed['episodes'][0]['episode_url'],podcast_id=podcast,title='test')
++            work=service.enqueue_job(con,'transcribe',episode_id=episode,podcast_id=podcast)
++            con.execute("UPDATE jobs SET status='paused' WHERE id=?",(work,))
++            service.enqueue_job(con,'feed_scan',podcast_id=podcast)
++        scan=worker.claim_job('feed-worker')
++        for phase,job_state in [('paused','paused'),('transcribing','running')]:
++            with tx() as con:
++                con.execute('UPDATE episodes SET status=? WHERE id=?',(phase,episode))
++                con.execute('UPDATE jobs SET status=? WHERE id=?',(job_state,work))
++            with patch.object(worker,'fetch_feed',return_value=feed),patch.object(worker,'transcription_provider_status',return_value=None),worker.job_claim(scan):
++                worker.run_feed_scan(scan,{'source':'auto_scan','enqueue_latest':True})
++            with tx() as con:
++                self.assertEqual(1,con.execute("SELECT COUNT(*) AS n FROM jobs WHERE job_type='transcribe'").fetchone()['n'])
++                self.assertEqual(phase,con.execute('SELECT status FROM episodes WHERE id=?',(episode,)).fetchone()['status'])
++
++    def test_shutdown_stops_child_without_losing_accepted_job(self):
++        log=Path(self.temp.name)/'stopped.log'
++        with patch.object(worker,'STOP',True):
++            with self.assertRaises(service.TranscriptionProviderUnavailable):
++                worker.run_command([sys.executable,'-c','pass'],log,cwd=Path(self.temp.name))
++
++if __name__=='__main__':unittest.main()

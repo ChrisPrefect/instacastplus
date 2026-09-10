@@ -1,0 +1,111 @@
+{
+  "checked_at": "2026-09-06T00:18:39.567936+00:00",
+  "version": "4.0",
+  "build": "37",
+  "configuration": "Release",
+  "device_id": "943DD226-88E3-57DD-B2B2-E128005AC50D",
+  "root_cause": "Previous direct-device Release build omitted IC_TRANSCRIPTION_TESTFLIGHT_BUILD; compiled availability gate returned NO.",
+  "fix": "GCC_PREPROCESSOR_DEFINITIONS=$(inherited) IC_TRANSCRIPTION_TESTFLIGHT_BUILD=1",
+  "prior_binary_regression": "failed as expected: availability returned 0",
+  "corrected_binary_regression": "passed: availability returns 1",
+  "binary_sha256": "cfc090a205e6b3b88272eb725ded643d2bc36fd26871289d6b626d1510ee741d",
+  "build_succeeded": true,
+  "codesign_verified": true,
+  "embedded_watch_audio_verified": true,
+  "unchanged_source_file_count": 1380,
+  "install": {
+    "info": {
+      "arguments": [
+        "devicectl",
+        "device",
+        "install",
+        "app",
+        "--device",
+        "943DD226-88E3-57DD-B2B2-E128005AC50D",
+        "/Users/Chris/Library/Developer/Xcode/DerivedData/Instacast-cgtqgggsjixnfbdsmznxtbkjogvj/Build/Products/Release-iphoneos/InstacastPlus.app",
+        "--json-output",
+        "/tmp/instacast-transcription-enabled-install.json"
+      ],
+      "commandType": "devicectl.device.install.app",
+      "environment": {
+        "TERM": "dumb"
+      },
+      "jsonVersion": 3,
+      "outcome": "success",
+      "version": "518.33"
+    },
+    "result": {
+      "deviceIdentifier": "943DD226-88E3-57DD-B2B2-E128005AC50D",
+      "installedApplications": [
+        {
+          "bundleID": "com.iteconomy.instacastplus",
+          "databaseSequenceNumber": 2896,
+          "databaseUUID": "9B8D6318-DC70-4B8D-9016-C96202840012",
+          "installationURL": "file:///private/var/containers/Bundle/Application/BAD44B46-9F44-4380-8327-321D4E6511B9/InstacastPlus.app/",
+          "launchServicesIdentifier": "unknown",
+          "options": {}
+        }
+      ]
+    }
+  },
+  "launch": {
+    "info": {
+      "arguments": [
+        "devicectl",
+        "device",
+        "process",
+        "launch",
+        "--device",
+        "943DD226-88E3-57DD-B2B2-E128005AC50D",
+        "com.iteconomy.instacastplus",
+        "--json-output",
+        "/tmp/instacast-transcription-enabled-launch.json"
+      ],
+      "commandType": "devicectl.device.process.launch",
+      "environment": {
+        "TERM": "dumb"
+      },
+      "jsonVersion": 3,
+      "outcome": "success",
+      "version": "518.33"
+    },
+    "result": {
+      "deviceIdentifier": "943DD226-88E3-57DD-B2B2-E128005AC50D",
+      "launchOptions": {
+        "activatedWhenStarted": true,
+        "arguments": [],
+        "environmentVariables": {
+          "TERM": "dumb"
+        },
+        "platformSpecificOptions": {},
+        "startStopped": false,
+        "terminateExistingInstances": false,
+        "user": {
+          "active": true
+        }
+      },
+      "process": {
+        "auditToken": [
+          4294967295,
+          501,
+          501,
+          501,
+          501,
+          5071,
+          0,
+          13228
+        ],
+        "executable": "file:///private/var/containers/Bundle/Application/BAD44B46-9F44-4380-8327-321D4E6511B9/InstacastPlus.app/InstacastPlus",
+        "processIdentifier": 5071
+      }
+    }
+  },
+  "testflight_upload": false,
+  "focused_checks": [
+    "Tools/ai_transcription_public_release_regression_test.py",
+    "Tools/transcription_settings_local_server_regression_test.py",
+    "Tools/backup_settings_regression_test.py",
+    "Tools/transcription_build_availability_regression_test.py"
+  ],
+  "ui_screenshot_verified": false
+}

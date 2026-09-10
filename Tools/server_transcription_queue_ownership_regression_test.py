@@ -67,7 +67,7 @@ require(
 
 missing_endpoint = process[
     process.index("guard let episodeURL"):
-    process.index("item.status = .transcribing")
+    process.index("item.nextRetryAt = nil")
 ]
 require(
     "fail(item" in missing_endpoint

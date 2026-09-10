@@ -1,0 +1,37 @@
+[
+  {
+    "path": "app/service.py",
+    "before": "5209e9187a19bd89b22d66b0f94a1ddb3733426812a8afe45e58fe9410e7f202",
+    "after": "501bf2532cac5518be37459c6f659e67260fc0d8d845696316e47963f1759674"
+  },
+  {
+    "path": "app/main.py",
+    "before": "6b0748846e8e25e223bc73e9752053249ac59bd6640bb9001e6c04d9a12394f0",
+    "after": "56fe4554edaa4dea34b522d9373f321a290f9adc099d41dac4219b105f6f4fea"
+  },
+  {
+    "path": "API.md",
+    "before": "1123f559b85d06408e992572edb5632805f684ba0a68e97b898c46d37323bdac",
+    "after": "74b6ed987ad679e1d5d014b50b4cc008d74e27ac1136ee5242ccf0df8b251d3f"
+  },
+  {
+    "path": "INSTACASTPLUS-API.md",
+    "before": "2054496e483d39ee0dde11b56617aa72a6f44076c2940d732e797b36fc6be47f",
+    "after": "7972e899ed124375a9763a41856f694c557de10f1424ccbd4ad54fd47b16cbdb"
+  },
+  {
+    "path": "tools/api_contract_v3_regression.py",
+    "before": "4b96fe9ee2ef43d905492da0c370eaae8ffebaef01f224f2a97fceb91634317b",
+    "after": "4bb9d2ac6a33a86476f3a1aa19dbec3976e759354ec9703d57f3d97c7c819dd1"
+  },
+  {
+    "path": "tools/server_model_regression.py",
+    "before": "c7af289820422bba5eb9070153fc3c2649a3587672113f918da26679fb19e792",
+    "after": "180829c4008470cc21ad154b6afc84138641e5cfaf655aa32e1b85d7c38c40a2"
+  },
+  {
+    "path": "tools/progress_presentation_regression.py",
+    "before": null,
+    "after": "673356cd49a60d4a710b9dfe59429e6a0fab6b7bbbd0d5150026ea547928d45c"
+  }
+]

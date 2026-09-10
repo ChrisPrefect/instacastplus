@@ -1,0 +1,39 @@
+{
+  "passed": true,
+  "scope": "Actual Whisper + OpenAI audio-to-artifacts pipeline; controlled audio file replaces HTTP retrieval only",
+  "production_database_touched": false,
+  "duration_seconds": 114.835875,
+  "live_ai_calls": 12,
+  "input_tokens": 70442,
+  "output_tokens": 2579,
+  "billing_mode": "chatgpt_subscription",
+  "source_audio_sha256": "92747209c31b54463fa69e40d7b29b15894a13ff00664e86ca8066112984b6d0",
+  "detected_sponsor": {
+    "start": 44.31,
+    "end": 71.69,
+    "title": "Sponsor: Beispiel Kaffee"
+  },
+  "reference": {
+    "ad_start": 44.269524,
+    "ad_end": 71.829252,
+    "duration": 114.835875,
+    "brand": "Beispielkaffee",
+    "source": "Synthetic German speech, three separately rendered editorial/ad/editorial sections"
+  },
+  "state": "ready",
+  "artifact_kinds": [
+    "ads",
+    "chapters",
+    "chapters_original",
+    "pipeline_log",
+    "raw_json",
+    "raw_srt",
+    "raw_txt",
+    "raw_vtt",
+    "readable_json",
+    "readable_srt",
+    "readable_vtt",
+    "summary"
+  ],
+  "completed_whisper_reused_after_test_environment_cache_path_correction": true
+}

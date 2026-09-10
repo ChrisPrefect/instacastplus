@@ -217,6 +217,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 @property (nonatomic, readonly, getter=isCacheComplete) BOOL cacheComplete;
 @property (nonatomic, readonly, getter=isCacheTerminal) BOOL cacheTerminal;
 @property (nonatomic, copy, readonly) NSString* leaseToken;
+@property (atomic, strong, readonly) NSURL* completeReadURL;
 @property (nonatomic, copy) void (^progressChangeHandler)(double progress,
                                                          unsigned long long downloadedBytes,
                                                          ICStreamingCacheLoaderState state);
@@ -237,6 +238,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 @end
 
 @interface ICStreamingCacheLoader ()
+@property (atomic, strong, readwrite) NSURL* completeReadURL;
 @property (nonatomic, strong) CDEpisode* episode;
 @property (nonatomic, strong) NSURL* remoteURL;
 @property (nonatomic, strong) NSURL* tempURL;
@@ -1068,6 +1070,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
                         [innerSelf.session finishTasksAndInvalidate];
                         innerSelf.session = nil;
                         innerSelf.readURL = cachedURL;
+                        innerSelf.completeReadURL = cachedURL;
                         [innerSelf _processPendingRequests];
                         [innerSelf _notifyProgressIfNeededForce:YES];
                         [innerSelf _releaseDetachedRetentionIfPossible];
@@ -1332,6 +1335,22 @@ didReceiveResponse:(NSURLResponse *)response
 @property (nonatomic) BOOL isAutoSkipping;
 @property (nonatomic, strong) NSDate *lastAutoSkipDate;
 @property (nonatomic, strong) NSArray *autoSkipMarkers;  // @[@{@"start": @(time), @"resume": @(time)}], resume == -1 → finish episode
+@property (nonatomic, copy) NSDictionary *autoSkipConfiguration;
+@property (nonatomic) BOOL chaptersUseGeneratedAnalysis;
+@property (nonatomic) BOOL generatedChapterAudioVerified;
+@property (nonatomic) NSUInteger chapterLoadGeneration;
+@property (nonatomic, strong) NSURL *audioVerificationSourceURL;
+@property (nonatomic, readwrite) BOOL automaticChapterSkippingAudioUnverified;
+@property (nonatomic, readwrite) BOOL generatedChapterTimelineUnverified;
+@property (nonatomic, readwrite) BOOL generatedAudioVerificationCompleted;
+@property (nonatomic, readwrite) BOOL transcriptAudioVerified;
+@property (nonatomic, readwrite, copy) NSString *verifiedTranscriptSnapshot;
+@property (nonatomic, readwrite, copy) NSString *chapterTimelineIdentifier;
+@property (nonatomic, strong) AVURLAsset *audioSnapshotAsset;
+@property (nonatomic, copy) NSString *audioSnapshotAnchor;
+@property (nonatomic, copy) NSString *verifiedAnalysisSnapshot;
+@property (nonatomic, copy) NSArray *pendingGeneratedChapters;
+@property (nonatomic, copy) NSArray *originalChapterTimeline;
 @property (nonatomic) NSInteger suppressedSkipMarker;    // Manual seek protection: marker index to suppress
 @property (nonatomic, strong) NSDate *lastBackgroundPlaybackDiagnosticDate;
 #if TARGET_OS_IPHONE
@@ -1377,6 +1396,7 @@ didReceiveResponse:(NSURLResponse *)response
 
         // Reload chapters when generated chapters are added or deleted
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_generatedChaptersDidChange:) name:@"ICTranscriptionDidChangeNotification" object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_generatedChaptersDidChange:) name:@"ICTranscriptArtifactsDidChangeNotification" object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_cacheManagerDidCancelStreamingCacheEpisode:) name:CacheManagerDidCancelStreamingCacheEpisodeNotification object:nil];
 #else
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -2168,6 +2188,7 @@ didReceiveResponse:(NSURLResponse *)response
     }
     if (shouldCacheViaStream) {
         __weak PlaybackManager* weakSelf = self;
+        __weak ICStreamingCacheLoader* observedLoader = self.streamCacheLoader;
         NSString* episodeHash = anEpisode.objectHash;
         self.streamCacheLoader.progressChangeHandler = ^(double progress,
                                                          unsigned long long downloadedBytes,
@@ -2181,7 +2202,9 @@ didReceiveResponse:(NSURLResponse *)response
                 return;
             }
             CDEpisode* playingEpisode = strongSelf.playingEpisode;
-            if (!playingEpisode || ![playingEpisode.objectHash isEqualToString:episodeHash]) {
+            if (strongSelf.streamCacheLoader != observedLoader ||
+                ![observedLoader.leaseToken isEqualToString:streamCacheLeaseToken] ||
+                !playingEpisode || ![playingEpisode.objectHash isEqualToString:episodeHash]) {
                 return;
             }
             BOOL cacheActive = (state == ICStreamingCacheLoaderStateActive);
@@ -2189,6 +2212,9 @@ didReceiveResponse:(NSURLResponse *)response
             strongSelf.streamingCacheActive = cacheActive;
             strongSelf.streamingCacheProgress = cacheComplete ? 1.0 : (cacheActive ? progress : 0.0);
             strongSelf.streamingCacheComplete = cacheComplete;
+            if (cacheComplete) {
+                [strongSelf _verifyGeneratedChapterAudioForCurrentAsset];
+            }
             [strongSelf _sendUpdateNotification];
         };
         self.streamingCacheActive = YES;
@@ -2201,6 +2227,8 @@ didReceiveResponse:(NSURLResponse *)response
     self.mediaAsset = [AVURLAsset URLAssetWithURL:url options:nil];
 #endif
 	
+    self.audioSnapshotAsset = self.mediaAsset;
+    self.audioSnapshotAnchor = self.mediaAsset.URL.isFileURL ? [TranscriptionEngine artifactSnapshotIdentifierAt:self.mediaAsset.URL] : nil;
     [self _continueOpeningAsset:self.mediaAsset autostart:autostart];
 }
 
@@ -2482,7 +2510,7 @@ didReceiveResponse:(NSURLResponse *)response
         ICSharePlayCoordinator* sharePlayCoordinator = [ICSharePlayCoordinator sharedCoordinator];
         BOOL canPerformAutomaticSkip = ![sharePlayCoordinator hasActiveSession] || [sharePlayCoordinator canAdvanceAutomatically];
 
-        if (canPerformAutomaticSkip && skipEndPeriod > 0.0 && !episode.consumed) {
+        if (canPerformAutomaticSkip && skipEndPeriod > 0.0) {
             AVPlayerItem *item = weakSelf.player.currentItem;
             CMTime duration = item.asset.duration;
 
@@ -2616,6 +2644,9 @@ didReceiveResponse:(NSURLResponse *)response
 {
     NSMutableDictionary *metadata = [NSMutableDictionary dictionary];
     metadata[@"episodeHash"] = episode.objectHash ?: @"";
+    metadata[@"episodeConsumed"] = @(episode.consumed);
+    metadata[@"episodePosition"] = @(episode.position);
+    metadata[@"episodeDuration"] = @(episode.duration);
     metadata[@"currentTime"] = @(currentTime);
     metadata[@"duration"] = @(duration);
     metadata[@"playerRate"] = @(self.player.rate);
@@ -2623,6 +2654,17 @@ didReceiveResponse:(NSURLResponse *)response
     metadata[@"autoSkipMarkerCount"] = @(self.autoSkipMarkers.count);
     metadata[@"suppressedSkipMarker"] = @(self.suppressedSkipMarker);
     metadata[@"isAutoSkipping"] = @(self.isAutoSkipping);
+    double feedSkipEnd = [episode.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", episode.feed.uid]];
+    double globalSkipEnd = [USER_DEFAULTS doubleForKey:PlayerAutoSkipEndPeriod];
+    ICSharePlayCoordinator* coordinator = [ICSharePlayCoordinator sharedCoordinator];
+    metadata[@"feedSkipEndPeriod"] = @(feedSkipEnd);
+    metadata[@"globalSkipEndPeriod"] = @(globalSkipEnd);
+    metadata[@"skipEndPeriod"] = @(feedSkipEnd != 0.0 ? feedSkipEnd : globalSkipEnd);
+    metadata[@"canPerformAutomaticSkip"] = @(![coordinator hasActiveSession] || [coordinator canAdvanceAutomatically]);
+    NSDictionary* timerMetadata = [[AudioSession sharedAudioSession] sleepTimerDiagnosticsMetadata];
+    for (NSString* key in timerMetadata) {
+        metadata[[@"sleepTimer." stringByAppendingString:key]] = timerMetadata[key];
+    }
     return metadata;
 }
 
@@ -2696,6 +2738,9 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (BOOL)autoSkipsChapterTitle:(NSString*)title forFeed:(CDFeed*)feed
 {
+    if (feed == self.playingEpisode.feed && self.automaticChapterSkippingAudioUnverified) {
+        return NO;
+    }
     if (!feed || title.length == 0) {
         return NO;
     }
@@ -2704,6 +2749,7 @@ didReceiveResponse:(NSURLResponse *)response
 }
 
 - (void)nextTimeAfterSkipChapter:(CDEpisode *)episode {
+    [self _refreshAutoSkipMarkersIfNeeded];
     if (self.isAutoSkipping) return;
     if (!self.autoSkipMarkers || self.autoSkipMarkers.count == 0) return;
     if (self.lastAutoSkipDate && [[NSDate date] timeIntervalSinceDate:self.lastAutoSkipDate] < 1.0) return;
@@ -2945,17 +2991,16 @@ didReceiveResponse:(NSURLResponse *)response
     }
     self.lastBackgroundPlaybackDiagnosticDate = now;
     CDEpisode* episode = self.playingEpisode;
+    NSMutableDictionary* metadata = [self _playbackDiagnosticsMetadataForEpisode:episode currentTime:self.time duration:self.duration];
+    [metadata addEntriesFromDictionary:@{
+        @"playbackReady": @(self.ready),
+        @"playbackPaused": @(self.paused),
+        @"backgroundTimeRemaining": @(App.backgroundTimeRemaining),
+    }];
+    // Includes sleepTimerDiagnosticsMetadata even when the sleep timer never started.
     [[ICDiagnosticLogger shared] logEvent:@"background-playback"
                                   message:@"Hintergrund-Playback-Checkpoint"
-                                 metadata:@{
-                                     @"episodeHash": episode.objectHash ?: @"",
-                                     @"currentTime": @(self.time),
-                                     @"duration": @(self.duration),
-                                     @"playbackReady": @(self.ready),
-                                     @"playbackPaused": @(self.paused),
-                                     @"playerRate": @(self.player.rate),
-                                     @"backgroundTimeRemaining": @(App.backgroundTimeRemaining),
-                                 }];
+                                 metadata:metadata];
 #endif
 }
 
@@ -3006,6 +3051,19 @@ didReceiveResponse:(NSURLResponse *)response
     self.isAutoSkipping = NO;
     self.lastAutoSkipDate = nil;
     self.autoSkipMarkers = nil;
+    self.autoSkipConfiguration = nil;
+    self.chapterLoadGeneration += 1;
+    self.generatedAudioVerificationCompleted = NO;
+    [[ChapterGenerator shared] cancelGeneratedAudioVerification];
+    self.audioVerificationSourceURL = nil;
+    self.chaptersUseGeneratedAnalysis = NO;
+    self.generatedChapterAudioVerified = NO;
+    self.automaticChapterSkippingAudioUnverified = NO;
+    self.generatedChapterTimelineUnverified = NO;
+    self.transcriptAudioVerified = NO;
+    self.verifiedTranscriptSnapshot = nil;
+    self.pendingGeneratedChapters = nil;
+    self.originalChapterTimeline = nil;
     self.suppressedSkipMarker = -1;
 
 	[self.controlTimer invalidate];
@@ -3013,6 +3071,9 @@ didReceiveResponse:(NSURLResponse *)response
 	
 	[self.mediaAsset cancelLoading];
 	self.mediaAsset = nil;
+    self.audioSnapshotAsset = nil;
+    self.audioSnapshotAnchor = nil;
+    self.verifiedAnalysisSnapshot = nil;
 	
     if (!self.changingEpisode) {
         [self _endNextItemHandover];
@@ -3257,6 +3318,7 @@ didReceiveResponse:(NSURLResponse *)response
 	float targetRate = _playbackRate > 0 ? _playbackRate : [self rateFromSpeedControl:self.speedControl];
 	self.player.rate = targetRate;
 
+    [[AudioSession sharedAudioSession] startSleepTimerIfNeeded];
     self.playStartDate = [NSDate date];
 	SEND_UPDATE
 }
@@ -3303,6 +3365,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 // If time falls inside a skip zone, return one full skip-back duration before the zone start.
 - (NSTimeInterval)_adjustTimeBeforeSkipZone:(NSTimeInterval)time {
+    [self _refreshAutoSkipMarkersIfNeeded];
     if (!self.autoSkipMarkers) return time;
     for (NSDictionary *marker in self.autoSkipMarkers) {
         NSTimeInterval skipStart = [marker[@"start"] doubleValue];
@@ -3317,6 +3380,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 // If time falls inside a skip zone, return the resume point after the zone (for forward seek).
 - (NSTimeInterval)_adjustTimeAfterSkipZone:(NSTimeInterval)time {
+    [self _refreshAutoSkipMarkersIfNeeded];
     if (!self.autoSkipMarkers) return time;
     for (NSDictionary *marker in self.autoSkipMarkers) {
         NSTimeInterval skipStart = [marker[@"start"] doubleValue];
@@ -3329,13 +3393,14 @@ didReceiveResponse:(NSURLResponse *)response
 }
 
 - (void)_suppressAutoSkipMarkerAtTime:(NSTimeInterval)time {
+    [self _refreshAutoSkipMarkersIfNeeded];
     if (!self.autoSkipMarkers) return;
     self.suppressedSkipMarker = -1;
     for (NSInteger i = 0; i < (NSInteger)self.autoSkipMarkers.count; i++) {
         NSDictionary *marker = self.autoSkipMarkers[i];
         NSTimeInterval skipStart = [marker[@"start"] doubleValue];
         NSTimeInterval resumeTime = [marker[@"resume"] doubleValue];
-        if (resumeTime > 0 && time >= skipStart && time < resumeTime) {
+        if (time >= skipStart && (resumeTime < 0 || time < resumeTime)) {
             self.suppressedSkipMarker = i;
             break;
         }
@@ -3384,6 +3449,8 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) seekToChapter:(ICMetadataChapter*)chapter
 {
+    [self generatedArtifactTimingIsCurrent];
+    if (![self.chapters containsObject:chapter]) return;
     // fix chapter display for 5 seconds due to seeking fuzzyness
     self.seekingChapter = chapter;
     
@@ -3506,6 +3573,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (NSTimeInterval)_forwardSkipTargetNearChapterEndFromTime:(NSTimeInterval)time
 {
+    [self generatedArtifactTimingIsCurrent];
     CDFeed* feed = self.playingEpisode.feed;
     NSInteger mode = [feed integerForKey:PlayerNearChapterEndForwardSkipMode];
     if (mode <= 0) {
@@ -3617,6 +3685,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) nextChapter
 {
+    [self generatedArtifactTimingIsCurrent];
     if (self.currentChapter < [self.chapters count]-1)
     {
         ICMetadataChapter* nextChapter = [self.chapters objectAtIndex:self.currentChapter+1];
@@ -3628,6 +3697,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) previousChapter
 {
+    [self generatedArtifactTimingIsCurrent];
     if (self.currentChapter > 0)
     {
         ICMetadataChapter* previousChapter = [self.chapters objectAtIndex:self.currentChapter-1];
@@ -3860,6 +3930,23 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) _startLoadingChapters
 {
+    self.generatedAudioVerificationCompleted = NO;
+    [[ChapterGenerator shared] cancelGeneratedAudioVerification];
+    NSUInteger chapterLoadGeneration = ++self.chapterLoadGeneration;
+    AVURLAsset *chapterAsset = self.mediaAsset;
+    if (self.audioSnapshotAsset != chapterAsset) {
+        self.audioSnapshotAsset = chapterAsset;
+        self.audioSnapshotAnchor = chapterAsset.URL.isFileURL ? [TranscriptionEngine artifactSnapshotIdentifierAt:chapterAsset.URL] : nil;
+    }
+    self.verifiedAnalysisSnapshot = nil;
+    self.chaptersUseGeneratedAnalysis = NO;
+    self.generatedChapterAudioVerified = NO;
+    self.transcriptAudioVerified = NO;
+    self.verifiedTranscriptSnapshot = nil;
+    self.pendingGeneratedChapters = nil;
+    self.originalChapterTimeline = nil;
+    self.autoSkipMarkers = nil;
+    self.audioVerificationSourceURL = nil;
     self.embeddedChaptersForPersistence = @[];
     NSString* episodeHash = self.playingEpisode.objectHash ?: @"";
     [[ICDiagnosticLogger shared] logEvent:@"chapter-load"
@@ -3882,9 +3969,9 @@ didReceiveResponse:(NSURLResponse *)response
         [feedChapterFallback addObject:ch];
     }
 
-    ICMetadataParser* parser = [[ICMetadataParser alloc] initWithAsset:self.mediaAsset];
+    ICMetadataParser* parser = [[ICMetadataParser alloc] initWithAsset:chapterAsset];
     [parser loadAsynchronouslyWithCompletionHandler:^(BOOL success, NSError *error) {
-        if (episodeHash.length == 0 ||
+        if (chapterLoadGeneration != self.chapterLoadGeneration || chapterAsset != self.mediaAsset || episodeHash.length == 0 ||
             ![self.playingEpisode.objectHash isEqualToString:episodeHash]) {
             return;
         }
@@ -3937,7 +4024,7 @@ didReceiveResponse:(NSURLResponse *)response
                     ch.link = publisherChapter.link;
                     [metaChapters addObject:ch];
                 }
-                chapters = metaChapters;
+                self.pendingGeneratedChapters = metaChapters;
                 [[ICDiagnosticLogger shared] logEvent:@"chapter-load"
                                               message:@"Generierte Kapitel für Playback geladen"
                                              metadata:@{
@@ -3972,15 +4059,10 @@ didReceiveResponse:(NSURLResponse *)response
                                          }];
         }
 
-        // create chapter index for fast chapter search
-        self->_chapterTimesIdx = (float*)malloc(sizeof(float)*[chapters count]);
-        [chapters enumerateObjectsUsingBlock:^(ICMetadataChapter* chapter, NSUInteger idx, BOOL *stop) {
-            self->_chapterTimesIdx[idx] = (float)CMTimeGetSeconds(chapter.start);
-        }];
-
-        self.chapters = chapters;
-        [self _findAndSetCurrentChapter:-1];
-        [self _computeAutoSkipMarkers];
+        self.originalChapterTimeline = chapters ?: @[];
+        self.generatedChapterTimelineUnverified = self.pendingGeneratedChapters.count > 0;
+        [self _publishChapterTimeline:self.originalChapterTimeline];
+        [self _verifyGeneratedChapterAudioForCurrentAsset];
 
 
         NSArray* images = parser.metadataAsset.images;
@@ -3998,10 +4080,135 @@ didReceiveResponse:(NSURLResponse *)response
     }];
 }
 
+- (void)_verifyGeneratedChapterAudioForCurrentAsset
+{
+    AVURLAsset *asset = self.mediaAsset;
+    NSUInteger generation = self.chapterLoadGeneration;
+    NSString *episodeHash = self.playingEpisode.objectHash;
+    NSURL *sourceURL = asset.URL.isFileURL ? asset.URL : nil;
+#if TARGET_OS_IPHONE
+    ICStreamingCacheLoader *loader = self.streamCacheLoader;
+    NSString *leaseToken = loader.leaseToken;
+    if (!sourceURL && [asset.URL isEqual:loader.assetURL]) {
+        sourceURL = loader.completeReadURL;
+    }
+#endif
+    if (!sourceURL || [self.audioVerificationSourceURL isEqual:sourceURL]) return;
+    NSString *audioSnapshot = [TranscriptionEngine artifactSnapshotIdentifierAt:sourceURL];
+    if (!self.audioSnapshotAnchor) self.audioSnapshotAnchor = audioSnapshot;
+    if (!audioSnapshot || ![audioSnapshot isEqualToString:self.audioSnapshotAnchor]) return;
+    self.audioVerificationSourceURL = sourceURL;
+    NSString *transcriptSnapshot = [[TranscriptionEngine shared] transcriptSnapshotIdentifierFor:episodeHash];
+    NSString *analysisSnapshot = [TranscriptionEngine artifactSnapshotIdentifierAt:[ICTranscriptionPaths analysisJSONURLFor:episodeHash]];
+    [[ChapterGenerator shared] verifyPlaybackAudioForEpisodeHash:episodeHash audioURL:sourceURL completion:^(BOOL verified, BOOL transcriptVerified) {
+#if TARGET_OS_IPHONE
+        if (loader != self.streamCacheLoader || (loader && ![leaseToken isEqualToString:loader.leaseToken])) return;
+#endif
+        if (generation != self.chapterLoadGeneration || asset != self.mediaAsset ||
+            ![episodeHash isEqualToString:self.playingEpisode.objectHash]) return;
+        if (![audioSnapshot isEqualToString:[TranscriptionEngine artifactSnapshotIdentifierAt:sourceURL]]) return;
+        self.verifiedAnalysisSnapshot = verified ? analysisSnapshot : nil;
+        self.verifiedTranscriptSnapshot = transcriptVerified ? transcriptSnapshot : nil;
+        self.transcriptAudioVerified = transcriptVerified;
+        [self _completeGeneratedChapterAudioVerification:verified episodeHash:episodeHash asset:asset generation:generation];
+    }];
+}
+
+- (void)_completeGeneratedChapterAudioVerification:(BOOL)verified episodeHash:(NSString*)episodeHash asset:(AVURLAsset*)asset generation:(NSUInteger)generation
+{
+    if (generation != self.chapterLoadGeneration || asset != self.mediaAsset ||
+        ![episodeHash isEqualToString:self.playingEpisode.objectHash]) {
+        return;
+    }
+    ICMetadataChapter *lastGenerated = self.pendingGeneratedChapters.lastObject;
+    NSTimeInterval exactDuration = CMTimeGetSeconds(asset.duration);
+    BOOL audioIdentityVerified = verified;
+    if (verified && lastGenerated && (!isfinite(exactDuration) || exactDuration <= 0 ||
+        CMTimeGetSeconds(lastGenerated.end) > exactDuration + 0.001)) verified = NO;
+    [[ICDiagnosticLogger shared] logEvent:@"audio-identity" message:@"Kapitel-Freigabe geprüft"
+                                 metadata:@{@"episodeHash": episodeHash,
+                                            @"audioIdentityVerified": @(audioIdentityVerified),
+                                            @"timelineVerified": @(verified),
+                                            @"assetDuration": [NSString stringWithFormat:@"%.9f", exactDuration],
+                                            @"lastChapterEnd": [NSString stringWithFormat:@"%.9f", lastGenerated ? CMTimeGetSeconds(lastGenerated.end) : 0],
+                                            @"chapterCount": @(self.pendingGeneratedChapters.count)}];
+    self.generatedChapterAudioVerified = verified;
+    self.generatedChapterTimelineUnverified = self.pendingGeneratedChapters.count > 0 && !verified;
+    self.chaptersUseGeneratedAnalysis = verified && self.pendingGeneratedChapters.count > 0;
+    [self _publishChapterTimeline:self.chaptersUseGeneratedAnalysis ? self.pendingGeneratedChapters : self.originalChapterTimeline];
+    self.generatedAudioVerificationCompleted = YES;
+}
+
+- (void)_publishChapterTimeline:(NSArray*)chapters
+{
+    NSArray *timeline = chapters ?: @[];
+    if (![self.chapters isEqualToArray:timeline]) {
+        free(_chapterTimesIdx);
+        _chapterTimesIdx = timeline.count > 0 ? malloc(sizeof(float) * timeline.count) : NULL;
+        [timeline enumerateObjectsUsingBlock:^(ICMetadataChapter *chapter, NSUInteger index, BOOL *stop) {
+            self->_chapterTimesIdx[index] = (float)CMTimeGetSeconds(chapter.start);
+        }];
+        self.chapterTimelineIdentifier = NSUUID.UUID.UUIDString;
+        self.seekingChapter = nil;
+        self.currentChapter = -1;
+        self.chapters = timeline;
+        [self _findAndSetCurrentChapter:-1];
+    }
+    [self _computeAutoSkipMarkers];
+}
+
+- (NSDictionary*)_currentAutoSkipConfiguration
+{
+    CDEpisode *episode = self.playingEpisode;
+    NSArray *names = episode ? [self _effectiveAutoSkipNamesForFeed:episode.feed] : @[];
+    NSMutableArray *offsets = [NSMutableArray arrayWithCapacity:names.count];
+    for (NSString *name in names) {
+        NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, name];
+        NSString *endKey = [NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", episode.feed.uid, name];
+        [offsets addObject:@[@([episode.feed doubleForKey:startKey]), @([episode.feed doubleForKey:endKey])]];
+    }
+    return @{@"episode": episode.objectHash ?: @"", @"names": names, @"offsets": offsets,
+             @"generated": @(self.chaptersUseGeneratedAnalysis), @"verified": @(self.generatedChapterAudioVerified)};
+}
+
+- (BOOL)generatedArtifactTimingIsCurrent
+{
+    if (!self.generatedChapterAudioVerified && !self.transcriptAudioVerified) return NO;
+    NSString *hash = self.playingEpisode.objectHash;
+    BOOL audioCurrent = [self.audioSnapshotAnchor isEqualToString:[TranscriptionEngine artifactSnapshotIdentifierAt:self.audioVerificationSourceURL]];
+    BOOL transcriptCurrent = !self.transcriptAudioVerified || [self.verifiedTranscriptSnapshot isEqualToString:[[TranscriptionEngine shared] transcriptSnapshotIdentifierFor:hash]];
+    BOOL analysisCurrent = !self.generatedChapterAudioVerified || [self.verifiedAnalysisSnapshot isEqualToString:[TranscriptionEngine artifactSnapshotIdentifierAt:[ICTranscriptionPaths analysisJSONURLFor:hash]]];
+    if (audioCurrent && transcriptCurrent && analysisCurrent) return YES;
+    self.generatedChapterAudioVerified = NO;
+    self.transcriptAudioVerified = NO;
+    self.verifiedTranscriptSnapshot = nil;
+    self.chaptersUseGeneratedAnalysis = NO;
+    self.generatedChapterTimelineUnverified = self.pendingGeneratedChapters.count > 0;
+    [self _publishChapterTimeline:self.originalChapterTimeline];
+    return NO;
+}
+
+- (void)_refreshAutoSkipMarkersIfNeeded
+{
+    [self generatedArtifactTimingIsCurrent];
+    if (![self.autoSkipConfiguration isEqual:[self _currentAutoSkipConfiguration]]) {
+        [self _computeAutoSkipMarkers];
+    }
+}
+
 - (void)_computeAutoSkipMarkers {
+    self.autoSkipConfiguration = [self _currentAutoSkipConfiguration];
     CDEpisode *episode = self.playingEpisode;
     BOOL sponsorKeywordEnabled = episode ? [self _autoSkipSponsorsEnabledForFeed:episode.feed] : NO;
     NSArray *skipNames = episode ? [self _effectiveAutoSkipNamesForFeed:episode.feed] : @[];
+    BOOL audioUnverified = self.chaptersUseGeneratedAnalysis && !self.generatedChapterAudioVerified && skipNames.count > 0;
+    if (self.automaticChapterSkippingAudioUnverified != audioUnverified) {
+        self.automaticChapterSkippingAudioUnverified = audioUnverified;
+    }
+    if (audioUnverified) {
+        self.autoSkipMarkers = nil;
+        return;
+    }
     if (!episode || !self.chapters || self.chapters.count == 0) {
         self.autoSkipMarkers = nil;
         if (episode) {

@@ -30,5 +30,6 @@
 @property (nonatomic) NSInteger selectedItemTag;
 
 - (void) updateRowSelectionForSelectedItemTag;
+- (void) updateItemWithTag:(NSInteger)tag;
 - (void) updateFooterInfo;
 @end

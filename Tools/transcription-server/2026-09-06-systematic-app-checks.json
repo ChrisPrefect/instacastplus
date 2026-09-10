@@ -1,0 +1,440 @@
+[
+  {
+    "test": "Tools/ai_transcription_public_release_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/chapter_seek_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/current_settings_playback_transcription_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/download_transcription_full_clear_race_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/download_transcription_pending_deletion_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/playback_artifact_freshness_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.59
+  },
+  {
+    "test": "Tools/playback_artifact_lifecycle_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/playback_artifact_semantics_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 1.01
+  },
+  {
+    "test": "Tools/playback_autoskip_continuous_playback_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/playback_autoskip_diagnostics_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/playback_autoskip_live_settings_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.83
+  },
+  {
+    "test": "Tools/playback_generated_chapter_persistence_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/playback_generated_sponsor_metadata_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/playback_sponsor_keyword_reuse_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/player_generated_timeline_visibility_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/server_poll_efficiency_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.05
+  },
+  {
+    "test": "Tools/server_poll_lifecycle_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.39,
+    "initial_exit_code": 1,
+    "verified_after_test_fixture_update": true
+  },
+  {
+    "test": "Tools/server_sponsor_e2e_client_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.65
+  },
+  {
+    "test": "Tools/server_transcription_admission_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03,
+    "initial_exit_code": 1,
+    "verified_after_test_fixture_update": true
+  },
+  {
+    "test": "Tools/server_transcription_admission_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.38,
+    "initial_exit_code": 1,
+    "verified_after_test_fixture_update": true
+  },
+  {
+    "test": "Tools/server_transcription_api_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/server_transcription_cancellation_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/server_transcription_cancellation_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.37,
+    "initial_exit_code": 1,
+    "verified_after_test_fixture_update": true
+  },
+  {
+    "test": "Tools/server_transcription_client_contract_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02,
+    "initial_exit_code": 1,
+    "verified_after_test_fixture_update": true
+  },
+  {
+    "test": "Tools/server_transcription_errors_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.38,
+    "initial_exit_code": 1,
+    "verified_after_test_fixture_update": true
+  },
+  {
+    "test": "Tools/server_transcription_http_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 1.94
+  },
+  {
+    "test": "Tools/server_transcription_import_episode_deletion_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.38
+  },
+  {
+    "test": "Tools/server_transcription_queue_ownership_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/server_transcription_retry_interval_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.35,
+    "initial_exit_code": 1,
+    "verified_after_test_fixture_update": true
+  },
+  {
+    "test": "Tools/server_transcription_status_log_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/server_transcription_storage_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.34,
+    "initial_exit_code": 1,
+    "verified_after_test_fixture_update": true
+  },
+  {
+    "test": "Tools/transcription_analysis_localization_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/transcription_analysis_ui_copy_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_analysis_visibility_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_artifacts_and_chapters_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/transcription_audio_identity_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.54
+  },
+  {
+    "test": "Tools/transcription_automatic_intent_revalidation_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_automatic_model_contract_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_automatic_pipeline_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_background_compute_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_background_grant_retry_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_background_persistence_quiescence_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_background_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_background_request_ownership_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_capacity_notice_ui_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/transcription_chapter_debug_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.04
+  },
+  {
+    "test": "Tools/transcription_checkpoint_synchronization_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_confirmed_ui_lifecycle_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_current_issues_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02,
+    "initial_exit_code": 1,
+    "verified_after_test_fixture_update": true
+  },
+  {
+    "test": "Tools/transcription_discovery_outbox_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/transcription_discovery_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_embedded_chapters_analysis_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_existing_chapters_analysis_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_external_transcript_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_input_errors_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.56
+  },
+  {
+    "test": "Tools/transcription_json_body_cue_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_local_storage_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.74
+  },
+  {
+    "test": "Tools/transcription_logger_async_persistence_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/transcription_non_durable_remote_lifecycle_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_queue_artwork_reuse_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_queue_capacity_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/transcription_queue_episode_lookup_scaling_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_queue_storage_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/transcription_queue_swipe_identity_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_queue_tap_restart_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_remote_analysis_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_remote_cancellation_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_remote_create_rejection_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_remote_rejected_replacement_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_remote_replacement_budget_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_remote_resume_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/transcription_reported_regressions_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_revision_canonicalization_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_scheduler_deduplication_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_settings_local_server_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/transcription_stale_analysis_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_status_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "test": "Tools/transcription_timer_lifetime_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/transcription_user_reported_pipeline_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.04
+  },
+  {
+    "test": "Tools/transcription_validated_snapshot_cache_runtime_test.py",
+    "exit_code": 0,
+    "seconds": 0.8
+  },
+  {
+    "test": "Tools/transcription_whisper_language_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.63
+  },
+  {
+    "test": "Tools/transcription_whisper_overlap_normalization_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/user_requested_transcription_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "test": "Tools/widget_chapter_intent_privacy_regression_test.py",
+    "exit_code": 0,
+    "seconds": 0.02
+  }
+]

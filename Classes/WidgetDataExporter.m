@@ -110,7 +110,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 - (void)_scheduleControlActionNowPlayingExport;
 - (void)_consumePendingWidgetActionIfNeeded;
 - (void)_clearPendingWidgetActionFile;
-- (void)_handleWidgetAction:(NSString *)action chapterIndex:(NSNumber *)chapterIndex;
+- (void)_handleWidgetAction:(NSString *)action chapterIndex:(NSNumber *)chapterIndex chapterTimelineIdentifier:(NSString *)timelineIdentifier;
 - (void)_invalidateNowPlayingNavigationCache;
 - (NSInteger)_resolvedLiveChapterIndexForChapters:(NSArray<ICMetadataChapter *> *)liveChapters fallbackIndex:(NSInteger)fallbackIndex currentPosition:(NSInteger)currentPosition;
 - (BOOL)_hasNextEpisodeForPlaybackManager:(PlaybackManager *)pm audioSession:(AudioSession *)as;
@@ -526,6 +526,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         NSURL *pendingURL = ([action isEqualToString:@"skipchapter"] && self.containerURL) ? [self.containerURL URLByAppendingPathComponent:kPendingActionFile] : nil;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
             NSNumber *chapterIndex = nil;
+            NSString *timelineIdentifier = nil;
             if (pendingURL) {
                 NSData *data = [NSData dataWithContentsOfURL:pendingURL];
                 if (data) {
@@ -535,6 +536,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                         NSString *pendingAction = payload[@"action"];
                         if ([pendingAction isEqualToString:@"skipchapter"]) {
                             chapterIndex = payload[@"chapterIndex"];
+                            timelineIdentifier = payload[@"chapterTimelineIdentifier"];
                         }
                     }
                 }
@@ -542,7 +544,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self _clearPendingWidgetActionFile];
-                [self _handleWidgetAction:action chapterIndex:chapterIndex];
+                [self _handleWidgetAction:action chapterIndex:chapterIndex chapterTimelineIdentifier:timelineIdentifier];
             });
         });
     });
@@ -572,10 +574,11 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
             NSString *action = payload[@"action"];
             NSNumber *chapterIndex = payload[@"chapterIndex"];
+            NSString *timelineIdentifier = payload[@"chapterTimelineIdentifier"];
             [self _clearPendingWidgetActionFile];
 
             if (action.length > 0) {
-                [self _handleWidgetAction:action chapterIndex:chapterIndex];
+                [self _handleWidgetAction:action chapterIndex:chapterIndex chapterTimelineIdentifier:timelineIdentifier];
             }
         });
     });
@@ -587,7 +590,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     [[NSFileManager defaultManager] removeItemAtURL:pendingURL error:nil];
 }
 
-- (void)_handleWidgetAction:(NSString *)action chapterIndex:(NSNumber *)chapterIndex {
+- (void)_handleWidgetAction:(NSString *)action chapterIndex:(NSNumber *)chapterIndex chapterTimelineIdentifier:(NSString *)timelineIdentifier {
     if (action.length == 0) return;
 
     PlaybackManager *pm = [PlaybackManager playbackManager];
@@ -647,17 +650,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         }
         exportImmediately = YES;
     } else if ([action isEqualToString:@"skipchapter"]) {
-        NSInteger targetIdx = NSNotFound;
-        if (chapterIndex) {
-            targetIdx = chapterIndex.integerValue;
-        } else {
-            NSURL *skipFileURL = [self.containerURL URLByAppendingPathComponent:@"widget_skip_chapter.txt"];
-            NSString *indexStr = [NSString stringWithContentsOfURL:skipFileURL encoding:NSUTF8StringEncoding error:nil];
-            targetIdx = [indexStr integerValue];
-            [[NSFileManager defaultManager] removeItemAtURL:skipFileURL error:nil];
-        }
-
-        if (targetIdx >= 0 && targetIdx < (NSInteger)pm.chapters.count) {
+        NSInteger targetIdx = chapterIndex ? chapterIndex.integerValue : NSNotFound;
+        if (timelineIdentifier.length > 0 && [timelineIdentifier isEqualToString:pm.chapterTimelineIdentifier] &&
+            targetIdx >= 0 && targetIdx < (NSInteger)pm.chapters.count) {
             ICMetadataChapter *chapter = pm.chapters[targetIdx];
             [pm seekToChapter:chapter];
             scheduleDelayedExport = YES;
@@ -816,6 +811,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                 }
             }
 
+            if (liveChapters.count > 0 && pm.chapterTimelineIdentifier) {
+                snapshot[@"chapterTimelineIdentifier"] = pm.chapterTimelineIdentifier;
+            }
             snapshot[@"chapterTitle"] = currentChapterTitle;
             snapshot[@"chapterIndex"] = @(currentChapterIndex);
             snapshot[@"chapterCount"] = @(chapterDicts.count);

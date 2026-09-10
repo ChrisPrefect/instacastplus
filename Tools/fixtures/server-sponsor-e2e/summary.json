@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "transcript_revision": "sha256:ca6aaf87e65f3b5474eabc117bb471016edd5e79fa5e364699778ae2ca37ca43",
+  "audio_duration_seconds": 114.836,
+  "language": null,
+  "episode_id": 1,
+  "episode_title": "Stadtbibliothek und Lesekreis",
+  "generated_at": "2026-09-05T22:03:50+00:00",
+  "topics": [
+    {
+      "startTime": 0.0,
+      "title": "Besuch in der Stadtbibliothek"
+    },
+    {
+      "startTime": 75.05,
+      "title": "Der neue Lesekreis"
+    }
+  ],
+  "topic_titles": [
+    "Besuch in der Stadtbibliothek",
+    "Der neue Lesekreis"
+  ],
+  "status": "ready",
+  "summary": "Die Folge besucht die Stadtbibliothek und stellt deren neue ruhige Arbeitsplätze, verbesserte Beleuchtung, zusätzliche Steckdosen sowie den beliebten, barrierefrei zugänglichen Lesegarten vor. Sie erläutert außerdem die Nutzung und Ausleihe, das Zusammenspiel gedruckter und digitaler Angebote und die Reparatur älterer Bücher. Anschließend geht es um den neuen monatlichen Lesekreis und ein geplantes Gespräch mit einer Autorin im Herbst."
+}
