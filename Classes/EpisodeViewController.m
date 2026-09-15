@@ -1450,7 +1450,7 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
         [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Server transkribieren", nil) image:[UIImage systemImageNamed:@"server.rack"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             __weak typeof(self) weakSelf = self;
-            [[ServerTranscriptionManager shared] enqueueEpisode:self.episode completion:^(BOOL accepted, NSString* message) {
+            BOOL staged = [[ServerTranscriptionManager shared] enqueueEpisode:self.episode completion:^(BOOL accepted, NSString* message) {
                 if (accepted) {
                     PlaySoundFile(@"AffirmIn", NO);
                 } else if (weakSelf.view.window) {
@@ -1459,6 +1459,7 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
                     [weakSelf presentViewController:alert animated:YES completion:nil];
                 }
             }];
+            (void)staged;
         }]];
     }
 

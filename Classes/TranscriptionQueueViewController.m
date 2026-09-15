@@ -952,6 +952,12 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
             cell.progressView.hidden = YES;
             cell.timeLabel.text = @"";
             break;
+        case ICTranscriptionStatusCanceled:
+            headline = NSLocalizedString(@"Canceled", nil);
+            detail = nil;
+            cell.progressView.hidden = YES;
+            cell.timeLabel.text = @"";
+            break;
     }
 
     NSString* statusText = [self _singleStatusTextWithHeadline:headline detail:detail];

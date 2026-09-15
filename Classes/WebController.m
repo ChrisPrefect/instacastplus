@@ -12,6 +12,23 @@
 #import "ICListTitleView.h"
 #import "OpenInSafariActivity.h"
 #import "ICAppearanceManager.h"
+#import "InstacastPlus-Swift.h"
+
+static NSString* ICBrowserDiagnosticURL(NSURL* url)
+{
+    if (!url) return @"";
+    if ([url.absoluteString isEqualToString:@"about:blank"]) return @"about:blank";
+    NSString* scheme = url.scheme.lowercaseString;
+    if (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"]) {
+        return [scheme stringByAppendingString:@":"] ?: @"";
+    }
+    NSURLComponents* components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:YES];
+    components.user = nil;
+    components.password = nil;
+    components.query = nil;
+    components.fragment = nil;
+    return components.string ?: @"";
+}
 
 @interface WebController ()
 @property (nonatomic, readwrite, strong) WKWebView* webView;
@@ -23,6 +40,7 @@
 @property (nonatomic, assign) BOOL failed;
 @property (nonatomic, assign) BOOL closed;
 @property (nonatomic, strong) ICListTitleView* titleView;
+@property (nonatomic, copy) NSString* browserDiagnosticID;
 
 // iOS 26: Floating glass buttons replace system toolbar.
 // The system floating toolbar (FloatingBarHostingView) intercepts touches in an
@@ -61,6 +79,7 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    self.browserDiagnosticID = [NSUUID UUID].UUIDString;
 
     // Extend under bottom bar for safe area coverage, but not behind nav bar
     self.edgesForExtendedLayout = UIRectEdgeBottom;
@@ -90,6 +109,11 @@
                                                object:nil];
 
 	NSURLRequest* request = [NSURLRequest requestWithURL:self.url];
+    [self _logBrowserEvent:@"load-request" metadata:@{
+        @"customUserAgent": self.webView.customUserAgent ?: @"WebKit default",
+        @"allowsContentJavaScript": @(self.webView.configuration.defaultWebpagePreferences.allowsContentJavaScript),
+        @"persistentWebsiteData": @(self.webView.configuration.websiteDataStore.isPersistent),
+    }];
 	[self.webView loadRequest:request];
 
     CGRect b = self.view.bounds;
@@ -131,6 +155,7 @@
 
 - (void) showMoreInfoInExternalBrowser:(id)sender
 {
+    [self _logBrowserEvent:@"open-external" metadata:nil];
     NSURL* currentURL = self.webView.URL ?: self.url;
     if ([[UIApplication sharedApplication] canOpenURL:currentURL]) {
         [[UIApplication sharedApplication] openURL:currentURL options:@{} completionHandler:nil];
@@ -238,7 +263,7 @@
 - (void) viewDidAppear:(BOOL)animated
 {
     [super viewDidAppear:animated];
-
+    [self _logBrowserEvent:@"view-appeared" metadata:nil];
 }
 
 - (void) viewWillAppear:(BOOL)animated
@@ -261,6 +286,13 @@
 
 - (void) viewWillDisappear:(BOOL)animated
 {
+    [self _logBrowserEvent:@"stop-loading" metadata:@{
+        @"reason": @"viewWillDisappear",
+        @"beingDismissed": @(self.isBeingDismissed),
+        @"navigationBeingDismissed": @(self.navigationController.isBeingDismissed),
+        @"movingFromParent": @(self.isMovingFromParentViewController),
+        @"presentedController": self.presentedViewController ? NSStringFromClass(self.presentedViewController.class) : @"",
+    }];
     // iOS 26: restore system toolbar for next VC, hide floating buttons
     if (@available(iOS 26.0, *)) {
         self.navigationController.toolbarHidden = NO;
@@ -280,7 +312,85 @@
 }
 
 
+#pragma mark - Browser Diagnostics
+
+- (void)_logBrowserEvent:(NSString*)event metadata:(NSDictionary*)extraMetadata
+{
+    NSMutableDictionary* metadata = [@{
+        @"browserID": self.browserDiagnosticID ?: @"",
+        @"initialURL": ICBrowserDiagnosticURL(self.url),
+        @"currentURL": ICBrowserDiagnosticURL(self.webView.URL),
+        @"isLoading": @(self.webView.isLoading),
+        @"progress": @(self.webView.estimatedProgress),
+        @"activeLoads": @(_loading),
+        @"canceled": @(self.canceled),
+        @"failed": @(self.failed),
+        @"webViewFrame": NSStringFromCGRect(self.webView.frame),
+        @"windowAttached": @(self.webView.window != nil),
+        @"applicationState": @([UIApplication sharedApplication].applicationState),
+    } mutableCopy];
+    [metadata addEntriesFromDictionary:extraMetadata ?: @{}];
+    [[ICDiagnosticLogger shared] logEvent:@"browser" message:event metadata:metadata];
+}
+
+- (void)_logBrowserFailure:(NSString*)event error:(NSError*)error
+{
+    NSError* underlying = error.userInfo[NSUnderlyingErrorKey];
+    NSURL* failingURL = error.userInfo[NSURLErrorFailingURLErrorKey];
+    [self _logBrowserEvent:event metadata:@{
+        @"errorDomain": error.domain ?: @"",
+        @"errorCode": @(error.code),
+        @"failingURL": ICBrowserDiagnosticURL(failingURL),
+        @"underlyingDomain": underlying.domain ?: @"",
+        @"underlyingCode": @(underlying.code),
+    }];
+}
+
+- (void) _finishLoading
+{
+    if (_loading <= 0) return;
+    [App releaseNetworkActivity];
+    _loading--;
+}
+
 #pragma mark - WebView Delegate
+
+- (void)webView:(WKWebView*)webView decidePolicyForNavigationResponse:(WKNavigationResponse*)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler
+{
+    NSURLResponse* response = navigationResponse.response;
+    BOOL canShow = navigationResponse.canShowMIMEType;
+    // Preserve WebKit's default policy, including its check for local files.
+    if (response.URL.isFileURL) {
+        BOOL isDirectory = NO;
+        BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:response.URL.path isDirectory:&isDirectory];
+        canShow = canShow && exists && !isDirectory;
+    }
+    [self _logBrowserEvent:@"navigation-response" metadata:@{
+        @"responseURL": ICBrowserDiagnosticURL(response.URL),
+        @"httpStatus": [response isKindOfClass:[NSHTTPURLResponse class]] ? @(((NSHTTPURLResponse*)response).statusCode) : @0,
+        @"mimeType": response.MIMEType ?: @"",
+        @"mainFrame": @(navigationResponse.isForMainFrame),
+        @"canShowMIMEType": @(navigationResponse.canShowMIMEType),
+        @"allowed": @(canShow),
+    }];
+    decisionHandler(canShow ? WKNavigationResponsePolicyAllow : WKNavigationResponsePolicyCancel);
+}
+
+- (void)webView:(WKWebView*)webView didReceiveServerRedirectForProvisionalNavigation:(WKNavigation*)navigation
+{
+    [self _logBrowserEvent:@"server-redirect" metadata:nil];
+}
+
+- (void)webView:(WKWebView*)webView didCommitNavigation:(WKNavigation*)navigation
+{
+    [self _logBrowserEvent:@"navigation-commit" metadata:nil];
+}
+
+- (void)webView:(WKWebView*)webView didFailProvisionalNavigation:(WKNavigation*)navigation withError:(NSError*)error
+{
+    [self _logBrowserFailure:@"provisional-failure" error:error];
+    [self _finishLoading];
+}
 
 - (void) _updateToolbar
 {
@@ -329,6 +439,7 @@
 }
 
 - (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation {
+    [self _logBrowserEvent:@"navigation-start" metadata:nil];
     self.failed = NO;
 
     [App retainNetworkActivity];
@@ -336,9 +447,23 @@
     [self _updateToolbar];
 }
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
-    [App releaseNetworkActivity];
-    _loading--;
+    [self _logBrowserEvent:@"navigation-finish" metadata:nil];
+    [self _finishLoading];
     [self _updateToolbar];
+
+    // Read only structural page state, never page text, cookies or form values.
+    NSString* snapshotURL = ICBrowserDiagnosticURL(webView.URL);
+    WEAK_SELF
+    [webView evaluateJavaScript:@"(() => { const b = document.body; const s = b ? getComputedStyle(b) : null; return { readyState: document.readyState, bodyChildCount: b ? b.childElementCount : 0, bodyDisplay: s ? s.display : '', bodyVisibility: s ? s.visibility : '', bodyOpacity: s ? s.opacity : '', userAgent: navigator.userAgent }; })()" completionHandler:^(id result, NSError* error) {
+        STRONG_SELF
+        if (error) {
+            [self _logBrowserFailure:@"page-state-failure" error:error];
+        } else if ([result isKindOfClass:[NSDictionary class]]) {
+            NSMutableDictionary* metadata = [result mutableCopy];
+            metadata[@"snapshotURL"] = snapshotURL;
+            [self _logBrowserEvent:@"page-state" metadata:metadata];
+        }
+    }];
 
     [webView evaluateJavaScript:@"document.title" completionHandler:^(id result, NSError * _Nullable error) {
         if (error == nil) {
@@ -361,8 +486,8 @@
 #define WebKitErrorFrameLoadInterruptedByPolicyChange 102
 
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-    [App releaseNetworkActivity];
-    _loading--;
+    [self _logBrowserFailure:@"navigation-failure" error:error];
+    [self _finishLoading];
 
     if ([error code] == kCFURLErrorCancelled) {
         return;
@@ -396,11 +521,13 @@
 
 - (void) dismissAfterDelay
 {
+    [self _logBrowserEvent:@"dismiss-after-error" metadata:nil];
 	[self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void) closeAction:(id)sender
 {
+    [self _logBrowserEvent:@"close" metadata:nil];
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
@@ -410,6 +537,7 @@
 
 - (void) actionAction:(id)sender
 {
+    [self _logBrowserEvent:@"share" metadata:nil];
     NSURL* currentURL = self.webView.URL ?: self.url;
     UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[currentURL] applicationActivities:@[[[OpenInSafariActivity alloc] init]]];
     if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
@@ -421,16 +549,19 @@
 
 - (void) reloadAction:(id)sender
 {
+    [self _logBrowserEvent:@"reload" metadata:nil];
 	[self.webView reload];
 }
 
 - (void) backAction:(id)sender
 {
+    [self _logBrowserEvent:@"back" metadata:nil];
 	[self.webView goBack];
 }
 
 - (void) forwardAction:(id)sender
 {
+    [self _logBrowserEvent:@"forward" metadata:nil];
 	[self.webView goForward];
 }
 

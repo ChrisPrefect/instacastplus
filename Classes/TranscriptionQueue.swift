@@ -2240,11 +2240,11 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                     feedTitle: item.feedTitle,
                     automaticItem: item,
                     status: detailUpdater,
-                    progress: { [weak self] progress, chunkIndex, totalChunks in
-                        self?.recordProgressSample(for: item,
-                                                   progress: progress,
-                                                   status: .generatingChapters)
-                        self?.postProgressNotification(episodeHash: episodeHash, progress: progress, status: .generatingChapters)
+                    progress: { progress, chunkIndex, totalChunks in
+                        self.recordProgressSample(for: item,
+                                                  progress: progress,
+                                                  status: .generatingChapters)
+                        self.postProgressNotification(episodeHash: episodeHash, progress: progress, status: .generatingChapters)
                     }
                 )
             } catch {
@@ -3449,8 +3449,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             let pendingDate = pending.map { $0.earliestBeginDate ?? Date.distantPast }
             let pendingNetwork = pending?.requiresNetworkConnectivity
             let pendingPower = pending?.requiresExternalPower
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+            Task { @MainActor in
                 defer {
                     self.automaticSchedulingInFlight = false
                     if self.automaticSchedulingNeedsUpdate {

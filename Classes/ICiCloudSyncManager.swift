@@ -2762,11 +2762,7 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
                 return
             }
 
-            let operation = Task { @MainActor [weak self] in
-                guard let self else {
-                    completion(nil)
-                    return
-                }
+            let operation = Task { @MainActor in
                 let generation = self.cloudAccountGeneration
                 guard self.isStarted, !Task.isCancelled else {
                     completion(nil)
@@ -3228,11 +3224,7 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
                 return
             }
 
-            let operation = Task { @MainActor [weak self] in
-                guard let self else {
-                    completion(.noData)
-                    return
-                }
+            let operation = Task { @MainActor in
                 let generation = self.cloudAccountGeneration
                 guard self.isStarted, !Task.isCancelled else {
                     completion(.noData)
