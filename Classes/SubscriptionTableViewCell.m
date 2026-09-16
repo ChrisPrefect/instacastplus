@@ -9,6 +9,7 @@
 #import <QuartzCore/QuartzCore.h>
 
 #import "SubscriptionTableViewCell.h"
+#import "InstacastPlus-Swift.h"
 
 @interface SubscriptionTableViewCell ()
 @property (nonatomic, readwrite, strong) UILabel* detailTextLabel2;
@@ -138,6 +139,7 @@
         
         _objectValue = objectValue;
         self.countLoadPending = NO;
+        [ICAudioViewAnnotationBridge annotatePodcastView:self identifier:objectValue.sourceURL.absoluteString];
         
         if (!objectValue) {
             self.numberLabel.text = nil;

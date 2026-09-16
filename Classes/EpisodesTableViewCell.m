@@ -363,6 +363,7 @@
     if (_objectValue != objectValue) {
         _objectValue = objectValue;
         _textSizeCacheValid = NO;
+        [ICAudioViewAnnotationBridge annotateEpisodeView:self identifier:[(CDEpisode*)objectValue objectHash]];
 
         if (!objectValue) {
             return;

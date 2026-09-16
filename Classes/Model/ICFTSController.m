@@ -308,6 +308,11 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
     return [clauses componentsJoinedByString:@" OR "];
 }
 
+static NSString* ICFTSIdentityQuery(NSString* uid)
+{
+    return [NSString stringWithFormat:@"\"%@\"", [uid stringByReplacingOccurrencesOfString:@"\"" withString:@"\"\""]];
+}
+
 - (BOOL) _insertFeedSnapshot:(NSDictionary*)feedSnapshot inDatabase:(FMDatabase*)db
 {
     if (![db executeUpdate:@"INSERT INTO feeds (title, author, summary, uid) VALUES(?,?,?,?)", feedSnapshot[@"title"], feedSnapshot[@"author"], feedSnapshot[@"summary"], feedSnapshot[@"uid"]]) {
@@ -320,7 +325,7 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
 - (BOOL) _replaceFeedSnapshot:(NSDictionary*)feedSnapshot inDatabase:(FMDatabase*)db
 {
     NSString* uid = feedSnapshot[@"uid"];
-    if (![db executeUpdate:@"DELETE FROM feeds WHERE uid = ?", uid]) {
+    if (![db executeUpdate:@"DELETE FROM feeds WHERE uid MATCH ? AND uid = ?", ICFTSIdentityQuery(uid), uid]) {
         ErrLog(@"%@", [db lastErrorMessage]);
         return NO;
     }
@@ -340,7 +345,9 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
 - (BOOL) _replaceEpisodeSnapshot:(NSDictionary*)episodeSnapshot inDatabase:(FMDatabase*)db
 {
     NSString* uid = episodeSnapshot[@"uid"];
-    if (![db executeUpdate:@"DELETE FROM episodes WHERE uid = ?", uid]) {
+    // Equality alone scans and decompresses every FTS4 document. MATCH uses the index;
+    // the equality check still distinguishes identities with the same tokenized text.
+    if (![db executeUpdate:@"DELETE FROM episodes WHERE uid MATCH ? AND uid = ?", ICFTSIdentityQuery(uid), uid]) {
         ErrLog(@"%@", [db lastErrorMessage]);
         return NO;
     }
@@ -482,7 +489,7 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
 {
     NSError* reindexError = nil;
     for (NSString* feedUID in feedUIDs) {
-        if (![db executeUpdate:@"DELETE FROM episodes WHERE feed_uid = ?", feedUID]) {
+        if (![db executeUpdate:@"DELETE FROM episodes WHERE feed_uid MATCH ? AND feed_uid = ?", ICFTSIdentityQuery(feedUID), feedUID]) {
             return ICFTSRebuildError(@"Could not clear old episodes for a changed podcast.", db.lastError);
         }
     }
@@ -620,15 +627,15 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
                         ICFTSPendingMutation* mutation = feedMutations[uid];
                         BOOL success = YES;
                         if (mutation.deletion) {
-                            success = [db executeUpdate:@"DELETE FROM feeds WHERE uid = ?", uid] &&
-                                      [db executeUpdate:@"DELETE FROM episodes WHERE feed_uid = ?", uid];
+                            success = [db executeUpdate:@"DELETE FROM feeds WHERE uid MATCH ? AND uid = ?", ICFTSIdentityQuery(uid), uid] &&
+                                      [db executeUpdate:@"DELETE FROM episodes WHERE feed_uid MATCH ? AND feed_uid = ?", ICFTSIdentityQuery(uid), uid];
                         }
                         else if (snapshots[uid]) {
                             success = [self _replaceFeedSnapshot:snapshots[uid] inDatabase:db];
                         }
                         else if (removeMissingRecords) {
-                            success = [db executeUpdate:@"DELETE FROM feeds WHERE uid = ?", uid] &&
-                                      [db executeUpdate:@"DELETE FROM episodes WHERE feed_uid = ?", uid];
+                            success = [db executeUpdate:@"DELETE FROM feeds WHERE uid MATCH ? AND uid = ?", ICFTSIdentityQuery(uid), uid] &&
+                                      [db executeUpdate:@"DELETE FROM episodes WHERE feed_uid MATCH ? AND feed_uid = ?", ICFTSIdentityQuery(uid), uid];
                         }
                         else {
                             continue;
@@ -695,13 +702,13 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
                         ICFTSPendingMutation* mutation = episodeMutations[uid];
                         BOOL success = YES;
                         if (mutation.deletion) {
-                            success = [db executeUpdate:@"DELETE FROM episodes WHERE uid = ?", uid];
+                            success = [db executeUpdate:@"DELETE FROM episodes WHERE uid MATCH ? AND uid = ?", ICFTSIdentityQuery(uid), uid];
                         }
                         else if (snapshots[uid]) {
                             success = [self _replaceEpisodeSnapshot:snapshots[uid] inDatabase:db];
                         }
                         else if (removeMissingRecords) {
-                            success = [db executeUpdate:@"DELETE FROM episodes WHERE uid = ?", uid];
+                            success = [db executeUpdate:@"DELETE FROM episodes WHERE uid MATCH ? AND uid = ?", ICFTSIdentityQuery(uid), uid];
                         }
                         else {
                             continue;
@@ -865,15 +872,15 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
 {
     BOOL success = YES;
     for (NSString* uid in changeSet.deletedFeedUIDs) {
-        success = [db executeUpdate:@"DELETE FROM feeds WHERE uid = ?", uid] &&
-                  [db executeUpdate:@"DELETE FROM episodes WHERE feed_uid = ?", uid];
+        success = [db executeUpdate:@"DELETE FROM feeds WHERE uid MATCH ? AND uid = ?", ICFTSIdentityQuery(uid), uid] &&
+                  [db executeUpdate:@"DELETE FROM episodes WHERE feed_uid MATCH ? AND feed_uid = ?", ICFTSIdentityQuery(uid), uid];
         if (!success) return NO;
     }
     for (NSDictionary* snapshot in changeSet.feedSnapshots) {
         if (![self _replaceFeedSnapshot:snapshot inDatabase:db]) return NO;
     }
     for (NSString* uid in changeSet.deletedEpisodeUIDs) {
-        if (![db executeUpdate:@"DELETE FROM episodes WHERE uid = ?", uid]) return NO;
+        if (![db executeUpdate:@"DELETE FROM episodes WHERE uid MATCH ? AND uid = ?", ICFTSIdentityQuery(uid), uid]) return NO;
     }
     for (NSDictionary* snapshot in changeSet.episodeSnapshots) {
         if (![self _replaceEpisodeSnapshot:snapshot inDatabase:db]) return NO;
@@ -1316,8 +1323,8 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
 
     dispatch_async(self.writeQueue, ^{
         [self.queue inDatabase:^(FMDatabase *db) {
-            [db executeUpdate:@"DELETE FROM feeds WHERE uid = ?", feedUID];
-            [db executeUpdate:@"DELETE FROM episodes WHERE feed_uid = ?", feedUID];
+            [db executeUpdate:@"DELETE FROM feeds WHERE uid MATCH ? AND uid = ?", ICFTSIdentityQuery(feedUID), feedUID];
+            [db executeUpdate:@"DELETE FROM episodes WHERE feed_uid MATCH ? AND feed_uid = ?", ICFTSIdentityQuery(feedUID), feedUID];
         }];
     });
 }
@@ -1357,7 +1364,7 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
 
     dispatch_async(self.writeQueue, ^{
         [self.queue inDatabase:^(FMDatabase *db) {
-            [db executeUpdate:@"DELETE FROM episodes WHERE uid = ?", episodeUID];
+            [db executeUpdate:@"DELETE FROM episodes WHERE uid MATCH ? AND uid = ?", ICFTSIdentityQuery(episodeUID), episodeUID];
         }];
     });
 }

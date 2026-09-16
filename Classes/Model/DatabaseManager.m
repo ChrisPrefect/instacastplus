@@ -1656,31 +1656,37 @@ NS_INLINE NSString* _DataStoreFile(void) {
 
 - (void) _migrateSpotlight
 {
-    if ([USER_DEFAULTS boolForKey:kDefaultSpotlightMigrationDone]) {
-        return;
+    NSString* migrationKey = kDefaultSpotlightMigrationDone;
+    if (@available(iOS 27.0, *)) {
+        migrationKey = @"SpotlightAudioSchemaMigrationDone";
     }
+    if ([USER_DEFAULTS boolForKey:migrationKey]) return;
 
-    NSManagedObjectContext* childContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
-    [childContext setParentContext:self.objectContext];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSManagedObjectContext* indexContext = [self newExportBackgroundContext];
+        if (!indexContext) return;
+        [indexContext performBlock:^{
+            NSFetchRequest* feedRequest = [NSFetchRequest fetchRequestWithEntityName:@"Feed"];
+            feedRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
+            feedRequest.fetchBatchSize = 25;
 
-    [childContext performBlock:^{
-        NSFetchRequest* feedRequest = [[NSFetchRequest alloc] init];
-        feedRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:childContext];
-        feedRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
-        feedRequest.fetchBatchSize = 25;
-
-        NSError* error;
-        NSArray* objects = [childContext executeFetchRequest:feedRequest error:&error];
-        if (error) {
-            ErrLog(@"error fetching feeds for spotlight from private context: %@", error);
-        }
-
-        [self.spotlightIndexer indexFeeds:objects];
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [USER_DEFAULTS setBool:YES forKey:kDefaultSpotlightMigrationDone];
-        });
-    }];
+            NSError* error = nil;
+            NSArray* objects = [indexContext executeFetchRequest:feedRequest error:&error];
+            if (error) {
+                ErrLog(@"Error fetching feeds for Spotlight: %@", error);
+                return;
+            }
+            [self.spotlightIndexer indexFeeds:objects completion:^(NSError* indexError) {
+                if (indexError) {
+                    ErrLog(@"Spotlight migration failed: %@", indexError);
+                    return;
+                }
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [USER_DEFAULTS setBool:YES forKey:migrationKey];
+                });
+            }];
+        }];
+    });
 }
 
 - (void) _migrateDatabase

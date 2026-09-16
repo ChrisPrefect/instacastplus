@@ -23,6 +23,7 @@
 #import "CacheManager.h"
 #import "PlaybackManager.h"
 #import "AudioSession.h"
+#import "AudioSession+UpNextPlaylist.h"
 #import "SubscriptionManager.h"
 #import "EpisodeLoadingManager.h"
 #import "ICFeed.h"

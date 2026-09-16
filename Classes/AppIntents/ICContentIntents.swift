@@ -2,9 +2,8 @@
 //  ICContentIntents.swift
 //  Instacast
 //
-//  Podcast and episode App Entities for current Shortcuts/Siri releases. The
-//  iOS 27 AppSchema-specific mapping is tracked in CLAUDE.md and must wait for
-//  the matching SDK.
+//  Stable podcast and episode entities for saved Shortcuts. iOS 27 audio
+//  schema types and view annotations are defined in ICAudioIntents.swift.
 //
 
 import AppIntents
@@ -150,6 +149,11 @@ final class ICSpotlightAppEntityBridge: NSObject {
                                  title: String,
                                  subtitle: String?,
                                  imageURL: String?) {
+        if #available(iOS 27.0, *) {
+            searchableItem.associateAppEntity(ICAudioPodcastEntity(id: identifier, title: title,
+                showDescription: searchableItem.attributeSet.contentDescription))
+            return
+        }
         let entity = ICPodcastEntity(id: identifier,
                                      title: title,
                                      subtitle: subtitle,
@@ -166,6 +170,13 @@ final class ICSpotlightAppEntityBridge: NSObject {
                                  podcast: String?,
                                  imageURL: String?,
                                  duration: Int) {
+        if #available(iOS 27.0, *) {
+            let info = ICEpisodeInfo(id: identifier, feedURL: feedURL, guid: guid, title: title,
+                                     podcast: podcast, imageURL: imageURL, duration: duration,
+                                     releaseDate: searchableItem.attributeSet.contentCreationDate)
+            searchableItem.associateAppEntity(ICAudioEpisodeEntity(info))
+            return
+        }
         let entity = ICEpisodeEntity(id: identifier,
                                      feedURL: feedURL,
                                      guid: guid,

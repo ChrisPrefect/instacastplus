@@ -201,13 +201,12 @@ Haptik immer über `PlayHapticFeedback` (respektiert die Einstellung), leicht f�
 - `BGContinuedProcessingTask` gibt es auf Catalyst nicht; die betroffenen Stellen sind ausgeklammert und der Mac nutzt den normalen `BGProcessingTask`-Pfad.
 - Watch-App und Widget-Extension werden über Platform-Filter aus dem Mac-Build gehalten.
 
-## TODO iOS 27 Siri / Apple Intelligence
+## iOS 27 Siri / Apple Intelligence
 
-Erst umsetzen, wenn lokal ein iOS-27-SDK verfügbar ist; keine Stub-Typen oder Kompatibilitäts-Workarounds:
-
-- App-Intents auf `AppSchema.AudioEntity.podcastEpisode` und `AppSchema.AudioIntent.playAudio` mappen.
-- Podcast-, Episoden-, Kapitel- und Transkript-Metadaten als `IndexedEntity` bereitstellen.
-- Relevante Views annotieren, sobald die API stabil ist, und das Verhalten mit `AppIntentsTesting` absichern.
+- `ICAudioIntents.swift` bildet Podcasts/Episoden auf `AppSchema.AudioEntity.podcastShow` / `AppSchema.AudioEntity.podcastEpisode` und Wiedergabe auf `AppSchema.AudioIntent.playAudio` ab. Alle Schema-Typen sind ab iOS 27 verfügbar; die alten Entity-Typen bleiben für gespeicherte Kurzbefehle erhalten.
+- Dieselben Core-Spotlight-Einträge sind ab iOS 27 mit den Audio-`IndexedEntity`-Typen verknüpft, inklusive vorhandener Kapitel-/Transkript-Metadaten. Die versionsgebundene Neuindizierung liest über den separaten Export-Coordinator und markiert erst nach erfolgreicher Indexbestätigung den Abschluss.
+- Zell- und Detailansicht-Annotationen setzen nur IDs; bei Wiederverwendung/Leeren muss auch die Annotation gelöscht werden. Keine Fetches oder Bild-/Transkriptarbeit in diesem UI-Pfad.
+- `Tools/ios27_audio_schema_regression_test.py` prüft die Integration; für den Laufzeittest dient Apples `AppIntentsTesting`. Die Verfügbarkeit der neuen Siri hängt zusätzlich von Apples Sprach-/Regionsfreigabe ab.
 
 ## Nicht fixen (False Positives)
 

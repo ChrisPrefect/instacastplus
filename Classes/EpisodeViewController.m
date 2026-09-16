@@ -319,6 +319,7 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    [ICAudioViewAnnotationBridge annotateEpisodeView:self.view identifier:self.episode.objectHash];
     //[self viewDidLoadContenLoad];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -1060,6 +1061,7 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
         [_episode removeTaskObserver:self forKeyPath:@"downloaded"];
         
         _episode = episode;
+        [ICAudioViewAnnotationBridge annotateEpisodeView:self.viewIfLoaded identifier:episode.objectHash];
         
         if (!episode) {
             return;

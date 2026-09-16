@@ -1,0 +1,68 @@
+--- a/app/codex_provider.py
++++ b/app/codex_provider.py
+@@ -1,6 +1,6 @@
+ """Text-only JSON inference through official Codex CLI ChatGPT authentication.
+ 
+-Tool exposure was verified against a mock Responses endpoint on CLI 0.152.1:
++Tool exposure was verified against a mock Responses endpoint on CLI 0.154.0:
+ these feature settings plus the text-only model catalog produce tools=[].
+ Never enable another tool/provider when this configuration is unavailable.
+ """
+@@ -169,7 +169,7 @@
+ def provider_readiness(*, model: str, catalog_path: str, executable: str = 'codex', limit_id: str = 'codex') -> dict:
+     _validate_catalog(catalog_path, model)
+     rc, out, err = _run([executable, '--version'], '', 10)
+-    if rc or out.strip() != 'codex-cli 0.152.1':
++    if rc or out.strip() != 'codex-cli 0.154.0':
+         raise CodexProviderError('configuration')
+     rc, out, err = _run([executable, 'login', 'status'], '', 10)
+     if rc or 'Logged in using ChatGPT' not in out + err:
+--- a/tools/codex_provider_regression.py
++++ b/tools/codex_provider_regression.py
+@@ -51,20 +51,24 @@
+   with self.assertRaises(CodexProviderError) as c:self.call()
+   self.assertEqual(c.exception.code,'configuration')
+  def test_readiness_requires_official_chatgpt_login(self):
+-  self.cli.write_text('#!/usr/bin/env python3\nimport sys\nprint("codex-cli 0.152.1" if "--version" in sys.argv else "Logged in using ChatGPT")\n')
++  self.cli.write_text('#!/usr/bin/env python3\nimport sys\nprint("codex-cli 0.154.0" if "--version" in sys.argv else "Logged in using ChatGPT")\n')
+   with patch('app.codex_provider.account_rate_limits',return_value={'rateLimitsByLimitId':{'codex':{'primary':{'usedPercent':6}}}}):
+    self.assertTrue(provider_readiness(model='verified-model',catalog_path=str(self.catalog),executable=str(self.cli))['available'])
+   self.cli.write_text(self.cli.read_text().replace('Logged in using ChatGPT','Logged in using an API key'))
+   with self.assertRaises(CodexProviderError) as c:provider_readiness(model='verified-model',catalog_path=str(self.catalog),executable=str(self.cli))
+   self.assertEqual(c.exception.code,'authentication')
+  def test_quota_readiness_ignores_other_model_bucket(self):
+-  self.cli.write_text('#!/usr/bin/env python3\nimport sys\nprint("codex-cli 0.152.1" if "--version" in sys.argv else "Logged in using ChatGPT")\n')
++  self.cli.write_text('#!/usr/bin/env python3\nimport sys\nprint("codex-cli 0.154.0" if "--version" in sys.argv else "Logged in using ChatGPT")\n')
+   limits={'codex':{'primary':{'usedPercent':6}},'spark':{'primary':{'usedPercent':100}}}
+   with patch('app.codex_provider.account_rate_limits',return_value={'rateLimitsByLimitId':limits}):
+    self.assertTrue(provider_readiness(model='verified-model',catalog_path=str(self.catalog),executable=str(self.cli))['available'])
+    limits['codex']['secondary']={'usedPercent':100,'resetsAt':2000000000}
+    with self.assertRaises(CodexProviderError) as c:provider_readiness(model='verified-model',catalog_path=str(self.catalog),executable=str(self.cli))
+    self.assertEqual(c.exception.code,'quota');self.assertEqual(c.exception.resets_at,2000000000);self.assertGreater(c.exception.retry_after_seconds,0)
++ def test_unverified_cli_stays_blocked(self):
++  self.cli.write_text('#!/usr/bin/env python3\nprint("codex-cli 99.0.0")\n')
++  with self.assertRaises(CodexProviderError) as c:provider_readiness(model='verified-model',catalog_path=str(self.catalog),executable=str(self.cli))
++  self.assertEqual(c.exception.code,'configuration')
+  def test_prompt_preserves_task_instructions(self):
+   s=self.cli.read_text().replace('sys.stdin.read()',"data=json.loads(sys.stdin.read())\nassert data['system_instructions']=='Return JSON'\nassert data['task_prompt']=='PRIVATE_TRANSCRIPT'")
+   self.cli.write_text(s);self.call()
+--- a/tools/codex_tool_inventory_regression.py
++++ b/tools/codex_tool_inventory_regression.py
+@@ -21,7 +21,7 @@
+     parser.add_argument('--executable', default='codex')
+     args = parser.parse_args()
+     rc, out, _ = _run([args.executable, '--version'], '', 10)
+-    assert rc == 0 and out.strip() == 'codex-cli 0.152.1', 'Unverified CLI version'
++    assert rc == 0 and out.strip() == 'codex-cli 0.154.0', 'Unverified CLI version'
+     rc, out, _ = _run([args.executable, 'debug', 'models', '--bundled'], '', 10)
+     assert rc == 0, 'Cannot read installed model catalog'
+     catalog = text_only_catalog(json.loads(out), args.model)
+@@ -55,7 +55,7 @@
+                 '-c', 'model_providers.inventory.requires_openai_auth=false', '-']
+             _run(command, 'Return {}.', 30)
+         assert inventories and all(not tools for tools in inventories), f'Unexpected tools: {inventories}'
+-        print(json.dumps({'model': args.model, 'cli': '0.152.1', 'tools': [], 'paid_inference': False}))
++        print(json.dumps({'model': args.model, 'cli': '0.154.0', 'tools': [], 'paid_inference': False}))
+     finally:
+         server.shutdown()
+         server.server_close()

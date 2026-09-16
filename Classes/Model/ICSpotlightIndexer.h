@@ -14,7 +14,7 @@
 + (NSString*)sourceURLStringFromPodcastUniqueIdentifier:(NSString*)uniqueIdentifier;
 + (NSString*)objectHashFromEpisodeUniqueIdentifier:(NSString*)uniqueIdentifier;
 
-- (void)indexFeeds:(NSArray*)feeds;
+- (void)indexFeeds:(NSArray*)feeds completion:(void (^)(NSError* error))completion;
 
 - (void)addFeed:(CDFeed*)feed;
 - (void)updateFeed:(CDFeed*)feed;

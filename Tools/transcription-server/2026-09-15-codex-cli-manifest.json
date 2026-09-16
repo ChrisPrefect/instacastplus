@@ -1,0 +1,14 @@
+{
+  "app/codex_provider.py": {
+    "before": "0e1dcffcebfd5f71bea0b783fdb4aa83fb9b72aa4f1d9b5cd4f5a9b9dd19ad8e",
+    "after": "04179ad9a182574e4147dbc4f0195dd5efe2be592e590e6be16bb06340e0cb5c"
+  },
+  "tools/codex_provider_regression.py": {
+    "before": "3c505c5bbe77cdbaf8f7ac01d69be73fa174c066256c56cf49b09c9e1989be59",
+    "after": "1972b226d8e85e668d406679a5bb2cec72154c3bef3730922640d4cf55a61592"
+  },
+  "tools/codex_tool_inventory_regression.py": {
+    "before": "f870b49fb05c05186dc40a9f0cfb0d859e78d7aedc9c0c23d9dfe8e5ac9c8afe",
+    "after": "244542704418b20e1abd28a071173ea2725017a2c21df9b5a8fd0efed0c2eccd"
+  }
+}

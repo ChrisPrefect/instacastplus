@@ -25,6 +25,7 @@ struct ICPodcastInfo: Sendable, Equatable, Identifiable {
     let title: String
     let subtitle: String?
     let imageURL: String?
+    var showDescription: String? = nil
 }
 
 struct ICEpisodeInfo: Sendable, Equatable, Identifiable {
@@ -35,6 +36,7 @@ struct ICEpisodeInfo: Sendable, Equatable, Identifiable {
     let podcast: String?
     let imageURL: String?
     let duration: Int       // seconds
+    var releaseDate: Date? = nil
 }
 
 struct ICListInfo: Sendable, Equatable, Identifiable {
@@ -186,6 +188,49 @@ enum ICIntentBridge {
         return episodeInfo(from: episode)
     }
 
+    // MARK: - iOS 27 audio requests
+
+    @available(iOS 27.0, *)
+    static func playAudio(_ audio: ICAudioEntity, queueLocation: ICAudioQueueLocation?) throws {
+        let episode: CDEpisode?
+        switch audio {
+        case .podcast(let podcast):
+            guard let feed = feed(forID: podcast.id) else { throw ICAudioIntentError.episodeUnavailable }
+            episode = newestUnplayedEpisode(of: feed) ?? newestEpisode(of: feed)
+        case .episode(let entity):
+            episode = DatabaseManager.shared()?.episode(withObjectHash: entity.id)
+        }
+        guard let episode, let session = AudioSession.shared() else { throw ICAudioIntentError.episodeUnavailable }
+        switch queueLocation {
+        case .none: session.playEpisode(episode)
+        case .next: session.prepend(toUpNext: [episode])
+        case .tail: session.append(toUpNext: [episode])
+        }
+    }
+
+    @available(iOS 27.0, *)
+    static func audioEntities(for urls: [URL]) -> [ICAudioEntity] {
+        var results: [ICAudioEntity] = []
+        for url in urls {
+            if url.scheme == "https", url.host == "instacast.ch",
+               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let feedURL = components.queryItems?.first(where: { $0.name == "url" })?.value {
+                if url.path == "/share/episode",
+                   let guid = components.queryItems?.first(where: { $0.name == "guid" })?.value,
+                   let feed = feed(forID: feedURL),
+                   let episode = fetchFirstEpisode(predicate: NSPredicate(format: "feed == %@ AND guid == %@", feed, guid)),
+                   let info = episodeInfo(from: episode) {
+                    results.append(.episode(ICAudioEpisodeEntity(info)))
+                } else if url.path == "/share/podcast", let info = podcastInfos(forIDs: [feedURL]).first {
+                    results.append(.podcast(ICAudioPodcastEntity(info)))
+                }
+            } else if let info = podcastInfos(forIDs: [url.absoluteString]).first {
+                results.append(.podcast(ICAudioPodcastEntity(info)))
+            }
+        }
+        return results
+    }
+
     // MARK: - Subscriptions
 
     static func subscribe(url: URL) {
@@ -314,7 +359,8 @@ enum ICIntentBridge {
                              uid: feed.uid,
                              title: title,
                              subtitle: feed.author,
-                             imageURL: feed.imageURL?.absoluteString)
+                             imageURL: feed.imageURL?.absoluteString,
+                             showDescription: feed.summary)
     }
 
     private static func episodeInfo(from episode: CDEpisode) -> ICEpisodeInfo? {
@@ -328,7 +374,8 @@ enum ICIntentBridge {
                              title: episode.title ?? "",
                              podcast: episode.feed?.displayTitle ?? episode.feed?.title,
                              imageURL: image?.absoluteString,
-                             duration: Int(episode.duration))
+                             duration: Int(episode.duration),
+                             releaseDate: episode.pubDate)
     }
 
     private static func listInfo(from list: CDList) -> ICListInfo? {

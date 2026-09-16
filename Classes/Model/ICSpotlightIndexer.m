@@ -405,8 +405,20 @@ static CSSearchableItem* ICSpotlightSearchableItemForEpisodeSnapshot(NSDictionar
     }];
 }
 
-- (void)indexFeeds:(NSArray*)feeds
+- (void)indexFeeds:(NSArray*)feeds completion:(void (^)(NSError* error))completion
 {
+    dispatch_group_t group = dispatch_group_create();
+    __block NSError* firstError = nil;
+    void (^indexBatch)(NSArray*) = ^(NSArray* batch) {
+        if (batch.count == 0) return;
+        dispatch_group_enter(group);
+        [[CSSearchableIndex defaultSearchableIndex] indexSearchableItems:batch completionHandler:^(NSError* error) {
+            @synchronized (group) {
+                if (error && !firstError) firstError = error;
+            }
+            dispatch_group_leave(group);
+        }];
+    };
     NSMutableArray<CSSearchableItem*>* items = [[NSMutableArray alloc] init];
     for (CDFeed* feed in feeds) {
         @autoreleasepool {
@@ -423,19 +435,22 @@ static CSSearchableItem* ICSpotlightSearchableItemForEpisodeSnapshot(NSDictionar
                     }
 
                     if (items.count >= ICSpotlightIndexBatchSize) {
-                        [self _indexSearchableItems:[items copy]];
+                        indexBatch([items copy]);
                         [items removeAllObjects];
                     }
                 }
             }
 
             if (items.count >= ICSpotlightIndexBatchSize) {
-                [self _indexSearchableItems:[items copy]];
+                indexBatch([items copy]);
                 [items removeAllObjects];
             }
         }
     }
-    [self _indexSearchableItems:items];
+    indexBatch([items copy]);
+    dispatch_group_notify(group, self.indexQueue, ^{
+        completion(firstError);
+    });
 }
 
 - (void)addFeed:(CDFeed*)feed

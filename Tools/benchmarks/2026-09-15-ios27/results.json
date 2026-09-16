@@ -1,0 +1,279 @@
+{
+  "date": "2026-09-15",
+  "title": "Hantavirus auf Kreuzfahrtschiff: Wie gefährlich ist der Ausbruch?",
+  "transcript_duration_seconds": 1219.2,
+  "transcript_sha256": "f03b7033457c01bb995ad888d544649abb9d210ffa32fe92ed6686e577f1869c",
+  "reference_sha256": "d9e8fb64133223022616f9f4c22677b1fda1dcc4340e766713801e9f30763ffa",
+  "reference": [
+    {
+      "startTime": 119.186,
+      "endTime": 303.967,
+      "title": "Das Hantavirus: Was steckt dahinter?"
+    },
+    {
+      "startTime": 303.967,
+      "endTime": 518.471,
+      "title": "Was auf dem infizierten Schiff bisher passierte"
+    },
+    {
+      "startTime": 518.471,
+      "endTime": 828.313,
+      "title": "Wie ist das Hantavirus auf das Schiff gekommen?"
+    },
+    {
+      "startTime": 828.313,
+      "endTime": 1231.0,
+      "title": "Die Bedeutung des Hantavirus-Ausbruchs für uns alle"
+    }
+  ],
+  "protocol": "Identical complete transcript and server task prompt. Publisher chapters withheld. One generation per model. Local response budget 1024 tokens. Same production group-index normalization for both outputs.",
+  "models": {
+    "server": {
+      "content": "{\"generated_chapters\":[{\"startIndex\":1,\"startTime\":0,\"title\":\"Hantaviren und ihre Gefährlichkeit\",\"confidence\":0.96},{\"startIndex\":20,\"startTime\":306,\"title\":\"Der Ausbruch auf dem Kreuzfahrtschiff\",\"confidence\":0.95},{\"startIndex\":34,\"startTime\":518,\"title\":\"Ursprung und mögliche Übertragungswege\",\"confidence\":0.96},{\"startIndex\":55,\"startTime\":825,\"title\":\"Risiken, Globalisierung und internationale Zusammenarbeit\",\"confidence\":0.93}]}",
+      "payload": {
+        "generated_chapters": [
+          {
+            "startIndex": 1,
+            "startTime": 0,
+            "title": "Hantaviren und ihre Gefährlichkeit",
+            "confidence": 0.96
+          },
+          {
+            "startIndex": 20,
+            "startTime": 306,
+            "title": "Der Ausbruch auf dem Kreuzfahrtschiff",
+            "confidence": 0.95
+          },
+          {
+            "startIndex": 34,
+            "startTime": 518,
+            "title": "Ursprung und mögliche Übertragungswege",
+            "confidence": 0.96
+          },
+          {
+            "startIndex": 55,
+            "startTime": 825,
+            "title": "Risiken, Globalisierung und internationale Zusammenarbeit",
+            "confidence": 0.93
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 10096,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 259,
+        "reasoning_output_tokens": 135
+      },
+      "input_tokens": 10096,
+      "output_tokens": 259,
+      "billing_mode": "chatgpt_subscription",
+      "cost_usd": null,
+      "elapsed_seconds": 8.570664996281266,
+      "model": "gpt-5.6-sol",
+      "chapters": [
+        {
+          "startTime": 0.0,
+          "endTime": null,
+          "title": "Hantaviren und ihre Gefährlichkeit",
+          "source": "ai",
+          "kind": "topic",
+          "confidence": 0.96,
+          "startIndex": 1,
+          "endIndex": 1
+        },
+        {
+          "startTime": 306.5,
+          "endTime": null,
+          "title": "Der Ausbruch auf dem Kreuzfahrtschiff",
+          "source": "ai",
+          "kind": "topic",
+          "confidence": 0.95,
+          "startIndex": 20,
+          "endIndex": 20
+        },
+        {
+          "startTime": 518.41,
+          "endTime": null,
+          "title": "Ursprung und mögliche Übertragungswege",
+          "source": "ai",
+          "kind": "topic",
+          "confidence": 0.96,
+          "startIndex": 34,
+          "endIndex": 34
+        },
+        {
+          "startTime": 825.38,
+          "endTime": null,
+          "title": "Risiken, Globalisierung und internationale Zusammenarbeit",
+          "source": "ai",
+          "kind": "topic",
+          "confidence": 0.93,
+          "startIndex": 55,
+          "endIndex": 55
+        }
+      ],
+      "transcript_sha256": "f03b7033457c01bb995ad888d544649abb9d210ffa32fe92ed6686e577f1869c",
+      "boundary_matches": {
+        "5": {
+          "count": 3,
+          "pairs": [
+            [
+              1,
+              1,
+              2.5330000000000155
+            ],
+            [
+              2,
+              2,
+              0.06100000000003547
+            ],
+            [
+              3,
+              3,
+              2.9329999999999927
+            ]
+          ]
+        },
+        "15": {
+          "count": 3,
+          "pairs": [
+            [
+              1,
+              1,
+              2.5330000000000155
+            ],
+            [
+              2,
+              2,
+              0.06100000000003547
+            ],
+            [
+              3,
+              3,
+              2.9329999999999927
+            ]
+          ]
+        },
+        "30": {
+          "count": 3,
+          "pairs": [
+            [
+              1,
+              1,
+              2.5330000000000155
+            ],
+            [
+              2,
+              2,
+              0.06100000000003547
+            ],
+            [
+              3,
+              3,
+              2.9329999999999927
+            ]
+          ]
+        },
+        "60": {
+          "count": 3,
+          "pairs": [
+            [
+              1,
+              1,
+              2.5330000000000155
+            ],
+            [
+              2,
+              2,
+              0.06100000000003547
+            ],
+            [
+              3,
+              3,
+              2.9329999999999927
+            ]
+          ]
+        }
+      }
+    },
+    "local_iphone": {
+      "context_tokens": 8192,
+      "elapsed_seconds": 12.574309791671112,
+      "input_tokens": 6349,
+      "maximum_response_tokens": 1024,
+      "os": "Version 27.0 (Build 24A435)",
+      "response": "{\n  \"generated_chapters\": [\n    {\n      \"startIndex\": 1,\n      \"startTime\": 0,\n      \"title\": \"Intro\",\n      \"confidence\": 0.85\n    },\n    {\n      \"startIndex\": 3,\n      \"startTime\": 0,\n      \"title\": \"Hunter-Virus: Ursprung und Gefahren\",\n      \"confidence\": 0.92\n    },\n    {\n      \"startIndex\": 8,\n      \"startTime\": 0,\n      \"title\": \"Ausbruch auf dem Kreuzfahrtschiff: Übertragung und Folgen\",\n      \"confidence\": 0.94\n    }\n  ]\n}",
+      "status": "completed",
+      "transcript_sha256": "f03b7033457c01bb995ad888d544649abb9d210ffa32fe92ed6686e577f1869c",
+      "chapters": [
+        {
+          "startTime": 0.0,
+          "endTime": null,
+          "title": "Intro",
+          "source": "ai",
+          "kind": "topic",
+          "confidence": 0.85,
+          "startIndex": 1,
+          "endIndex": 1
+        },
+        {
+          "startTime": 22.68,
+          "endTime": null,
+          "title": "Hunter-Virus: Ursprung und Gefahren",
+          "source": "ai",
+          "kind": "topic",
+          "confidence": 0.92,
+          "startIndex": 3,
+          "endIndex": 3
+        },
+        {
+          "startTime": 106.98,
+          "endTime": null,
+          "title": "Ausbruch auf dem Kreuzfahrtschiff: Übertragung und Folgen",
+          "source": "ai",
+          "kind": "topic",
+          "confidence": 0.94,
+          "startIndex": 8,
+          "endIndex": 8
+        }
+      ],
+      "boundary_matches": {
+        "5": {
+          "count": 0,
+          "pairs": []
+        },
+        "15": {
+          "count": 1,
+          "pairs": [
+            [
+              0,
+              2,
+              12.206000000000003
+            ]
+          ]
+        },
+        "30": {
+          "count": 1,
+          "pairs": [
+            [
+              0,
+              2,
+              12.206000000000003
+            ]
+          ]
+        },
+        "60": {
+          "count": 1,
+          "pairs": [
+            [
+              0,
+              2,
+              12.206000000000003
+            ]
+          ]
+        }
+      }
+    }
+  }
+}

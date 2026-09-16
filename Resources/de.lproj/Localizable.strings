@@ -2031,3 +2031,12 @@
 "This episode was delivered in a different audio version. Server transcription is unavailable for this download." = "Diese Folge wurde in unterschiedlichen Audioversionen ausgeliefert. Für deinen Download ist die Server-Transkription nicht verfügbar.";
 
 "Start transcription again so the audio file can be verified." = "Starte die Transkription erneut, damit die Audiodatei geprüft werden kann.";
+
+// iOS 27 audio intents
+"Play Audio" = "Audio abspielen";
+"Audio Queue" = "Warteliste";
+"Shuffle" = "Zufällige Reihenfolge";
+"Repeat" = "Wiederholen";
+"Play Last" = "Zuletzt abspielen";
+"Shuffle and repeat are not supported for podcasts." = "Zufallswiedergabe und Wiederholung werden für Podcasts nicht unterstützt.";
+"Playback Mode" = "Wiedergabemodus";

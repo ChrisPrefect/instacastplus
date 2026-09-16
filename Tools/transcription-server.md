@@ -87,7 +87,7 @@ Die Regressionen prüfen unter anderem Abbruch während HTTP-Anfragen und Downlo
 
 Der temporäre OpenAI-Standard ist `openai_codex` mit `gpt-5.6-sol`. Die offizielle Codex CLI läuft unter dem eigenen Dienstbenutzer `instacast` und dessen separat bestätigter ChatGPT-Anmeldung. Die OAuth-Dateien bleiben im geschützten Home-Verzeichnis dieses Dienstbenutzers und werden weder ins Projekt noch in andere Konten kopiert. Neue Anmeldung bei Bedarf über `sudo -n -H -u instacast codex login --device-auth`.
 
-Geprüfte CLI-Version: `0.152.1`. Der Text-Modellkatalog liegt unter `var/app/codex-models.json`; er wird aus dem tatsächlichen Modellkatalog des angemeldeten Kontos abgeleitet. Die Integration deaktiviert sämtliche Tools und führt jede Anfrage ohne Projektkontext in einem eigenen temporären Verzeichnis aus. Ein Test gegen einen lokalen Mock-Endpunkt prüft tatsächlich `tools=[]`. Andere CLI-Versionen oder ein ungeprüfter Katalog stoppen die Verarbeitung mit einem Konfigurationshinweis.
+Geprüfte CLI-Version: `0.154.0` (15.09.2026). Der Text-Modellkatalog liegt unter `var/app/codex-models.json`; er wird aus dem tatsächlichen Modellkatalog des angemeldeten Kontos abgeleitet. Die Integration deaktiviert sämtliche Tools und führt jede Anfrage ohne Projektkontext in einem eigenen temporären Verzeichnis aus. Ein Test gegen einen lokalen Mock-Endpunkt prüft tatsächlich `tools=[]`. Andere CLI-Versionen oder ein ungeprüfter Katalog stoppen die Verarbeitung mit einem Konfigurationshinweis.
 
 Vor der Annahme bzw. Verarbeitung werden die tatsächliche Anmeldung und die offiziellen Kontingentgrenzen gelesen. Fehlendes Inklusivvolumen, fehlende Anmeldung, API-Guthabenmangel oder ein unzureichendes konfiguriertes API-Monatsbudget pausieren die Verarbeitung mit einer sichtbaren Begründung. Sie verbrauchen keine Fehlversuche der Episode. Es gibt keinen automatischen Wechsel zu einem kostenpflichtigen API-Anbieter. Die Integration kauft weder Credits noch Nutzungs-Resets.
 
@@ -291,3 +291,11 @@ Die Serverdauer wird aus präsentierten decodierten Samples gemessen. Die Contai
 Neue Episodenaufträge benötigen `client_audio_sha256` der vollständigen Geräte-Datei. Der Hash gehört unveränderlich zur Request-UUID. Nach dem Download prüft der Worker jeden Nutzerauftrag separat: abweichende Quellen werden terminal abgelehnt; ohne passenden Geräteauftrag beginnt keine Geräte-ASR. Spätere Nutzer werden gegen die bestätigte Jobquelle geprüft. Alte Aufträge ohne Hash erhalten einen gezielten Hinweis zum erneuten Start statt einer unbelegten Behauptung dynamischer Werbung. App-Import und Wiedergabe prüfen die aktuelle Quelle weiterhin.
 
 Das Player-Cover bleibt auch bei laufender oder fehlgeschlagener Prüfung scrollbar; seine Geste hängt nicht von der Existenz bereits freigegebener Kapitel ab. [Ablauf, Tests und Auslieferungsstand](transcription-server/2026-09-06-audio-admission.md).
+
+## CLI-Freigabe vom 15. September 2026
+
+Der Health-Endpunkt war mit `provider_unavailable` gesperrt: installiert war CLI 0.154.0, der Adapter erlaubte ausschließlich die zuvor geprüfte Version 0.152.1. Der aktualisierte Regressionstest reproduzierte die Ablehnung zuerst. Nach isolierter Prüfung der realen 0.154.0-Anfragen gegen den lokalen Mock (`tools=[]`, keine Inferenz) wurde die Versionsbindung aktualisiert. Unbekannte Versionen bleiben gesperrt.
+
+17 Adaptertests, fünf Usage-Tests und der echte CLI-Inventartest bestanden. Die drei betroffenen Dateien wurden nach SHA256-Abgleich und Quellsicherung unter `var/backups/codex-cli-20260915` ausgeliefert; beide Dienste wurden bei leerer Queue neu gestartet. Danach bestätigte `/health` wieder `ok:true`. Patch und Prüfsummen: `transcription-server/2026-09-15-codex-cli.patch` und `2026-09-15-codex-cli-manifest.json`. Keine Aufträge oder Ergebnisartefakte wurden verändert.
+
+Der isolierte Kapitelbenchmark verwendet `Tools/ios27_chapter_comparison.py`, den tatsächlichen Server-Prompt und dieselbe Transkription für beide Modelle. Die Originalkapitel werden ausschließlich zur Auswertung verwendet. Benchmark-Ergebnisse und Verbrauch werden in separaten Dateien statt in der Produktionsqueue gespeichert.

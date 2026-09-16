@@ -23,14 +23,14 @@ database_m = read("Classes/Model/DatabaseManager.m")
 scene = read("Classes/InstacastSceneDelegate.m")
 project = read("Instacast.xcodeproj/project.pbxproj")
 
-require("TODO iOS 27 Siri / Apple Intelligence" in doc, "Project docs must track iOS 27-only Siri work as TODO.")
+require("## iOS 27 Siri / Apple Intelligence" in doc, "Project docs must describe the iOS 27 Siri integration.")
 for token in [
     "AppSchema.AudioEntity.podcastEpisode",
     "AppSchema.AudioIntent.playAudio",
     "IndexedEntity",
     "AppIntentsTesting",
 ]:
-    require(token in doc, f"Project docs missing iOS 27 TODO token: {token}")
+    require(token in doc, f"Project docs missing iOS 27 integration token: {token}")
 
 for token in [
     "#import <CoreSpotlight/CoreSpotlight.h>",

@@ -2031,3 +2031,12 @@
 "This episode was delivered in a different audio version. Server transcription is unavailable for this download." = "This episode was delivered in a different audio version. Server transcription is unavailable for this download.";
 
 "Start transcription again so the audio file can be verified." = "Start transcription again so the audio file can be verified.";
+
+// iOS 27 audio intents
+"Play Audio" = "Play Audio";
+"Audio Queue" = "Audio Queue";
+"Shuffle" = "Shuffle";
+"Repeat" = "Repeat";
+"Play Last" = "Play Last";
+"Shuffle and repeat are not supported for podcasts." = "Shuffle and repeat are not supported for podcasts.";
+"Playback Mode" = "Playback Mode";

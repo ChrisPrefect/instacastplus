@@ -3206,6 +3206,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     PlaybackManager* pman = [PlaybackManager playbackManager];
     CDEpisode* episode = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
     self.transcriptDataEpisodeHash = episode.objectHash;
+    [ICAudioViewAnnotationBridge annotateEpisodeView:self.viewIfLoaded identifier:episode.objectHash];
     _suppressChapterReload = YES;
     self.chapters = [self _displayChaptersForEpisode:episode playbackManager:pman];
     _suppressChapterReload = NO;

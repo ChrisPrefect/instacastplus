@@ -314,6 +314,7 @@
 		A1B2C3D4E5F6A7B800000021 /* AppIntents/ICPlaybackIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000011 /* AppIntents/ICPlaybackIntents.swift */; };
 		A1B2C3D4E5F6A7B800000022 /* AppIntents/ICAppShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000012 /* AppIntents/ICAppShortcuts.swift */; };
 		A1B2C3D4E5F6A7B800000023 /* AppIntents/ICContentIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000013 /* AppIntents/ICContentIntents.swift */; };
+		C27000000000000000000001 /* AppIntents/ICAudioIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C27000000000000000000002 /* AppIntents/ICAudioIntents.swift */; };
 		A1B2C3D4E5F6A7B800000033 /* ICSpotlightIndexer.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000031 /* ICSpotlightIndexer.m */; };
 		A1B2C3D4E5F6A7B800000041 /* CoreSpotlight.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000040 /* CoreSpotlight.framework */; };
 		A1B2C3D4E5F6A7B800000051 /* ICSharePlayCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000050 /* iOSIntegration/ICSharePlayCoordinator.swift */; };
@@ -987,6 +988,7 @@
 		A1B2C3D4E5F6A7B800000011 /* AppIntents/ICPlaybackIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppIntents/ICPlaybackIntents.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000012 /* AppIntents/ICAppShortcuts.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppIntents/ICAppShortcuts.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000013 /* AppIntents/ICContentIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppIntents/ICContentIntents.swift; sourceTree = "<group>"; };
+		C27000000000000000000002 /* AppIntents/ICAudioIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppIntents/ICAudioIntents.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000030 /* ICSpotlightIndexer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICSpotlightIndexer.h; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000031 /* ICSpotlightIndexer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICSpotlightIndexer.m; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000040 /* CoreSpotlight.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreSpotlight.framework; path = System/Library/Frameworks/CoreSpotlight.framework; sourceTree = SDKROOT; };
@@ -1252,6 +1254,7 @@
 				A1B2C3D4E5F6A7B800000011 /* AppIntents/ICPlaybackIntents.swift */,
 				A1B2C3D4E5F6A7B800000012 /* AppIntents/ICAppShortcuts.swift */,
 				A1B2C3D4E5F6A7B800000013 /* AppIntents/ICContentIntents.swift */,
+				C27000000000000000000002 /* AppIntents/ICAudioIntents.swift */,
 				A1B2C3D4E5F6A7B800000050 /* iOSIntegration/ICSharePlayCoordinator.swift */,
 				E4B30EAA035EBC06274E7211 /* ICiCloudSyncSettingsViewController.h */,
 				D5EEF2A8812A8B647C7D9AF6 /* ICiCloudSyncSettingsViewController.m */,
@@ -2803,6 +2806,7 @@
 				A1B2C3D4E5F6A7B800000021 /* AppIntents/ICPlaybackIntents.swift in Sources */,
 				A1B2C3D4E5F6A7B800000022 /* AppIntents/ICAppShortcuts.swift in Sources */,
 				A1B2C3D4E5F6A7B800000023 /* AppIntents/ICContentIntents.swift in Sources */,
+				C27000000000000000000001 /* AppIntents/ICAudioIntents.swift in Sources */,
 				A1B2C3D4E5F6A7B800000051 /* ICSharePlayCoordinator.swift in Sources */,
 				A1B2C3D4E5F6A7B800000033 /* ICSpotlightIndexer.m in Sources */,
 				9535C53CC4BD2DFAA4A46985 /* SharedConstants.swift in Sources */,
