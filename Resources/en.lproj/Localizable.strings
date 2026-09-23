@@ -1402,7 +1402,8 @@
 "Schneller und sparsamer, aber weniger genau. Kostenlos; Laufzeit geräteabhängig." = "Faster and more efficient, but less accurate. Free; processing time depends on the device.";
 "Kostenlos · Verarbeitung auf dem Gerät. Geschwindigkeit und Sprachunterstützung hängen von iOS und Gerät ab." = "Free · Processed on the device. Speed and language support depend on iOS and the device.";
 "Kostenlos und vollständig lokal. Sehr hoher Speicherbedarf, langsame Verarbeitung; Qualität schwankt je nach Folge." = "Free and fully local. Very high storage use and slow processing; quality varies by episode.";
-"Kostenlos · Kapitelanalyse auf dem Gerät. Nur auf unterstützten Apple-Intelligence-Geräten; Laufzeit und Qualität hängen von Gerät und Transkriptlänge ab." = "Free · On-device chapter analysis. Only on supported Apple Intelligence devices; processing time and quality depend on the device and transcript length.";
+"Apple Intelligence (lokal)" = "Apple Intelligence (local)";
+"Kostenlos · Kapitelanalyse direkt auf dem Gerät. Erfordert aktiviertes Apple Intelligence auf einem unterstützten Gerät. Kann Themenwechsel übersehen oder Kapitel ungenau setzen." = "Free · Chapter analysis on your device. Requires Apple Intelligence to be enabled on a supported device. May miss topic changes or place chapters inaccurately.";
 "Kleinerer Download für Kapitel." = "Smaller download for chapters.";
 "nicht geladen" = "not downloaded";
 "Wird geladen" = "Downloading";

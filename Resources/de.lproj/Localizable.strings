@@ -1402,7 +1402,8 @@
 "Schneller und sparsamer, aber weniger genau. Kostenlos; Laufzeit geräteabhängig." = "Schneller und sparsamer, aber weniger genau. Kostenlos; Laufzeit geräteabhängig.";
 "Kostenlos · Verarbeitung auf dem Gerät. Geschwindigkeit und Sprachunterstützung hängen von iOS und Gerät ab." = "Kostenlos · Verarbeitung auf dem Gerät. Geschwindigkeit und Sprachunterstützung hängen von iOS und Gerät ab.";
 "Kostenlos und vollständig lokal. Sehr hoher Speicherbedarf, langsame Verarbeitung; Qualität schwankt je nach Folge." = "Kostenlos und vollständig lokal. Sehr hoher Speicherbedarf, langsame Verarbeitung; Qualität schwankt je nach Folge.";
-"Kostenlos · Kapitelanalyse auf dem Gerät. Nur auf unterstützten Apple-Intelligence-Geräten; Laufzeit und Qualität hängen von Gerät und Transkriptlänge ab." = "Kostenlos · Kapitelanalyse auf dem Gerät. Nur auf unterstützten Apple-Intelligence-Geräten; Laufzeit und Qualität hängen von Gerät und Transkriptlänge ab.";
+"Apple Intelligence (lokal)" = "Apple Intelligence (lokal)";
+"Kostenlos · Kapitelanalyse direkt auf dem Gerät. Erfordert aktiviertes Apple Intelligence auf einem unterstützten Gerät. Kann Themenwechsel übersehen oder Kapitel ungenau setzen." = "Kostenlos · Kapitelanalyse direkt auf dem Gerät. Erfordert aktiviertes Apple Intelligence auf einem unterstützten Gerät. Kann Themenwechsel übersehen oder Kapitel ungenau setzen.";
 "Kleinerer Download für Kapitel." = "Kleinerer Download für Kapitel.";
 "nicht geladen" = "nicht geladen";
 "Wird geladen" = "Wird geladen";

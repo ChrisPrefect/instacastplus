@@ -63,6 +63,23 @@ require(
     and "Kostenlos und vollständig lokal. Sehr hoher Speicherbedarf, langsame Verarbeitung; Qualität schwankt je nach Folge." in engine_source,
     "Chapter model order/copy must put Codex before OpenAI API, Gemma near the end with honest copy, and Apple Intelligence last.",
 )
+apple_model_source = model_catalog_source.split('identifier: "apple-foundation-models",', 1)[1].split("\n        ),", 1)[0]
+apple_model_title = "Apple Intelligence (lokal)"
+apple_model_detail = "Kostenlos · Kapitelanalyse direkt auf dem Gerät. Erfordert aktiviertes Apple Intelligence auf einem unterstützten Gerät. Kann Themenwechsel übersehen oder Kapitel ungenau setzen."
+require(
+    model_catalog_source.count('identifier: "apple-foundation-models"') == 1
+    and f'title: NSLocalizedString("{apple_model_title}",' in apple_model_source
+    and f'shortTitle: NSLocalizedString("{apple_model_title}",' in apple_model_source
+    and f'detail: NSLocalizedString("{apple_model_detail}",' in apple_model_source
+    and "chapterProvider: .appleFoundation" in apple_model_source
+    and "requiresDownload: false" in apple_model_source,
+    "Apple Intelligence must remain one selectable local chapter model with clear device requirements and chapter-quality limitations.",
+)
+for strings in (de_strings, en_strings):
+    require(
+        all(f'"{key}" = ' in strings for key in (apple_model_title, apple_model_detail)),
+        "The local Apple Intelligence model title and description must be localized in German and English.",
+    )
 require(
     "MARKETING_VERSION = 4.0;" in project_source
     and "MARKETING_VERSION = 3.3;" not in project_source

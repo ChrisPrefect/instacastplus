@@ -3329,9 +3329,9 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
         ),
         ICDownloadableModel(
             identifier: "apple-foundation-models",
-            title: NSLocalizedString("Apple Intelligence", comment: ""),
-            shortTitle: "Apple",
-            detail: NSLocalizedString("Kostenlos · Kapitelanalyse auf dem Gerät. Nur auf unterstützten Apple-Intelligence-Geräten; Laufzeit und Qualität hängen von Gerät und Transkriptlänge ab.", comment: ""),
+            title: NSLocalizedString("Apple Intelligence (lokal)", comment: ""),
+            shortTitle: NSLocalizedString("Apple Intelligence (lokal)", comment: ""),
+            detail: NSLocalizedString("Kostenlos · Kapitelanalyse direkt auf dem Gerät. Erfordert aktiviertes Apple Intelligence auf einem unterstützten Gerät. Kann Themenwechsel übersehen oder Kapitel ungenau setzen.", comment: ""),
             role: .textToChapters,
             downloadSizeBytes: 0,
             requiresDownload: false,
