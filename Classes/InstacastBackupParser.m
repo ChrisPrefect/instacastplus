@@ -528,13 +528,10 @@ foundExternalEntityDeclarationWithName:(NSString *)name
 + (BOOL)isInstacastBackupData:(NSData *)data {
     if (!data || data.length < 50) return NO;
 
-    // Check first 500 bytes for <instacast
+    // Search the ASCII marker without decoding a potentially split UTF-8 character.
     NSUInteger checkLength = MIN(data.length, 500);
-    NSData *head = [data subdataWithRange:NSMakeRange(0, checkLength)];
-    NSString *headStr = [[NSString alloc] initWithData:head encoding:NSUTF8StringEncoding];
-    if (!headStr) return NO;
-
-    return [headStr rangeOfString:@"<instacast "].location != NSNotFound;
+    NSData *marker = [@"<instacast " dataUsingEncoding:NSUTF8StringEncoding];
+    return [data rangeOfData:marker options:0 range:NSMakeRange(0, checkLength)].location != NSNotFound;
 }
 
 + (void)parseData:(NSData *)data completion:(void(^)(InstacastBackupData *data, NSError *error))completion {

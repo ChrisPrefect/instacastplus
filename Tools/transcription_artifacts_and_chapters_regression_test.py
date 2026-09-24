@@ -76,19 +76,20 @@ require(
     "Player transcript cleanup must target one resolved .trcache file, never every episode artifact.",
 )
 
-require(
-    "seekToTime:chapter.timecode tolerance:NO" in player_info_source
-    and "playbackChapters[chapter.index]" not in player_info_source,
-    "Chapter row selection still indexes runtime playback chapters instead of seeking to the displayed stored chapter timecode.",
-)
-
 chapter_selection_body = source_slice(
     player_info_source,
     "- (void) tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath",
     "else if ([self _hasBookmarks] && indexPath.section == [self _bookmarksSection])",
 )
+require(
+    'NSArray<NSNumber*>* chapterTimes = [self.chapters valueForKey:@"timecode"]' in chapter_selection_body
+    and "timeForChapterSelectionAtIndex:indexPath.row chapterTimes:chapterTimes episode:episodeToPlay" in chapter_selection_body
+    and "[pman seekToTime:time tolerance:NO]" in chapter_selection_body
+    and "playbackChapters[chapter.index]" not in chapter_selection_body,
+    "Stored chapter selection must derive its resume time from the displayed timeline, never index a different runtime timeline.",
+)
 immediate_chapter_index = chapter_selection_body.find("pman.currentChapter = indexPath.row")
-seek_index = chapter_selection_body.find("[pman seekToTime:chapter.timecode tolerance:NO]")
+seek_index = chapter_selection_body.find("[pman seekToTime:time tolerance:NO]")
 play_index = chapter_selection_body.find("[pman play]")
 require(
     immediate_chapter_index != -1

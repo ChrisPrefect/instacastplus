@@ -35,6 +35,7 @@ static NSString* const kSettingsFile          = @"widget_settings.json";
 static NSString* const kListeningLogFile     = @"widget_listening_log.plist";
 static NSString* const kImagesFolder         = @"WidgetImages";
 static NSString* const kPendingActionFile    = @"widget_pending_action.json";
+static NSString* const kPendingActionsFolder = @"widget_pending_actions";
 
 // Image sizes for widgets
 static const NSInteger kImageSizeMedium = 120;
@@ -69,6 +70,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 @property (nonatomic, copy) NSString *cachedStatsDayKey;
 @property (nonatomic, strong) dispatch_queue_t statsRefreshQueue;
 @property (nonatomic, strong) dispatch_queue_t listsExportQueue;
+@property (nonatomic, strong) dispatch_queue_t pendingWidgetActionQueue;
 @property (nonatomic) BOOL statsRefreshInProgress;
 @property (nonatomic, strong) NSDate *lastPlaybackStatsRefreshDate;
 @property (nonatomic, strong) NSMutableSet<NSString *> *pendingImageFetchKeys;
@@ -110,7 +112,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 - (void)_scheduleDebouncedNowPlayingExport;
 - (void)_scheduleControlActionNowPlayingExport;
 - (void)_consumePendingWidgetActionIfNeeded;
-- (void)_clearPendingWidgetActionFile;
 - (void)_handleWidgetAction:(NSString *)action chapterIndex:(NSNumber *)chapterIndex chapterTimelineIdentifier:(NSString *)timelineIdentifier;
 - (void)_invalidateNowPlayingNavigationCache;
 - (NSInteger)_resolvedLiveChapterIndexForChapters:(NSArray<ICMetadataChapter *> *)liveChapters fallbackIndex:(NSInteger)fallbackIndex currentPosition:(NSInteger)currentPosition;
@@ -144,6 +145,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         dispatch_queue_attr_t queueAttributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0);
         _statsRefreshQueue = dispatch_queue_create("com.instacastplus.widget-stats", queueAttributes);
         _listsExportQueue = dispatch_queue_create("com.instacastplus.widget-lists", queueAttributes);
+        _pendingWidgetActionQueue = dispatch_queue_create("com.instacastplus.widget-actions", queueAttributes);
         _cachedStatsDayKey = [self _dateKeyForDate:[NSDate date]];
         _pendingImageFetchKeys = [NSMutableSet set];
         if (_containerURL) {
@@ -532,75 +534,64 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 
 - (void)_widgetControlAction:(NSNotification *)note {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        NSString *action = note.userInfo[@"action"];
-        if (!action) return;
-
-        NSURL *pendingURL = ([action isEqualToString:@"skipchapter"] && self.containerURL) ? [self.containerURL URLByAppendingPathComponent:kPendingActionFile] : nil;
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            NSNumber *chapterIndex = nil;
-            NSString *timelineIdentifier = nil;
-            if (pendingURL) {
-                NSData *data = [NSData dataWithContentsOfURL:pendingURL];
-                if (data) {
-                    NSError *error = nil;
-                    NSDictionary *payload = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
-                    if ([payload isKindOfClass:[NSDictionary class]] && !error) {
-                        NSString *pendingAction = payload[@"action"];
-                        if ([pendingAction isEqualToString:@"skipchapter"]) {
-                            chapterIndex = payload[@"chapterIndex"];
-                            timelineIdentifier = payload[@"chapterTimelineIdentifier"];
-                        }
-                    }
-                }
-            }
-
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self _clearPendingWidgetActionFile];
-                [self _handleWidgetAction:action chapterIndex:chapterIndex chapterTimelineIdentifier:timelineIdentifier];
-            });
-        });
-    });
+    [self _consumePendingWidgetActionIfNeeded];
 }
 
 - (void)_consumePendingWidgetActionNotification:(NSNotification *)note {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self _consumePendingWidgetActionIfNeeded];
-    });
+    [self _consumePendingWidgetActionIfNeeded];
 }
 
 - (void)_consumePendingWidgetActionIfNeeded {
     if (!self.containerURL) return;
 
-    NSURL *pendingURL = [self.containerURL URLByAppendingPathComponent:kPendingActionFile];
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSData *data = [NSData dataWithContentsOfURL:pendingURL];
-        if (!data) return;
-
-        NSError *error = nil;
-        NSDictionary *payload = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (![payload isKindOfClass:[NSDictionary class]] || error) {
-                [self _clearPendingWidgetActionFile];
+    NSURL *directoryURL = [self.containerURL URLByAppendingPathComponent:kPendingActionsFolder isDirectory:YES];
+    NSURL *legacyURL = [self.containerURL URLByAppendingPathComponent:kPendingActionFile];
+    dispatch_async(self.pendingWidgetActionQueue, ^{
+        NSFileManager *files = [NSFileManager defaultManager];
+        // Move the pre-upgrade single slot into the same immutable action queue.
+        if ([files fileExistsAtPath:legacyURL.path]) {
+            NSError *error = nil;
+            NSString *filename = [NSString stringWithFormat:@"00000000000000000000-%@.json", NSUUID.UUID.UUIDString];
+            if (![files createDirectoryAtURL:directoryURL withIntermediateDirectories:YES attributes:nil error:&error] ||
+                ![files moveItemAtURL:legacyURL toURL:[directoryURL URLByAppendingPathComponent:filename] error:&error]) {
+                ErrLog(@"Widget action migration failed: %@", error);
                 return;
             }
+        }
 
+        NSArray<NSURL *> *pendingURLs = [[files contentsOfDirectoryAtURL:directoryURL includingPropertiesForKeys:nil options:NSDirectoryEnumerationSkipsHiddenFiles error:nil]
+            sortedArrayUsingComparator:^NSComparisonResult(NSURL *left, NSURL *right) {
+                return [left.lastPathComponent compare:right.lastPathComponent];
+            }];
+        NSUInteger consumedCount = 0;
+        for (NSURL *pendingURL in pendingURLs) {
+            if (![pendingURL.pathExtension isEqualToString:@"json"]) continue;
+            if (consumedCount == 32) {
+                [self _consumePendingWidgetActionIfNeeded];
+                break;
+            }
+            NSData *data = [NSData dataWithContentsOfURL:pendingURL];
+            if (!data) return;
+            NSDictionary *payload = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+
+            // Successful removal is the claim. This serial queue owns both notification
+            // paths; a later tap has a different URL and cannot be cleared by this callback.
+            NSError *error = nil;
+            if (![files removeItemAtURL:pendingURL error:&error]) {
+                ErrLog(@"Widget action claim failed: %@", error);
+                return;
+            }
+            consumedCount++;
+            if (![payload isKindOfClass:[NSDictionary class]]) continue;
             NSString *action = payload[@"action"];
+            if (![action isKindOfClass:[NSString class]] || action.length == 0) continue;
             NSNumber *chapterIndex = payload[@"chapterIndex"];
             NSString *timelineIdentifier = payload[@"chapterTimelineIdentifier"];
-            [self _clearPendingWidgetActionFile];
-
-            if (action.length > 0) {
+            dispatch_async(dispatch_get_main_queue(), ^{
                 [self _handleWidgetAction:action chapterIndex:chapterIndex chapterTimelineIdentifier:timelineIdentifier];
-            }
-        });
+            });
+        }
     });
-}
-
-- (void)_clearPendingWidgetActionFile {
-    if (!self.containerURL) return;
-    NSURL *pendingURL = [self.containerURL URLByAppendingPathComponent:kPendingActionFile];
-    [[NSFileManager defaultManager] removeItemAtURL:pendingURL error:nil];
 }
 
 - (void)_handleWidgetAction:(NSString *)action chapterIndex:(NSNumber *)chapterIndex chapterTimelineIdentifier:(NSString *)timelineIdentifier {

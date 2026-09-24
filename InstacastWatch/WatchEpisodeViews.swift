@@ -81,6 +81,12 @@ struct WatchEpisodeListView: View {
             .onChange(of: store.episodeMembershipGeneration) { _ in
                 popUnavailablePlayerIfNeeded()
             }
+            .onChange(of: playbackSummary.playingEpisodeHash) { hash in
+                guard !playerPath.isEmpty,
+                      let hash,
+                      store.episode(hash: hash) != nil else { return }
+                playerPath = [hash]
+            }
             .onAppear {
                 popUnavailablePlayerIfNeeded()
                 // The root list's onAppear also fires when the user pops the player off the

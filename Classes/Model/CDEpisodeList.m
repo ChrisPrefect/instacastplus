@@ -634,11 +634,6 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         }
         
         
-        // add filters for order value
-        if (contextSelf.orderBy && ![contextSelf.orderBy isEqualToString:@"timeLeft"]) {
-            [subPredicates addObject:[NSPredicate predicateWithFormat:@"%K != nil", contextSelf.orderBy]];
-        }
-        
         // fetch from sql store
         NSPredicate* mainPredicate = [NSCompoundPredicate andPredicateWithSubpredicates:subPredicates];
         

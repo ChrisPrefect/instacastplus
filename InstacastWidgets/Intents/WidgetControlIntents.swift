@@ -19,21 +19,21 @@ enum DarwinNotificationHelper {
 
 // MARK: - Pending Action Queue
 
-/// Persists a pending widget action in the shared container so the main app can
-/// consume it after launch/foreground transition when Darwin delivery is missed.
+/// Each tap owns an immutable file so rapid taps survive delayed Darwin delivery.
 enum PendingWidgetActionStore {
-    private static let filename = "widget_pending_action.json"
+    private static let directoryName = "widget_pending_actions"
 
-    static func enqueue(action: String, chapterIndex: Int? = nil, chapterTimelineIdentifier: String? = nil) {
+    static func enqueue(action: String, chapterIndex: Int? = nil, chapterTimelineIdentifier: String? = nil) throws {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: ICWidgetConstants.appGroupID
         ) else {
-            return
+            throw CocoaError(.fileNoSuchFile)
         }
 
+        let timestamp = Date().timeIntervalSince1970
         var payload: [String: Any] = [
             "action": action,
-            "timestamp": Date().timeIntervalSince1970
+            "timestamp": timestamp
         ]
         if let chapterIndex {
             payload["chapterIndex"] = chapterIndex
@@ -42,13 +42,11 @@ enum PendingWidgetActionStore {
             payload["chapterTimelineIdentifier"] = chapterTimelineIdentifier
         }
 
-        guard JSONSerialization.isValidJSONObject(payload),
-              let data = try? JSONSerialization.data(withJSONObject: payload, options: []) else {
-            return
-        }
-
-        let fileURL = container.appendingPathComponent(filename)
-        try? data.write(to: fileURL, options: .atomic)
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let directory = container.appendingPathComponent(directoryName, isDirectory: true)
+        let filename = String(format: "%020.0f", timestamp * 1_000_000) + "-" + UUID().uuidString + ".json"
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try data.write(to: directory.appendingPathComponent(filename), options: .atomic)
     }
 }
 
@@ -60,7 +58,7 @@ struct PlayPauseIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
-        PendingWidgetActionStore.enqueue(action: "playpause")
+        try PendingWidgetActionStore.enqueue(action: "playpause")
         DarwinNotificationHelper.post("playpause")
         return .result()
     }
@@ -72,7 +70,7 @@ struct SkipForwardIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
-        PendingWidgetActionStore.enqueue(action: "skipforward")
+        try PendingWidgetActionStore.enqueue(action: "skipforward")
         DarwinNotificationHelper.post("skipforward")
         return .result()
     }
@@ -84,7 +82,7 @@ struct SkipBackwardIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
-        PendingWidgetActionStore.enqueue(action: "skipbackward")
+        try PendingWidgetActionStore.enqueue(action: "skipbackward")
         DarwinNotificationHelper.post("skipbackward")
         return .result()
     }
@@ -96,7 +94,7 @@ struct NextChapterIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
-        PendingWidgetActionStore.enqueue(action: "nextchapter")
+        try PendingWidgetActionStore.enqueue(action: "nextchapter")
         DarwinNotificationHelper.post("nextchapter")
         return .result()
     }
@@ -108,7 +106,7 @@ struct PrevChapterIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
-        PendingWidgetActionStore.enqueue(action: "prevchapter")
+        try PendingWidgetActionStore.enqueue(action: "prevchapter")
         DarwinNotificationHelper.post("prevchapter")
         return .result()
     }
@@ -120,7 +118,7 @@ struct NextEpisodeIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
-        PendingWidgetActionStore.enqueue(action: "nextepisode")
+        try PendingWidgetActionStore.enqueue(action: "nextepisode")
         DarwinNotificationHelper.post("nextepisode")
         return .result()
     }
@@ -132,7 +130,7 @@ struct PrevEpisodeIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
-        PendingWidgetActionStore.enqueue(action: "previousepisode")
+        try PendingWidgetActionStore.enqueue(action: "previousepisode")
         DarwinNotificationHelper.post("previousepisode")
         return .result()
     }
@@ -144,7 +142,7 @@ struct CycleSpeedIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
-        PendingWidgetActionStore.enqueue(action: "cyclespeed")
+        try PendingWidgetActionStore.enqueue(action: "cyclespeed")
         DarwinNotificationHelper.post("cyclespeed")
         return .result()
     }
@@ -156,7 +154,7 @@ struct ToggleSleepTimerIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
-        PendingWidgetActionStore.enqueue(action: "togglesleeptimer")
+        try PendingWidgetActionStore.enqueue(action: "togglesleeptimer")
         DarwinNotificationHelper.post("togglesleeptimer")
         return .result()
     }
@@ -181,7 +179,7 @@ struct SkipToChapterIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        PendingWidgetActionStore.enqueue(action: "skipchapter", chapterIndex: chapterIndex,
+        try PendingWidgetActionStore.enqueue(action: "skipchapter", chapterIndex: chapterIndex,
                                         chapterTimelineIdentifier: chapterTimelineIdentifier)
 
         DarwinNotificationHelper.post("skipchapter")

@@ -3734,7 +3734,7 @@ didReceiveResponse:(NSURLResponse *)response
 - (void) nextChapter
 {
     [self generatedArtifactTimingIsCurrent];
-    if (self.currentChapter < [self.chapters count]-1)
+    if (self.currentChapter < (NSInteger)[self.chapters count]-1)
     {
         ICMetadataChapter* nextChapter = [self.chapters objectAtIndex:self.currentChapter+1];
         NSTimeInterval time = (NSTimeInterval)CMTimeGetSeconds(nextChapter.start);

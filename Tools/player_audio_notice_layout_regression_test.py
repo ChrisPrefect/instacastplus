@@ -11,7 +11,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument("--device", default="6EF3C6D3-EF95-486B-B059-82AFE419404A")
+parser.add_argument("--device", default="booted")
 parser.add_argument("--width", type=int, default=0)
 parser.add_argument("--locale", choices=["de", "en"], default="de")
 args = parser.parse_args()
@@ -82,15 +82,18 @@ METHODS
  [[NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingPrettyPrinted error:nil] writeToURL:url atomically:YES];
 }
 @end
-@interface App:NSObject<UIApplicationDelegate> @property (nonatomic, strong) UIWindow *window; @end
-@implementation App
-- (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)options {
- CGRect frame = UIScreen.mainScreen.bounds; if (TEST_WIDTH > 0) frame.size.width = TEST_WIDTH;
- self.window = [[UIWindow alloc] initWithFrame:frame];
+@interface Scene:NSObject<UIWindowSceneDelegate> @property (nonatomic, strong) UIWindow *window; @end
+@implementation Scene
+- (void)scene:(UIScene*)scene willConnectToSession:(UISceneSession*)session options:(UISceneConnectionOptions*)options {
+ self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene*)scene];
+ if (TEST_WIDTH > 0) { CGRect frame = self.window.frame; frame.size.width = TEST_WIDTH; self.window.frame = frame; }
  self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
  self.window.rootViewController = [[NoticeController alloc] initWithStyle:UITableViewStylePlain];
- [self.window makeKeyAndVisible]; return YES;
+ [self.window makeKeyAndVisible];
 }
+@end
+@interface App:NSObject<UIApplicationDelegate> @end
+@implementation App
 @end
 int main(int argc, char **argv) { @autoreleasepool { return UIApplicationMain(argc,argv,nil,@"App"); } }
 '''.replace("METHODS", methods).replace("TEST_WIDTH", str(args.width)).replace("NOTICE_TEXT", "@" + json.dumps(notice, ensure_ascii=False))
@@ -100,7 +103,7 @@ with tempfile.TemporaryDirectory(prefix="instacast-notice-layout-") as directory
     app = tmp / "Notice.app"
     app.mkdir()
     (tmp / "main.m").write_text(program)
-    (app / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier":bundle,"CFBundleName":"Notice regression","CFBundleExecutable":"Notice","CFBundlePackageType":"APPL","CFBundleVersion":"1","CFBundleShortVersionString":"1","LSRequiresIPhoneOS":True,"UILaunchScreen":{},"UIDeviceFamily":[1,2]}))
+    (app / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier":bundle,"CFBundleName":"Notice regression","CFBundleExecutable":"Notice","CFBundlePackageType":"APPL","CFBundleVersion":"1","CFBundleShortVersionString":"1","LSRequiresIPhoneOS":True,"UILaunchScreen":{},"UIDeviceFamily":[1,2],"UIApplicationSceneManifest":{"UISceneConfigurations":{"UIWindowSceneSessionRoleApplication":[{"UISceneConfigurationName":"Notice","UISceneDelegateClassName":"Scene"}]}}}))
     sdk = subprocess.check_output(["xcrun","--sdk","iphonesimulator","--show-sdk-path"],text=True).strip()
     subprocess.run(["xcrun","clang","-fobjc-arc","-target","arm64-apple-ios17.0-simulator","-isysroot",sdk,"-framework","UIKit","-framework","Foundation","-framework","CoreGraphics",str(tmp/"main.m"),"-o",str(app/"Notice")],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(["codesign","--force","--sign","-",str(app)],check=True,stdout=subprocess.DEVNULL)

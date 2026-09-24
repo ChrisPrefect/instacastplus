@@ -72,6 +72,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     private var player: AVAudioPlayer?
     private var timer: Timer?
     private var lastAutomaticReportDate: Date?
+    private var manuallySelectedSkipRange: Range<TimeInterval>?
     private let dateFormatter = ISO8601DateFormatter()
     private var playbackGeneration = 0
     private var nowPlayingArtworkTask: Task<Void, Never>?
@@ -154,6 +155,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         }
 
         if playingEpisodeHash != episode.episodeHash {
+            manuallySelectedSkipRange = nil
             let releasedHash = playingEpisodeHash
             reportPosition(finished: false)
             player?.stop()
@@ -218,6 +220,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         if startPosition > 0, player.isPlaying != true {
             player.currentTime = startPosition
         }
+        applyAutomaticChapterSkipping()
         guard player.play() else {
             WatchDiagnostics.log("playback-start-failed", message: "AVAudioPlayer.play() fehlgeschlagen", metadata: playbackMetadata(for: episode, fileURL: localFileURL, error: nil))
             await markEpisodePlaybackFailed(episode, error: NSLocalizedString("Audiodatei konnte nicht abgespielt werden.", comment: ""))
@@ -244,8 +247,19 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     }
 
     func seek(to position: TimeInterval) {
+        seek(to: position, manualSelection: true)
+    }
+
+    private func seek(to position: TimeInterval, manualSelection: Bool) {
         guard let player else { return }
         player.currentTime = min(max(0, position), player.duration)
+        manuallySelectedSkipRange = nil
+        if manualSelection, let hash = playingEpisodeHash,
+           let episode = WatchManifestStore.shared.episode(hash: hash) {
+            manuallySelectedSkipRange = automaticChapterSkipRange(at: player.currentTime, episode: episode, duration: player.duration)
+        } else {
+            applyAutomaticChapterSkipping()
+        }
         currentPosition = player.currentTime
         reportPosition(finished: false)
         updateNowPlayingInfo()
@@ -253,7 +267,41 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
 
     func seek(by seconds: TimeInterval) {
         guard let player else { return }
-        seek(to: player.currentTime + seconds)
+        seek(to: player.currentTime + seconds, manualSelection: false)
+    }
+
+    private func automaticChapterSkipRange(at position: TimeInterval, episode: WatchEpisode, duration: TimeInterval) -> Range<TimeInterval>? {
+        var range: Range<TimeInterval>?
+        for (index, chapter) in episode.chapters.enumerated() {
+            let start = max(0, TimeInterval(chapter.startSeconds))
+            let nextStart = index + 1 < episode.chapters.count ? TimeInterval(episode.chapters[index + 1].startSeconds) : duration
+            let end = min(chapter.endSeconds.map(TimeInterval.init) ?? nextStart, nextStart, duration)
+            guard episode.chapterWillBeSkipped(chapter), end > start else {
+                if let range, range.contains(position) { return range }
+                range = nil
+                continue
+            }
+            if let current = range, start <= current.upperBound {
+                range = current.lowerBound..<max(current.upperBound, end)
+            } else {
+                if let range, range.contains(position) { return range }
+                range = start..<end
+            }
+        }
+        return range?.contains(position) == true ? range : nil
+    }
+
+    private func applyAutomaticChapterSkipping() {
+        guard let player, let hash = playingEpisodeHash,
+              let episode = WatchManifestStore.shared.episode(hash: hash) else { return }
+        let range = automaticChapterSkipRange(at: player.currentTime, episode: episode, duration: player.duration)
+        if let range, range == manuallySelectedSkipRange { return }
+        manuallySelectedSkipRange = nil
+        if let range {
+            // Reaching duration lets AVAudioPlayer deliver its normal finish callback,
+            // including the existing incomplete-download and next-episode checks.
+            player.currentTime = range.upperBound
+        }
     }
 
     func flushPlaybackState() {
@@ -741,6 +789,9 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
                     metadata: enrichedMetadata
                 )
             }
+        }
+        if isPlaying, player.isPlaying {
+            applyAutomaticChapterSkipping()
         }
         currentPosition = player.currentTime
         updateNowPlayingInfo()

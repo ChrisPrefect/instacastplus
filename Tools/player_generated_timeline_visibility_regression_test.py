@@ -15,7 +15,12 @@ def body(source, signature):
 assert "_transcriptTimingVerified" in body(player, "- (void)_transcriptTextViewTapped:"), "Transcript taps still consume unverified timestamps"
 assert "_transcriptTimingVerified" in body(player, "- (void)_updateTranscriptSyncTimerState"), "Unverified timestamps still drive playback-follow highlighting"
 timing = body(player, "- (BOOL)_transcriptTimingVerified")
-assert "transcriptLoadedEpisodeHash" in timing and "playingEpisode.objectHash" in timing and "transcriptAudioVerified" in timing and '@"isGenerated"' in timing
+assert "transcriptLoadedEpisodeHash" in timing and "playingEpisode.objectHash" in timing and "transcriptCues.count == 0" in timing, "Timestamp navigation requires cues for the currently playing episode"
+assert '@"isGenerated"' in timing and '@"untimed"' in timing and "_transcriptDescriptorIsCurrent:" in timing, "Publisher timing and generated timing must use their respective source contracts"
+descriptor = body(player, "- (BOOL)_transcriptDescriptorIsCurrent:")
+assert "_generatedTranscriptMayLoadForEpisodeHash:" in descriptor and "verifiedTranscriptSnapshot" in descriptor, "Generated cue snapshots must retain their verified source identity"
+generated = body(player, "- (BOOL)_generatedTranscriptMayLoadForEpisodeHash:")
+assert "playingEpisode.objectHash" in generated and "generatedArtifactTimingIsCurrent" in generated and "transcriptAudioVerified" in generated and "transcriptSnapshotIdentifierFor:" in generated, "Generated transcript navigation must require the current episode, audio proof, and artifact snapshot"
 footer = body(player, "- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:")
 assert "_audioIdentityNotice" in footer and "_hasChapters" not in footer, "Notice must exist even without chapter rows or automatic skipping"
 assert "sourceChapter" in body(player, "- (void) tableView:(UITableView *)tableView didSelectRowAtIndexPath:"), "A stale displayed row may not seek a replacement chapter by index"
