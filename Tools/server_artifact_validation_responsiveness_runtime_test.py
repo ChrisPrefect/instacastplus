@@ -25,11 +25,6 @@ else:
  start=s.index('        let cues = try TranscriptionEngine.shared.validateServerSRTData(srtData, for: item.episodeHash)')
  end=s.index('        guard let episode = findEpisode',start)
  helper='''func validateDownloadedArtifacts(srtData:Data, chaptersData:Data, adsData:Data, summaryData:Data, episodeHash:String, transcriptRevision:String, serverDuration:Double?) async throws -> ([ICTranscriptCue], ICServerChaptersArtifact, ICServerAdsArtifact, ICServerSummaryArtifact) {\n'''+s[start:end].replace('item.episodeHash','episodeHash')+'\nreturn (cues, chaptersArtifact, adsArtifact, summaryArtifact)\n}'
-if 'private func validateDownloadedArtifacts(' in s:
- region=s[s.index('let (cues, chaptersArtifact, adsArtifact, summaryArtifact) = try await validateDownloadedArtifacts'):s.index('private func buildServerAnalysis(')]
- assert region.index('try checkCurrentAttempt(item, requestID: requestID)') < region.index('guard let episode = findEpisode')
- tail=region[region.index('let analysis = try await buildServerAnalysis'):]
- assert tail.index('try checkCurrentAttempt(item, requestID: requestID)') < tail.index('saveValidatedServerSRTData')
 fixture='''import Foundation
 import CryptoKit
 TYPES

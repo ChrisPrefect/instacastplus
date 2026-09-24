@@ -72,11 +72,3 @@ with tempfile.TemporaryDirectory(prefix="instacast-notice-state-") as directory:
     subprocess.run(["xcrun", "clang", "-fobjc-arc", "-framework", "Foundation",
                     str(tmp / "main.m"), "-o", str(tmp / "test")], check=True)
     subprocess.run([str(tmp / "test")], check=True)
-
-playback = (ROOT / "Classes/PlaybackManager.m").read_text()
-load = playback.split("- (void) _startLoadingChapters\n{", 1)[1].split("\n- (", 1)[0]
-complete = playback.split("- (void)_completeGeneratedChapterAudioVerification:(BOOL)verified episodeHash:(NSString*)episodeHash asset:(AVURLAsset*)asset generation:(NSUInteger)generation\n{", 1)[1].split("\n- (", 1)[0]
-assert load.index("self.generatedAudioVerificationCompleted = NO;") < load.index("self.transcriptAudioVerified = NO;")
-assert complete.index("self.generatedAudioVerificationCompleted = YES;") > complete.index("[self _publishChapterTimeline:")
-assert 'addTaskObserver:self forKeyPath:@"generatedAudioVerificationCompleted"' in source
-assert 'removeTaskObserver:self forKeyPath:@"generatedAudioVerificationCompleted"' in source

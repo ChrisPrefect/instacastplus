@@ -46,9 +46,6 @@ def main():
     source = SOURCE.read_text(encoding="utf-8")
     project = PROJECT.read_text(encoding="utf-8")
 
-    bundle_styles = re.findall(r"WatchComplicationWidget\(style: \.([A-Za-z0-9]+)\)", source)
-    expected_styles = [style for style, _, _ in VARIANTS]
-    require(bundle_styles == expected_styles, "The Watch widget bundle must expose every app icon in settings order.")
     require(
         'case .standard: "InstacastWatchComplication"' in source,
         "The Standard variant must preserve the existing widget kind so configured watch faces keep working.",

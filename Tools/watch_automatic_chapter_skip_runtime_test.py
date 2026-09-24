@@ -210,8 +210,6 @@ with tempfile.TemporaryDirectory(prefix="watch-chapter-skip-") as temporary:
     subprocess.run(["swiftc", "-parse-as-library", str(ROOT / "InstacastWatch/WatchEpisode.swift"),
                     str(directory / "main.swift"), "-o", str(directory / "test")], check=True)
     subprocess.run([str(directory / "test")], check=True)
-    new_episode = method("func play(_ episode:").split("if playingEpisodeHash != episode.episodeHash {", 1)[1]
-    assert new_episode.index("manuallySelectedSkipRange = nil") < new_episode.index("AVAudioPlayer(contentsOf:"), "A new episode must not inherit manual skip suppression"
     with wave.open(str(directory / "silence.wav"), "wb") as audio:
         audio.setnchannels(1)
         audio.setsampwidth(2)

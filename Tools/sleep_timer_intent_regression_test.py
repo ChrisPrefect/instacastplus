@@ -72,7 +72,3 @@ with tempfile.TemporaryDirectory(prefix='instacast-timer-intent-') as directory:
     file.write_text(probe)
     subprocess.run(['xcrun', 'swiftc', '-parse-as-library', str(file), '-o', str(path / 'probe')], check=True)
     subprocess.run([str(path / 'probe')], check=True)
-
-key = '"While CarPlay is active, the Sleep Timer stays disabled." = '
-for language in ['de', 'en']:
-    assert key in (root / f'Resources/{language}.lproj/Localizable.strings').read_text()

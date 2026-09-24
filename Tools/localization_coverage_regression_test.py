@@ -254,36 +254,6 @@ require_source_strings_localized("InstacastWatch", set(WATCH_EN), [])
 require_source_strings_localized("InstacastWidgets", set(WIDGET_EN), [])
 
 
-playback_intents = read("Classes/AppIntents/ICPlaybackIntents.swift")
-content_intents = read("Classes/AppIntents/ICContentIntents.swift")
-app_delegate = read("Classes/InstacastAppDelegate.m")
-scene_delegate = read("Classes/InstacastSceneDelegate.m")
-view_functions_h = read("Classes/ViewFunctions.h")
-view_functions_m = read("Classes/ViewFunctions.m")
-
-for token in [
-    "ICLocalizedIntentDialog(\"Playback speed set to %@×\"",
-    "ICLocalizedIntentDialog(\"Sleep timer set for %d minutes.\"",
-    "ICLocalizedIntentDialog(\"Marked “%@” as played.\"",
-    "ICLocalizedIntentDialog(\"Nothing is playing.\")",
-    "ICLocalizedIntentDialog(\"Added to favorites.\")",
-    "ICLocalizedIntentDialog(\"Removed from favorites.\")",
-]:
-    require(token in playback_intents, f"Playback intent dialog is not explicitly localized: {token}")
-
-for token in [
-    "ICLocalizedIntentDialog(\"Playing “%@”.\"",
-    "ICLocalizedIntentDialog(\"No playable episode found.\")",
-    "ICLocalizedIntentDialog(\"Episode not found.\")",
-]:
-    require(token in content_intents, f"Content intent dialog is not explicitly localized: {token}")
-
-require("void ICLocalizeViewText(UIView* view);" in view_functions_h, "View localization helper is missing from ViewFunctions.h.")
-require("void ICLocalizeViewText(UIView* view)" in view_functions_m, "View localization helper is missing from ViewFunctions.m.")
-require("ICLocalizeViewText(migrationViewController.view);" in app_delegate, "AppDelegate must localize the migration XIB after loading it.")
-require("ICLocalizeViewText(migrationViewController.view);" in scene_delegate, "SceneDelegate must localize the migration XIB after loading it.")
-
-
 # App Shortcut phrases are localized through AppShortcuts.strings with ${token}
 # placeholders — Localizable.strings entries carrying the Swift interpolation
 # ("\(.applicationName)") never match, which left the German Siri phrases English

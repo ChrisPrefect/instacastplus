@@ -33,10 +33,6 @@ marker = ".onChange(of: playbackSummary.playingEpisodeHash)"
 on_change = block(views, marker).split("{", 1)[1].rsplit("}", 1)[0] if marker in views else "hash in"
 parameter, reaction = on_change.split(" in", 1)
 assert parameter.strip() == "hash", "Keep the native host bound to the actual onChange parameter."
-assert "NavigationStack(path: $playerPath)" in views
-assert "WatchPlayerView(episode: episode, accentColor: accentColor)" in views
-assert "player.togglePlayback(for: episode)" in views
-assert 'Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")' in views
 
 methods = "\n".join(block(player, marker).replace("private func", "func") for marker in (
     "func togglePlayback(for episode:",

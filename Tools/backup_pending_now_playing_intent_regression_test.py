@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Runtime/source proof that late backup Now Playing cannot override newer playback intent."""
+"""Runtime proof that late backup Now Playing cannot override newer playback intent."""
 
 from __future__ import annotations
 
-import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -11,8 +10,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 IMPORTER = (ROOT / "Classes" / "InstacastBackupImporter.m").read_text(encoding="utf-8")
-AUDIO = (ROOT / "Classes" / "AudioSession.m").read_text(encoding="utf-8")
-AUDIO_HEADER = (ROOT / "Classes" / "AudioSession.h").read_text(encoding="utf-8")
 
 
 def require(condition: bool, message: str) -> None:
@@ -34,48 +31,6 @@ def function_source(source: str, signature: str) -> str:
             if depth == 0:
                 return source[start:index + 1]
     raise AssertionError(f"Unterminated function: {signature}")
-
-
-def method_body_matching(source: str, pattern: str) -> str:
-    """Same as method_body, but locates the selector by regex.
-
-    The public playEpisode: funnel spans several lines since it gained
-    preservingPlaybackSource:, so an exact-substring pin breaks on reformatting.
-    """
-    match = re.search(pattern, source)
-    require(match is not None, f"Missing method matching: {pattern}")
-    brace = source.find("{", match.end())
-    require(brace >= 0, f"Missing method body: {pattern}")
-    depth = 0
-    for index in range(brace, len(source)):
-        if source[index] == "{":
-            depth += 1
-        elif source[index] == "}":
-            depth -= 1
-            if depth == 0:
-                return source[brace + 1:index]
-    raise AssertionError(f"Unterminated method: {pattern}")
-
-
-def method_body(source: str, signature: str) -> str:
-    search_start = 0
-    while True:
-        start = source.find(signature, search_start)
-        require(start >= 0, f"Missing method: {signature}")
-        brace = source.find("{", start)
-        require(brace >= 0, f"Missing method body: {signature}")
-        if source.find(";", start, brace) == -1:
-            break
-        search_start = brace
-    depth = 0
-    for index in range(brace, len(source)):
-        if source[index] == "{":
-            depth += 1
-        elif source[index] == "}":
-            depth -= 1
-            if depth == 0:
-                return source[brace + 1:index]
-    raise AssertionError(f"Unterminated method: {signature}")
 
 
 record_function = function_source(
@@ -149,65 +104,5 @@ with tempfile.TemporaryDirectory(prefix="instacast-pending-now-playing-") as tem
     result = subprocess.run([str(probe)], capture_output=True, text=True)
     require(result.returncode == 0,
             "Late backup A still overrides newer user-selected B or accepts ambiguous legacy state.")
-
-require("+ (uint64_t)playbackIntentRevision" in AUDIO_HEADER
-        and "restorePlaybackEpisode:" in AUDIO_HEADER,
-        "AudioSession must expose a durable revision read and an explicit non-intent restore path.")
-
-revision_getter = method_body(AUDIO, "+ (uint64_t)playbackIntentRevision")
-record_intent = method_body(AUDIO, "- (void)_recordPlaybackIntent")
-require("USER_DEFAULTS" in revision_getter and "PlaybackIntentRevision" in AUDIO,
-        "Playback intent revision must survive app termination in UserDefaults.")
-require("setObject:@(nextRevision)" in record_intent,
-        "Each normal playback intent must durably advance the revision.")
-
-normal_play = method_body(
-    AUDIO,
-    "- (void) playEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent "
-    "at:(NSTimeInterval)time autostart:(BOOL)autostart",
-)
-restore_play = method_body(
-    AUDIO,
-    "- (void) restorePlaybackEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent "
-    "at:(NSTimeInterval)time autostart:(BOOL)autostart",
-)
-playback_funnel = method_body_matching(
-    AUDIO,
-    r"- \(void\)\s*playEpisode:\(CDEpisode\*\)anEpisode\s+queueUpCurrent:\(BOOL\)queueUpCurrent\s+"
-    r"at:\(NSTimeInterval\)time\s+autostart:\(BOOL\)autostart\s+"
-    r"preservingPlaybackSource:\(BOOL\)preservingPlaybackSource",
-)
-require("recordsPlaybackIntent:YES" in playback_funnel,
-        "Normal explicit playback must advance the durable intent revision exactly in the shared core.")
-require("recordsPlaybackIntent" not in normal_play and "preservingPlaybackSource:NO" in normal_play,
-        "The 4-argument playEpisode: must forward into that single funnel instead of recording intent itself.")
-require("recordsPlaybackIntent:NO" in restore_play and "_recordPlaybackIntent" not in restore_play,
-        "Automatic backup restore must not masquerade as a newer user intent.")
-play_core = method_body(AUDIO, "- (void) _playEpisode:(CDEpisode*)anEpisode")
-require(play_core.find("_recordPlaybackIntent") < play_core.find("playbackURL.absoluteString.length == 0"),
-        "An explicit selection with invalid media must still invalidate older pending playback.")
-
-clear = method_body(AUDIO, "- (void) clear")
-stop = method_body(AUDIO, "- (void) stop")
-require("_recordPlaybackIntent" in clear,
-        "Clearing an existing episode must invalidate an older pending backup selection.")
-require("playbackIntentRevision" in stop and "_recordPlaybackIntent" in stop,
-        "An explicit stop must invalidate pending backup playback even when no episode is loaded.")
-
-import_now_playing = method_body(IMPORTER, "+ (NSInteger)importNowPlayingFromBackup:")
-processor = method_body(IMPORTER, "+ (void)_processPendingDeferredRestoreForFeedURLs:")
-require(import_now_playing.count("ICBackupPendingNowPlayingRecord") == 2,
-        "Both unresolved-episode and unresolved-media staging must capture the same revision baseline.")
-require("restorePlaybackEpisode:" in import_now_playing
-        and "playEpisode:episode queueUpCurrent:NO" not in import_now_playing,
-        "Immediately available backup Now Playing must use the non-intent restore path.")
-apply_block = processor[processor.rfind("if (shouldProcessNowPlaying)"):]
-current_index = apply_block.find("currentPending")
-match_index = apply_block.find("ICBackupPendingNowPlayingMatchesPlaybackIntent")
-apply_index = apply_block.find("restorePlaybackEpisode:")
-require(0 <= current_index < match_index < apply_index,
-        "Deferred backup A must atomically validate both the captured record and revision on main before applying playback or position.")
-require("removeObjectForKey:kPendingNowPlayingKey" in apply_block[match_index:apply_index],
-        "A stale pending backup selection must discard only its still-current record before it can apply.")
 
 print("Backup pending Now Playing intent regression checks passed")

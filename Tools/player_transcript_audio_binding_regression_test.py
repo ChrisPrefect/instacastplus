@@ -103,14 +103,3 @@ with tempfile.TemporaryDirectory(prefix="instacast-transcript-binding-") as dire
     subprocess.run(["xcrun", "clang", "-fobjc-arc", "-framework", "Foundation",
                     str(tmp / "main.m"), "-o", str(tmp / "test")], check=True)
     subprocess.run([str(tmp / "test")], check=True)
-
-for signature in ["- (void)_loadTranscriptDescriptor:", "- (void)_loadTranscriptDescriptorFromNetwork:",
-                  "- (void)_prefetchTranscriptDescriptor:", "- (void)_startTranscriptPrefetchDescriptor:"]:
-    assert "_generatedTranscriptMayLoadForEpisodeHash:" in method(signature), signature
-assert "_transcriptDescriptorIsCurrent:" in method("- (void)_applyLoadedTranscriptCues:")
-assert method("- (void)_refreshTranscriptState").count("_transcriptDescriptorIsCurrent:") == 2
-observer = source.split('forKeyPath:@"transcriptAudioVerified" task:', 1)[1].split("}];", 1)[0]
-assert "_refreshTranscriptState" in observer, "Audio proof changes must load or clear the displayed transcript"
-
-for signature in ["- (void)_transcriptTextViewTapped:", "- (void)_updateTranscriptSyncTimerState", "- (void)_updateTranscriptCueForPlaybackTime:"]:
-    assert "_transcriptTimingVerified" in method(signature), signature

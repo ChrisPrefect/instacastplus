@@ -35,12 +35,14 @@ Status-Polls verändern nur sichtbare Statusinformationen. Unveränderte Antwort
 
 ## Prüfung der App
 
+Die isolierten Laufzeittests prüfen ihre jeweiligen Produktionspfade. Ein Build
+oder ein erfolgreicher Lauf ist kein vollständiger App-/Server-E2E-Nachweis.
+Für wiederholbare E2E-Artefakte gilt `AGENTS.md`.
+
 ```sh
-python3 Tools/transcription_queue_capacity_regression_test.py
-python3 Tools/server_poll_efficiency_regression_test.py
-python3 Tools/transcription_scheduler_deduplication_regression_test.py
-python3 Tools/transcription_discovery_outbox_regression_test.py
-python3 Tools/transcription_queue_swipe_identity_regression_test.py
+python3 Tools/server_transcription_admission_runtime_test.py
+python3 Tools/server_poll_lifecycle_runtime_test.py
+python3 Tools/server_transcription_storage_runtime_test.py
 xcodebuild -project Instacast.xcodeproj -scheme Instacast -configuration Debug -destination 'generic/platform=iOS Simulator' build
 ```
 
@@ -96,7 +98,6 @@ OpenAI-Nutzung wird mit Tokens, Job-ID und `billing_mode=chatgpt_subscription` e
 Zusätzliche App-Prüfungen:
 
 ```sh
-python3 Tools/server_transcription_cancellation_regression_test.py
 python3 Tools/server_transcription_cancellation_runtime_test.py
 ```
 
@@ -170,7 +171,6 @@ Aktuelle fokussierte App-Prüfungen:
 python3 Tools/server_transcription_admission_runtime_test.py
 python3 Tools/server_transcription_cancellation_runtime_test.py
 python3 Tools/server_poll_lifecycle_runtime_test.py
-python3 Tools/transcription_remote_cancellation_regression_test.py
 python3 Tools/server_sponsor_e2e_client_runtime_test.py
 python3 Tools/transcription_audio_identity_runtime_test.py
 python3 Tools/playback_autoskip_live_settings_runtime_test.py
@@ -232,7 +232,6 @@ Zusätzliche App-Prüfungen:
 python3 Tools/transcription_input_errors_runtime_test.py
 python3 Tools/transcription_whisper_language_regression_test.py
 python3 Tools/server_transcription_errors_runtime_test.py
-python3 Tools/player_generated_timeline_visibility_regression_test.py
 python3 Tools/transcription_audio_identity_runtime_test.py
 python3 Tools/playback_autoskip_live_settings_runtime_test.py
 ```

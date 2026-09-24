@@ -218,10 +218,4 @@ with tempfile.TemporaryDirectory(prefix="watch-manifest-uniqueness-") as temp_di
             f"Watch manifest duplicate scenario '{scenario}' failed:\n{result.stdout}{result.stderr}",
         )
 
-source = WATCH_MANIFEST.read_text()
-require(
-    "Dictionary(uniqueKeysWithValues: episodes" not in source,
-    "Watch manifest code must not trap when old storage contains duplicate episode hashes.",
-)
-
 print("Watch manifest uniqueness regression checks passed")

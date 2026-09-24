@@ -7,16 +7,6 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 source = (ROOT / "Classes/ServerTranscriptionManager.swift").read_text()
 
-# Wire errors and accepted terminal job failures must share the same localized mapping.
-assert source.count('apiError?.localizedMessage') == 2
-error_model = source[source.index('private struct ICServerError:'):source.index('private struct ICServerAPIErrorEnvelope:')]
-import re
-for locale in ('de', 'en'):
-    strings = (ROOT / f'Resources/{locale}.lproj/Localizable.strings').read_text()
-    for key in re.findall(r'NSLocalizedString\("([^"]+)"', error_model):
-        assert '"' + key + '" =' in strings, f'Missing {locale} error localization: {key}'
-
-
 def declaration(signature):
     start = source.index(signature)
     if source[max(0, start - len("nonisolated ")):start] == "nonisolated ":

@@ -640,50 +640,22 @@ fest auf zwei Statuszeilen bei 80 pt Höhe begrenzt. Lösung: Kapiteljobs beginn
 einem `queued`-Logeintrag, der vollständige Importfehler wird als `error` persistiert,
 und fehlgeschlagene Zeilen berechnen ihre Höhe aus dem ungekürzten Fehlertext.
 
-Kritische Quellpfade sind durch folgende fokussierte Checks festgepinnt:
+Die folgenden Prüfungen führen Produktionscode, den Evaluator oder das
+Bundle-Kopierskript aus; die Live-Referenz prüft externe Podcastdaten. Sie belegen
+jeweils nur diese Grenzen, nicht den vollständigen App-/Server-Nutzerablauf.
+E2E-Nachweise müssen die Artefaktanforderungen aus `AGENTS.md` erfüllen.
 
 ```bash
 python3 Tools/chapter_gold_standard_evaluator_regression_test.py
-python3 Tools/transcription_analysis_visibility_regression_test.py
-python3 Tools/transcription_automatic_intent_revalidation_regression_test.py
-python3 Tools/transcription_automatic_model_contract_regression_test.py
-python3 Tools/transcription_automatic_pipeline_regression_test.py
-python3 Tools/server_transcription_api_regression_test.py
-python3 Tools/transcription_background_compute_regression_test.py
-python3 Tools/transcription_background_grant_retry_regression_test.py
-python3 Tools/transcription_background_persistence_quiescence_regression_test.py
-python3 Tools/transcription_background_request_ownership_regression_test.py
-python3 Tools/transcription_background_regression_test.py
-python3 Tools/transcription_checkpoint_synchronization_regression_test.py
-python3 Tools/transcription_discovery_regression_test.py
-python3 Tools/transcription_discovery_outbox_regression_test.py
-python3 Tools/transcription_embedded_chapters_analysis_regression_test.py
-python3 Tools/transcription_existing_chapters_analysis_regression_test.py
-python3 Tools/transcription_external_transcript_regression_test.py
-python3 Tools/transcription_remote_analysis_regression_test.py
-python3 Tools/transcription_remote_cancellation_regression_test.py
-python3 Tools/transcription_remote_create_rejection_regression_test.py
-python3 Tools/transcription_remote_rejected_replacement_regression_test.py
-python3 Tools/transcription_remote_replacement_budget_regression_test.py
-python3 Tools/transcription_remote_resume_regression_test.py
-python3 Tools/transcription_revision_canonicalization_regression_test.py
-python3 Tools/transcription_stale_analysis_regression_test.py
-python3 Tools/transcription_status_regression_test.py
-python3 Tools/transcription_user_reported_pipeline_regression_test.py
-RUN_LIVE_BIT_RAUSCHEN_REFERENCE_TEST=1 \
-  python3 Tools/transcription_user_reported_pipeline_regression_test.py
-python3 Tools/transcription_whisper_overlap_normalization_regression_test.py
+python3 Tools/server_transcription_admission_runtime_test.py
+python3 Tools/server_transcription_cancellation_runtime_test.py
+python3 Tools/server_sponsor_e2e_client_runtime_test.py
+python3 Tools/transcription_audio_identity_runtime_test.py
+python3 Tools/transcription_whisper_language_regression_test.py
 python3 Tools/kimi_chapter_integration_regression_test.py
-python3 Tools/model_library_settings_regression_test.py
-python3 Tools/playback_sponsor_keyword_reuse_regression_test.py
-python3 Tools/whisper_model_prewarm_regression_test.py
-python3 Tools/core_spotlight_podcast_episode_regression_test.py
 RUN_LIVE_PODCAST_REFERENCE_TEST=1 \
   python3 Tools/live_podcast_reference_integration_test.py
 ```
-
-Zusätzlich deckt `for test in Tools/transcription_*_regression_test.py; do python3
-"$test" || exit; done` die älteren benachbarten Transkriptionsregressionen ab.
 
 Die Episodendiagnose protokolliert SRT, Checkpoint, Musik-Timeline, lokale
 Kapiteldatei, atomare Episodenanalyse, OpenAI-Auftragsdatei, Episodenlog und

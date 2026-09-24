@@ -33,7 +33,6 @@ info = plist("Resources-iPhone/Instacast-Info.plist")
 ios_entitlements = plist("Instacast.entitlements")
 mac_entitlements = plist("InstacastMac.entitlements")
 project = (ROOT / "Instacast.xcodeproj" / "project.pbxproj").read_text()
-app_delegate = (ROOT / "Classes" / "InstacastAppDelegate.m").read_text()
 
 require(
     ios_entitlements.get("com.apple.developer.siri") is True,
@@ -80,17 +79,6 @@ for token in [
     "ICSharePlayCoordinator.swift in Sources",
 ]:
     require(token in project, f"Xcode project missing iOS integration build entry: {token}")
-
-for token in [
-    "#import <Intents/Intents.h>",
-    "INPlayMediaIntentHandling",
-    "application:(UIApplication *)application handlerForIntent:(INIntent *)intent",
-    "handlePlayMedia:(INPlayMediaIntent *)intent",
-    "INMediaUserContext",
-    "numberOfLibraryItems",
-    "becomeCurrent",
-]:
-    require(token in app_delegate, f"The in-app Siri media integration is incomplete: {token}")
 
 # ITMS-90626: every localization of the app must carry the intent's display strings.
 # The App Store rejects a delivery whose custom intent has no localized title for a

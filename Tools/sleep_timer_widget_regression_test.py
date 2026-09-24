@@ -44,8 +44,3 @@ with tempfile.TemporaryDirectory(prefix="instacast-sleep-widget-") as directory:
     binary = path / "probe"
     subprocess.run(["xcrun", "swiftc", str(root / "Shared/WidgetModels.swift"), str(main), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-
-view = (root / "InstacastWidgets/Widgets/NowPlayingWidget.swift").read_text()
-assert view.count("if data.isPaused, let remaining = data.sleepTimerFormatted") == 2, \
-    "Both widget sizes must render paused seconds as static text"
-assert view.count("Text(stopDate, style: .timer)") == 2, "Running timers retain their live countdown"

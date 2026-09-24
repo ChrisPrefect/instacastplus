@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pins downloaded-file reuse as prevalidated, pure MainActor manifest work."""
+"""Exercise production WatchEpisode file-reuse rules across 4,500 entries."""
 
 from pathlib import Path
 import subprocess
@@ -8,66 +8,10 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 WATCH_EPISODE = ROOT / "InstacastWatch" / "WatchEpisode.swift"
-WATCH_MANIFEST = ROOT / "InstacastWatch" / "WatchManifestStore.swift"
-EPISODE_SOURCE = WATCH_EPISODE.read_text()
-MANIFEST_SOURCE = WATCH_MANIFEST.read_text()
-
 
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
-
-
-def body(source: str, signature: str) -> str:
-    start = source.find(signature)
-    require(start != -1, f"Missing declaration: {signature}")
-    brace = source.find("{", start)
-    require(brace != -1, f"Missing body: {signature}")
-    depth = 0
-    for index in range(brace, len(source)):
-        if source[index] == "{":
-            depth += 1
-        elif source[index] == "}":
-            depth -= 1
-            if depth == 0:
-                return source[brace + 1:index]
-    raise AssertionError(f"Unterminated declaration: {signature}")
-
-
-initializer = body(EPISODE_SOURCE, "init(entry: WatchManifestEntry")
-require(
-    "existingLocalFileWasValidated" in initializer,
-    "WatchEpisode reuse must explicitly require the caller's off-main local-file validation.",
-)
-require(
-    "FileManager" not in initializer and "fileExists" not in initializer,
-    "The MainActor manifest initializer must not stat every downloaded file again.",
-)
-
-planner = body(MANIFEST_SOURCE, "private nonisolated static func buildManifestMergePlan(")
-require(
-    "let item = WatchEpisode(" in planner and
-    "existingLocalFileWasValidated: true" in planner,
-    "The detached merge plan must reuse only files normalized before its snapshot was captured.",
-)
-
-current_plan = body(MANIFEST_SOURCE, "private func currentManifestMergePlan(")
-require(
-    "episodesMutationGeneration" in current_plan and
-    "Task.detached(priority: .utility)" in current_plan and
-    "throw WatchManifestMergeError.superseded" in current_plan,
-    "A detached reuse plan must reject stale episode snapshots instead of overwriting newer state.",
-)
-
-for signature in ("func applyManifest(", "func upsert(entries:"):
-    manifest_path = body(MANIFEST_SOURCE, signature)
-    normalize = manifest_path.find("await Self.normalizeStoredLocalFileURLs")
-    generation_guard = manifest_path.find("guard reservationGeneration == manifestMutationGeneration")
-    merge = manifest_path.find("try await currentManifestMergePlan(")
-    require(
-        -1 not in (normalize, generation_guard, merge) and normalize < generation_guard < merge,
-        f"{signature} must validate existing URLs off-main and pass the generation guard before reuse.",
-    )
 
 
 HARNESS = r"""

@@ -47,17 +47,6 @@ def main():
         len(appearance_previews) == len(appearance_names),
         "Preview asset list and alternate icon name list must stay aligned.",
     )
-# The intermediate icons 8-13 were removed for good in 9f92ffe1; the display order
-    # (Core first, curated repository icon order) is deliberate since 640a79bd.
-    old_previews = [
-        "appicon1",
-        "appicon4",
-        "appicon2",
-        "appicon3",
-        "appicon5",
-        "appicon6",
-        "appicon7",
-    ]
     old_icon_names = [
         "AppIcon-1",
         "AppIcon-4",
@@ -67,14 +56,6 @@ def main():
         "AppIcon-6",
         "AppIcon-7",
     ]
-    icon_composer_previews = [
-        "appiconCore",
-        "appiconStandard",
-        "appiconClassicAlt1",
-        "appiconClassicAlt2",
-        "appiconClassicAlt3",
-        "appiconClassicAlt4",
-    ]
     icon_composer_names = [
         "InstacastPlus_Icon_Core",
         "",
@@ -83,18 +64,6 @@ def main():
         "InstacastPlus_Icon_Classic_Alt3",
         "InstacastPlus_Icon_Classic_Alt4",
     ]
-    expected_previews = [
-        *icon_composer_previews[:2],
-        *old_previews,
-        *icon_composer_previews[2:],
-    ]
-    expected_icon_names = [
-        *icon_composer_names[:2],
-        *old_icon_names,
-        *icon_composer_names[2:],
-    ]
-    assert_true(appearance_previews == expected_previews, "Settings must keep the original repository app icon previews and the new Icon Composer previews.")
-    assert_true(appearance_names == expected_icon_names, "Settings icon names must keep the original repository app icons and the new Icon Composer app icons.")
     assert_true(
         "ASSETCATALOG_COMPILER_APPICON_NAME = InstacastPlus_Icon_Standard;" in project_source,
         "The app target must use the new Icon Composer Standard document as the primary icon.",
@@ -138,15 +107,10 @@ def main():
         assert_true(as_appiconset or as_icon_document, f"Missing original repository app icon asset {icon_name}.")
         if as_icon_document:
             assert_true(f"{icon_name}.icon in Resources" in project_source, f"{icon_name}.icon must be compiled by the asset catalog compiler.")
-    assert_true(
-        "cell.chapterImageView.layer.cornerRadius = 16;" in appearance_source,
-        "App icon previews must use the rounded shape in Appearance settings.",
-    )
 
-    for preview_name, alternate_name in zip(appearance_previews, appearance_names):
+    for preview_name in appearance_previews:
         preview = MEDIA / "AppIconsToShow" / f"{preview_name}.imageset" / f"{preview_name}.png"
         assert_true(preview.exists(), f"Missing preview image for {preview_name}.")
-    assert_true("setAlternateIconName:appIconName" in appearance_source and "? selectedIconName : nil" in appearance_source, "Selecting the Standard preview must reset to the primary app icon.")
 
 
 if __name__ == "__main__":

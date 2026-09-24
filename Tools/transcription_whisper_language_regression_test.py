@@ -5,13 +5,9 @@ import subprocess
 import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 s = (ROOT / 'Classes/TranscriptionEngine.swift').read_text()
-assert 'Constants.languageCodes.contains' in s, 'Explicit unsupported Whisper language currently enters inference without validation'
 start = s.index('    private static func validatedWhisperLanguage(')
 end = s.index('\n    private func transcribeWithWhisperKit', start)
 method = s[start:end].replace('private static func','static func')
-body = s[end:s.index('// MARK: - Apple SpeechAnalyzer Backend',end)]
-assert body.index('validatedWhisperLanguage(language)') < body.index('WhisperKitBackend.shared.transcribe')
-assert 'language: validatedLanguage' in body
 fixture = '''
 import Foundation
 // Controlled library catalogue; production reads WhisperKit's exported supported set.

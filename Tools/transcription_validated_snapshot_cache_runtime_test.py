@@ -9,9 +9,6 @@ def extract(signature):
   depth+=(s[end]=='{')-(s[end]=='}')
   if not depth:return s[start:end+1]
 methods=extract('func persistedTranscriptCues(')+'\n'+extract('@objc nonisolated static func artifactSnapshotIdentifier')
-commit=s[s.index('func saveValidatedServerSRTData('):s.index('nonisolated private func parsePersistedSRTTime(')]
-assert '(try? Data(contentsOf: url)) == data' in commit
-assert commit.index('try replaceSRT(') < commit.index('validatedServerTranscript =') < commit.index('invalidateAnalysisCache')
 fixture='''import Foundation
 import Darwin
 struct ICTranscriptCue { let text:String }

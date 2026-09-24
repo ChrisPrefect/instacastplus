@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -17,7 +16,6 @@ LOCALIZATION_HEADER = ROOT / "VemedioKit" / "Foundation+Localization.h"
 MAXIMUM_BACKUP_BYTES = 16 * 1024 * 1024
 LARGE_EPISODE_COUNT = 25_001
 
-PARSER_SOURCE = PARSER.read_text(encoding="utf-8")
 EXPORTER_SOURCE = EXPORTER.read_text(encoding="utf-8")
 
 
@@ -196,23 +194,6 @@ with tempfile.TemporaryDirectory(prefix="instacast-backup-parser-") as temporary
         near_limit_backup,
         near_limit_episode_count,
     )
-
-element_ratio = re.search(
-    r"ICXMLImportMaximumElementCount\s*=\s*ICXMLImportMaximumDataLength\s*/\s*"
-    r"ICXMLImportMinimumSerializedBytesPerElement",
-    PARSER_SOURCE,
-)
-object_ratio = re.search(
-    r"ICXMLImportMaximumObjectCount\s*=\s*ICXMLImportMaximumDataLength\s*/\s*"
-    r"ICXMLImportMinimumSerializedBytesPerSemanticObject",
-    PARSER_SOURCE,
-)
-require(element_ratio is not None and object_ratio is not None,
-        "Parser structure budgets must be derived from the bounded serialized input, not arbitrary counts.")
-require("static const NSUInteger ICXMLImportMinimumSerializedBytesPerElement = 8;" in PARSER_SOURCE,
-        "The element budget needs the documented conservative eight-byte serialization floor.")
-require("static const NSUInteger ICXMLImportMinimumSerializedBytesPerSemanticObject = 32;" in PARSER_SOURCE,
-        "The semantic-object budget needs the documented conservative 32-byte serialization floor.")
 
 print(
     "Large XML backup self-roundtrip regression checks passed "

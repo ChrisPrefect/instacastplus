@@ -34,20 +34,6 @@ def function_source(source: str, signature: str) -> str:
     raise AssertionError(f"Unterminated function: {signature}")
 
 
-processor_start = SOURCE.find("+ (void)_processPendingDeferredRestoreForFeedURLs:")
-processor_end = SOURCE.find("+ (void)processPendingNowPlaying", processor_start)
-require(processor_start >= 0 and processor_end > processor_start,
-        "Missing deferred-download processor.")
-processor = SOURCE[processor_start:processor_end]
-
-require("const NSUInteger deferredMainBatchSize = 20;" in processor
-        and "const NSUInteger deferredMainInspectionLimit = deferredMainBatchSize * 2;" in processor,
-        "Deferred restore must retain the 20-start/40-inspection bounds.")
-require("inspectedDownloadKeys" in processor,
-        "Every bounded main-thread candidate must be tracked for fair retry ordering.")
-require("ICBackupRemainingDownloadsWithFairInspectionOrder" in processor,
-        "The durable stage must move inspected unresolved work behind unseen work.")
-
 pending_key_function = function_source(
     SOURCE,
     "static NSString *ICBackupPendingDownloadKey",
@@ -155,10 +141,5 @@ with tempfile.TemporaryDirectory(prefix="instacast-backup-fairness-") as tempora
     require(result.returncode == 0,
             "The real deferred-download ordering helper starved a runnable entry after index 40: "
             + result.stderr.strip())
-
-write_call = processor.find("ICBackupWriteDownloadStage(remainingDownloads")
-fair_order_call = processor.find("ICBackupRemainingDownloadsWithFairInspectionOrder")
-require(fair_order_call >= 0 and write_call > fair_order_call,
-        "Fair ordering may become authoritative only through the existing durable stage write.")
 
 print("Backup deferred-download fairness regression checks passed")

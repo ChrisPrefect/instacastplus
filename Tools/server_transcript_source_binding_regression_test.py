@@ -15,11 +15,6 @@ def method(signature):
         if not depth: return source[start:end + 1]
     raise AssertionError(signature)
 
-body = method("private func importArtifacts(")
-assert "verifiedImportAudio(" in body, "Server artifacts are downloaded without proving which local audio they belong to"
-assert body.index("verifiedImportAudio(") < body.index("async let pendingSRTData = download(")
-assert body.index("importAudioIsCurrent(") > body.index("let analysis = try await buildServerAnalysis(")
-assert body.index("importAudioIsCurrent(") < body.index("saveValidatedServerSRTData(")
 methods = "\n".join(method(s) for s in ["private func verifiedImportAudio(", "private func importAudioIsCurrent("])
 fixture = '''import Foundation
 @MainActor class Episode {}

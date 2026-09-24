@@ -32,8 +32,8 @@ When the user reports a bug, regression, crash, flaky UI behavior, or says a pre
 
 1. Do not start by patching code.
 2. Establish the observed symptom, expected behavior, actual behavior, platform, and reproduction steps by inspecting the actual app, code, feeds, and available diagnostics before changing code.
-3. Reproduce the bug or create the closest deterministic proof. For UI/lifecycle bugs, prefer simulator/app reproduction, logs, screenshots, or a focused source-aware regression test.
-4. Write or extend a failing regression test before the production fix. Confirm it fails for the intended reason.
+3. Reproduce the bug through the actual end-to-end user flow. For UI/lifecycle bugs, use the app or simulator and retain logs, screenshots, and repeatable reproduction steps.
+4. Write or extend a failing E2E test before the production fix. Confirm it fails for the intended reason. An isolated test requires the failure analysis and justification below before writing any code.
 5. Only after the failing proof exists, identify the real root cause from code, logs, and lifecycle/state transitions.
 6. Do not use workarounds, fallback behavior, delays, broad reloads, speculative guards, or "try this" fixes.
 7. Make the smallest surgical code change that explains the failing test and the observed bug.
@@ -50,7 +50,24 @@ environments, or successful builds alone.
 
 ## Build And Test Policy
 
-Follow `CLAUDE.md`:
+These testing rules take precedence over older testing advice in `CLAUDE.md`
+and project skills, including recommendations to add source-text regression tests.
+
+- Never write unit tests after you write code.
+- Highly prefer E2E tests as the sole testing mechanism. Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact.
+- If you must test a system in isolation, first write down all the ways it could fail, then write the code.
+
+Before adding an isolated test, name the concrete failure it detects and why the
+E2E flow cannot reliably detect it. Exercise production behavior or a real
+artifact contract; do not assert implementation spelling or test a copied model
+of the implementation. Write the failing test before the production code.
+
+An E2E artifact must include the exact command, inputs or fixtures, environment,
+expected and observed results, and retained evidence such as logs, screenshots,
+or exported data, so another person can verify and repeat the run. A build or an
+isolated test passing is not an E2E result; report untested flows explicitly.
+
+For build verification, follow `CLAUDE.md`:
 
 - Do not run full builds automatically unless the change is large or build verification is specifically needed.
 - For small changes, prefer focused tests or `git diff --check`; the user can verify directly.

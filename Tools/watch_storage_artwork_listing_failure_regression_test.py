@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Proves artwork-index failure cannot suppress off-main Watch audio removal."""
+"""Proves artwork-index failures do not suppress production Watch audio removal."""
 
 from pathlib import Path
 import subprocess
@@ -9,73 +9,10 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 WATCH_EPISODE = ROOT / "InstacastWatch" / "WatchEpisode.swift"
 WATCH_STORAGE = ROOT / "InstacastWatch" / "WatchStorageManager.swift"
-WATCH_DOWNLOAD = ROOT / "InstacastWatch" / "WatchDownloadManager.swift"
-STORAGE_SOURCE = WATCH_STORAGE.read_text()
-DOWNLOAD_SOURCE = WATCH_DOWNLOAD.read_text()
-
 
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
-
-
-def body(source: str, signature: str) -> str:
-    start = source.find(signature)
-    require(start != -1, f"Missing declaration: {signature}")
-    brace = source.find("{", start)
-    require(brace != -1, f"Missing body: {signature}")
-    depth = 0
-    for index in range(brace, len(source)):
-        if source[index] == "{":
-            depth += 1
-        elif source[index] == "}":
-            depth -= 1
-            if depth == 0:
-                return source[brace + 1:index]
-    raise AssertionError(f"Unterminated declaration: {signature}")
-
-
-entry_signature = "nonisolated static func removeLocalFiles(\n        for episodes: [WatchEpisode],\n        downloadsDirectory: URL,"
-entry = body(STORAGE_SOURCE, entry_signature)
-require(
-    "Task.detached(priority: .utility)" in entry,
-    "The complete artwork-index/audio-removal operation must run at utility priority off MainActor.",
-)
-require(
-    "chapterArtworkDirectory" in entry and "removeLocalFilesOffMain" in entry,
-    "The async entry API must own context preparation and physical removal as one detached operation.",
-)
-
-execution = body(STORAGE_SOURCE, "nonisolated static func executeCleanup(")
-require(
-    "await removeLocalFiles(" in execution
-    and "downloadsDirectory: plan.snapshot.downloadsDirectory" in execution
-    and "chapterArtworkDirectory: plan.snapshot.chapterArtworkDirectory" in execution,
-    "Storage eviction must reuse the same listing-failure-safe async removal entry API.",
-)
-
-preparation_signature = STORAGE_SOURCE.split(
-    "nonisolated static func removalContext(", 1
-)[1].split("{", 1)[0]
-preparation = body(STORAGE_SOURCE, "nonisolated static func removalContext(")
-prepare_pending_removal = body(
-    DOWNLOAD_SOURCE,
-    "private func preparePendingRemovalCleanup() async",
-)
-require(
-    "async -> WatchStorageRemovalPreparation" in preparation_signature
-    and "Task.detached(priority: .utility)" in preparation,
-    "Preparing one shared removal context must report an artwork-index issue instead of "
-    "throwing and abandoning every pending audio deletion.",
-)
-require(
-    "let preparation = await WatchStorageManager.removalContext(" in prepare_pending_removal
-    and "removalContext = preparation.context" in prepare_pending_removal
-    and "logStorageRemovalIssues(preparation.issues)" in prepare_pending_removal
-    and "try await WatchStorageManager.removalContext(" not in prepare_pending_removal,
-    "The serialized pending-removal path must keep deleting audio with the tolerant context "
-    "and expose the auxiliary artwork-index failure diagnostically.",
-)
 
 
 STUBS = r"""
