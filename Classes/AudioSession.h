@@ -61,6 +61,8 @@ extern NSString* AudioSessionDidRestorePlaybackNotification;
 @property (nonatomic, readonly, strong) NSDate *stopDate;
 - (NSDictionary*)sleepTimerDiagnosticsMetadata;
 - (void)startSleepTimerIfNeeded;
+- (void)pauseSleepTimer;
+- (void)resetSleepTimerForActivity:(NSString*)reason;
 - (void)setTimerValue:(PlaybackStopTimeValue)timerValue diagnosticReason:(NSString*)reason;
 - (void)setTimerWithDuration:(NSTimeInterval)seconds; // arbitrary seconds, bypasses preset enum
 

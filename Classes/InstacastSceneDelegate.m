@@ -2411,14 +2411,15 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
                 [self carPlaySetImage:chapterImage forListItem:item];
             }
         } else {
-            CDChapter* chapter = chapters[index];
             [self carPlayAssignSelectionHandlerForItem:item handler:^{
                 PlaybackManager* playbackManager = [PlaybackManager playbackManager];
                 CDEpisode* episodeToPlay = [AudioSession sharedAudioSession].episode ?: playbackManager.playingEpisode;
                 NSString* loadedEpisodeHash = playbackManager.playingEpisode.objectHash;
                 NSString* targetEpisodeHash = episodeToPlay.objectHash;
                 BOOL sameEpisodeLoaded = (loadedEpisodeHash.length > 0 && targetEpisodeHash.length > 0 && [loadedEpisodeHash isEqualToString:targetEpisodeHash]);
-                NSTimeInterval chapterTime = MAX(0.0, chapter.timecode);
+                NSTimeInterval chapterTime = MAX(0.0, [playbackManager timeForChapterSelectionAtIndex:index
+                                                                                       chapterTimes:[chapters valueForKey:@"timecode"]
+                                                                                            episode:episodeToPlay]);
 
                 if (sameEpisodeLoaded) {
                     [playbackManager seekToTime:chapterTime tolerance:NO];

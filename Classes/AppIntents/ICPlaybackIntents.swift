@@ -168,7 +168,9 @@ struct ICSetSleepTimerIntent: AudioPlaybackIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        await ICIntentBridge.setSleepTimer(minutes: minutes)
+        guard await ICIntentBridge.setSleepTimer(minutes: minutes) else {
+            return .result(dialog: ICLocalizedIntentDialog("While CarPlay is active, the Sleep Timer stays disabled."))
+        }
         return .result(dialog: ICLocalizedIntentDialog("Sleep timer set for %d minutes.", minutes))
     }
 }

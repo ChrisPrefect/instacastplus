@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise production playback resume and sleep timer expiry with Foundation timers."""
+"""Exercise production sleep timer pause, resume and expiry with Foundation timers."""
 import ast
 from pathlib import Path
 import subprocess
@@ -32,11 +32,14 @@ audio_methods = [method(audio, s) for s in [
     '- (NSDictionary*)sleepTimerDiagnosticsMetadata', '- (void)_logSleepTimerEvent:',
     '- (void)setTimerValue:(PlaybackStopTimeValue)timerValue diagnosticReason:',
     '- (void) setTimerValue:', '- (void)setTimerWithDuration:', '- (void)stopPlaybackTimer:',
-    '- (void)startSleepTimerIfNeeded',
+    '- (void)startSleepTimerIfNeeded', '- (void)pauseSleepTimer',
+    '- (void)_scheduleSleepTimerWithDuration:',
+    '- (void)resetSleepTimerForActivity:',
+    '- (NSTimeInterval) timerRemainingTime',
 ]]
 player_methods = [method(player, s) for s in [
     '- (void) play\n', '- (void) pause\n', '- (void) playPause\n',
-    '- (MPRemoteCommandHandlerStatus) _playEvent:', '- (BOOL) isPaused\n',
+    '- (MPRemoteCommandHandlerStatus) _playEvent:', '- (MPRemoteCommandHandlerStatus) _pauseEvent:', '- (BOOL) isPaused\n',
     '- (BOOL) isPodcastPlaying\n', '- (void) _sendUpdateNotification\n',
 ]]
 player_stub = r'''
@@ -95,6 +98,7 @@ NSString* PlaybackManagerDidUpdateNotification=@"MPPlaybackManagerDidUpdateNotif
 - (void)play;
 - (void)playPause;
 - (MPRemoteCommandHandlerStatus)_playEvent:(MPRemoteCommandEvent*)event;
+- (MPRemoteCommandHandlerStatus)_pauseEvent:(MPRemoteCommandEvent*)event;
 - (void)updateNowPlayingInfo;
 - (void)_sendUpdateNotification;
 @end
@@ -108,12 +112,18 @@ NSString* PlaybackManagerDidUpdateNotification=@"MPPlaybackManagerDidUpdateNotif
 PLAYER_METHODS
 @end
 '''.replace('PLAYER_METHODS', '\n'.join(player_methods))
-preamble = values['preamble'].replace('- (void)stopPlaybackTimer:(NSTimer*)timer;', '- (void)startSleepTimerIfNeeded;\n- (void)stopPlaybackTimer:(NSTimer*)timer;')
+preamble = values['preamble'].replace('- (void)stopPlaybackTimer:(NSTimer*)timer;', '- (void)startSleepTimerIfNeeded;\n- (void)pauseSleepTimer;\n- (void)stopPlaybackTimer:(NSTimer*)timer;')
 start = preamble.index('@interface PlaybackManager:')
 end = preamble.index('@interface ICSharePlayCoordinator:')
 player_implementation = player_stub[player_stub.index('@implementation PlaybackManager'):]
 player_declarations = player_stub[:player_stub.index('@implementation PlaybackManager')]
 preamble = preamble[:start] + player_declarations + preamble[end:]
+controls = (root / 'Classes/PlaybackControlsViewController.m').read_text()
+controls_probe = '''
+#define PlayHapticFeedback(value) ((void)0)
+@interface PlaybackControlsViewController:NSObject @end
+@implementation PlaybackControlsViewController
+''' + method(controls, '- (void) togglePlay:(id)sender') + '\n@end\n'
 main = r'''
 #define CHECK(c) do {if(!(c)){fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#c);return 1;}}while(0)
 int main(int argc, const char** argv){@autoreleasepool{
@@ -131,10 +141,96 @@ int main(int argc, const char** argv){@autoreleasepool{
  p.player=[PlayerStub new];p.player.currentItem=[ItemStub new];p.player.rate=1;p.state=RunningState;p.playingEpisode=s.episode;
  s.timerValue=minutes;
  CHECK(s.playbackTimer.valid && s.stopDate.timeIntervalSinceNow>minutes*60-1 && p.podcastPlaying);
+ if([mode hasPrefix:@"queued-pause-"]) {
+     BOOL expired=[mode isEqual:@"queued-pause-expired"];
+     if(expired) s.stopDate=[NSDate dateWithTimeIntervalSinceNow:-0.01];
+     dispatch_semaphore_t done=dispatch_semaphore_create(0);
+     dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT,0),^{
+         [p _pauseEvent:nil];dispatch_semaphore_signal(done);
+     });
+     CHECK(dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC))==0);
+     [p play];
+     if(!expired) s.timerValue=0;
+     [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+     CHECK(p.podcastPlaying);
+     if(expired) CHECK(s.playbackTimer.valid && s.timerRemainingTime>minutes*60-1);
+     else CHECK(s.timerRemainingTime==0 && !s.playbackTimer);
+     [s.playbackTimer invalidate];
+     [defaults removePersistentDomainForName:suite];
+     printf("PASS: %s reconciles only the uncancelled timer\n",mode.UTF8String);
+     return 0;
+ }
+ if([mode hasPrefix:@"already-paused"]) {
+     s.stopDate=[NSDate dateWithTimeIntervalSinceNow:0.2];
+     p.player.rate=0;
+     if([mode isEqual:@"already-paused-remote"]) [p _pauseEvent:nil];
+     else [p pause];
+     CHECK(p.paused && !s.stopDate && !s.playbackTimer);
+     NSTimeInterval remaining=s.timerRemainingTime;
+     [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1.2]];
+     CHECK(s.timerRemainingTime==remaining && [defaults integerForKey:@"SleepTimerFellAsleepCount"]==0);
+     [defaults removePersistentDomainForName:suite];
+     puts("PASS: Pause freezes the timer even after the player rate became zero");
+     return 0;
+ }
+ if([mode hasPrefix:@"manual-"]) {
+     BOOL resets=![mode isEqual:@"manual-remainder"] && ![mode isEqual:@"manual-custom"];
+     [defaults setBool:resets forKey:ScreenTouchIntelligentSleep];
+     // Video: 3-minute timer, about 2 minutes left, then pause via a playback button.
+     if([mode isEqual:@"manual-custom"]) [s setTimerWithDuration:91];
+     s.stopDate=[NSDate dateWithTimeIntervalSinceNow:([mode isEqual:@"manual-expiry"] ? 0.2 : 120)];
+     if([mode isEqual:@"manual-custom"]) s.stopDate=[NSDate dateWithTimeIntervalSinceNow:37];
+     NSTimer* runningTimer=s.playbackTimer;
+     if([mode isEqual:@"manual-remote"]) [p _pauseEvent:nil];
+     else if([mode isEqual:@"manual-ui"]) [[PlaybackControlsViewController new] togglePlay:nil];
+     else if([mode isEqual:@"manual-async"] || [mode isEqual:@"manual-rapid"]) {
+         dispatch_semaphore_t done=dispatch_semaphore_create(0);
+         dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT,0),^{
+             [p _pauseEvent:nil];dispatch_semaphore_signal(done);
+         });
+         CHECK(dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC))==0);
+         // Main-thread Play can overtake the queued timer work from a remote Pause.
+         if([mode isEqual:@"manual-rapid"]) [p play];
+         [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+         if([mode isEqual:@"manual-rapid"]) {
+             CHECK(p.podcastPlaying && s.playbackTimer.valid && s.stopDate.timeIntervalSinceNow>minutes*60-1);
+             [p pause];
+         }
+     }
+     else [p playPause];
+     CHECK(p.paused);
+     CHECK(!s.stopDate && !runningTimer.valid);
+     NSTimeInterval expected=resets ? minutes*60 : ([mode isEqual:@"manual-custom"] ? 37 : 120);
+     CHECK(fabs(s.timerRemainingTime-expected)<0.2);
+     NSTimeInterval pausedRemaining=s.timerRemainingTime;
+     NSUInteger eventCount=[ICDiagnosticLogger shared].events.count;
+     [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1.2]];
+     CHECK(s.timerRemainingTime==pausedRemaining && [ICDiagnosticLogger shared].events.count==eventCount);
+     CHECK([defaults integerForKey:@"SleepTimerFellAsleepCount"]==0);
+     if([mode isEqual:@"manual-remote"]) [p _playEvent:nil];
+     else if([mode isEqual:@"manual-ui"]) [[PlaybackControlsViewController new] togglePlay:nil];
+     else [p playPause];
+     CHECK(p.podcastPlaying && s.playbackTimer.valid);
+     CHECK(fabs(s.stopDate.timeIntervalSinceNow-expected)<0.3);
+     NSDate* deadline=s.stopDate;[p play];CHECK(s.stopDate==deadline);
+     [p pause];
+     // Changing the chosen duration while paused must not start a hidden countdown.
+     [defaults removeObjectForKey:UncompletedSleepTimeInterval];
+     s.timerValue=5;
+     CHECK(!s.stopDate && !s.playbackTimer && s.timerRemainingTime==300);
+     [p play];CHECK(s.stopDate.timeIntervalSinceNow>299);
+     [p pause];s.timerValue=0;
+     CHECK(!s.stopDate && !s.playbackTimer && s.timerRemainingTime==0);
+     [defaults setBool:NO forKey:ScreenTimerAlwaysActive];
+     [p play];CHECK(!s.stopDate && !s.playbackTimer);
+     [s.playbackTimer invalidate];[defaults removePersistentDomainForName:suite];
+     printf("PASS: %s freezes while paused, resumes correctly and supports paused selection/cancellation\n",mode.UTF8String);
+     return 0;
+ }
  // Reach the production expiry deterministically, including the 20-minute TestFlight case.
  s.stopDate=[NSDate dateWithTimeIntervalSinceNow:-1];
  [s stopPlaybackTimer:s.playbackTimer];
- CHECK(p.paused && s.timerValue==minutes && s.playbackTimer.valid && s.stopDate==nil);
+ CHECK(p.paused && s.timerValue==minutes && !s.playbackTimer && s.stopDate==nil);
  if([mode hasPrefix:@"async-"]) {
      dispatch_semaphore_t done=dispatch_semaphore_create(0);
      dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT,0),^{
@@ -184,7 +280,7 @@ int main(int argc, const char** argv){@autoreleasepool{
      [p play];
      CHECK(s.stopDate==deadline && s.stopDate.timeIntervalSinceNow>90);
      [p pause];[p play];
-     CHECK(s.stopDate==deadline);
+     CHECK(s.stopDate!=deadline && fabs([s.stopDate timeIntervalSinceDate:deadline])<0.1);
      p.player=nil;s.timerValue=0;
      [p play];
      CHECK(!s.stopDate && !s.playbackTimer);
@@ -227,10 +323,12 @@ declarations = '\n'.join(f'NSString* {c}=@"{c}";' for c in values['constants'])
 with tempfile.TemporaryDirectory(prefix='instacast-sleep-resume-') as directory:
     probe_dir = Path(directory)
     file = probe_dir / 'probe.m'
-    file.write_text('#import <Foundation/Foundation.h>\n' + declarations + '\n' + preamble + '\n' + '\n'.join(audio_methods) + '\n@end\n' + player_implementation + main)
+    file.write_text('#import <Foundation/Foundation.h>\n' + declarations + '\n' + preamble + '\n' + '\n'.join(audio_methods) + '\n@end\n' + player_implementation + controls_probe + main)
     binary = probe_dir / 'probe'
     subprocess.run(['xcrun','clang','-fobjc-arc','-fblocks','-framework','Foundation',str(file),'-o',str(binary)],check=True)
-    for mode in ['play', 'playPause', 'remote', 'motion', 'setter', 'policy',
+    for mode in ['queued-pause-cancel', 'queued-pause-expired', 'already-paused', 'already-paused-remote',
+                 'manual-rapid', 'manual-remote', 'manual-toggle', 'manual-ui', 'manual-async', 'manual-expiry',
+                 'manual-remainder', 'manual-custom', 'play', 'playPause', 'remote', 'motion', 'setter', 'policy',
                  'async-resume', 'async-paused', 'async-disabled', 'async-carplay']:
         subprocess.run([str(binary), mode], check=True)
     subprocess.run([str(binary), 'remote', '20'], check=True)

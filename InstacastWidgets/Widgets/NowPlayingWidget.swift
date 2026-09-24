@@ -229,11 +229,17 @@ struct NowPlayingWidgetView: View {
                     HStack(spacing: 2) {
                         Image(systemName: data.hasSleepTimer ? "moon.fill" : "moon")
                             .font(.system(size: 14))
-                        if data.hasSleepTimer, let stopDate = data.sleepTimerStopDate {
-                            Text(stopDate, style: .timer)
-                                .font(.system(size: 13))
-                                .monospacedDigit()
-                                .fixedSize(horizontal: true, vertical: false)
+                        if data.hasSleepTimer {
+                            Group {
+                                if data.isPaused, let remaining = data.sleepTimerFormatted {
+                                    Text(remaining)
+                                } else if let stopDate = data.sleepTimerStopDate {
+                                    Text(stopDate, style: .timer)
+                                }
+                            }
+                            .font(.system(size: 13))
+                            .monospacedDigit()
+                            .fixedSize(horizontal: true, vertical: false)
                         }
                     }
                     .fixedSize(horizontal: true, vertical: false)
@@ -364,11 +370,17 @@ struct NowPlayingWidgetView: View {
                     HStack(spacing: 2) {
                         Image(systemName: data.hasSleepTimer ? "moon.fill" : "moon")
                             .font(.system(size: 13))
-                        if data.hasSleepTimer, let stopDate = data.sleepTimerStopDate {
-                            Text(stopDate, style: .timer)
-                                .font(.system(size: 12))
-                                .monospacedDigit()
-                                .fixedSize(horizontal: true, vertical: false)
+                        if data.hasSleepTimer {
+                            Group {
+                                if data.isPaused, let remaining = data.sleepTimerFormatted {
+                                    Text(remaining)
+                                } else if let stopDate = data.sleepTimerStopDate {
+                                    Text(stopDate, style: .timer)
+                                }
+                            }
+                            .font(.system(size: 12))
+                            .monospacedDigit()
+                            .fixedSize(horizontal: true, vertical: false)
                         }
                     }
                     .fixedSize(horizontal: true, vertical: false)

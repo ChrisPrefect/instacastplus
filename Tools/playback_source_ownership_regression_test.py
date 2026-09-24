@@ -10,6 +10,7 @@ Manual playback may keep a source only when a list screen explicitly arms that s
 Only explicitly identified continuation, transport, or resume paths may inherit it.
 """
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -109,10 +110,18 @@ require(
     "Opening the restored AudioSession episode must preserve its persisted source.",
 )
 
+chapter_selection = method_body(
+    player_info,
+    "- (void) tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath",
+).split("else if ([self _hasBookmarks]", 1)[0]
+chapter_reloads = re.findall(r"playEpisode:episodeToPlay\b[^;]*;", chapter_selection)
+# Source ownership is independent of whether the chapter starts at its beginning
+# or at a remembered position; chapter timing has its own regression checks.
 require(
-    player_info.count(
-        "playEpisode:episodeToPlay queueUpCurrent:NO at:MAX(0.0, chapter.timecode) autostart:YES preservingPlaybackSource:YES"
-    ) == 1,
+    len(chapter_reloads) == 1
+    and all(argument in chapter_reloads[0] for argument in (
+        "queueUpCurrent:NO", "autostart:YES", "preservingPlaybackSource:YES",
+    )),
     "Reloading the current episode from Player Info chapters must preserve its source.",
 )
 require(

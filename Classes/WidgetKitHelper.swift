@@ -35,6 +35,7 @@ import Foundation
     private nonisolated(unsafe) static var _lastReloadLists: Date?
     private nonisolated(unsafe) static var _lastReloadStats: Date?
     private static let _minInterval: TimeInterval = 2.0
+    private nonisolated(unsafe) static var _stateChangeReloadPending = false
 
     // MARK: - Installed-widget gate (per kind)
     //
@@ -115,6 +116,22 @@ import Foundation
             if let last = _lastReloadNowPlaying, now.timeIntervalSince(last) < _minInterval { return }
             _lastReloadNowPlaying = now
             WidgetCenter.shared.reloadTimelines(ofKind: ICWidgetConstants.nowPlayingWidgetKind)
+        }
+    }
+
+    /// Preserve explicit playback/timer changes, coalescing notifications on the main queue.
+    @objc public static func reloadNowPlayingTimelineForStateChange() {
+        DispatchQueue.main.async {
+            guard !_stateChangeReloadPending else { return }
+            _stateChangeReloadPending = true
+            DispatchQueue.main.async {
+                _stateChangeReloadPending = false
+                if #available(iOS 14.0, *) {
+                    if ProcessInfo.processInfo.isiOSAppOnMac { return }
+                    _lastReloadNowPlaying = Date()
+                    WidgetCenter.shared.reloadTimelines(ofKind: ICWidgetConstants.nowPlayingWidgetKind)
+                }
+            }
         }
     }
 

@@ -12,6 +12,21 @@ def require(condition: bool, message: str) -> None:
 player_info = (ROOT / "Classes" / "PlayerInfoViewController_v5.m").read_text()
 playback_manager = (ROOT / "Classes" / "PlaybackManager.m").read_text()
 playback_controls = (ROOT / "Classes" / "PlaybackControlsViewController.m").read_text()
+scene_delegate = (ROOT / "Classes" / "InstacastSceneDelegate.m").read_text()
+
+carplay_chapters = scene_delegate.split("- (NSArray<CPListSection*>*)carPlayChapterSections", 1)[1].split("- (NSString*)carPlayFormattedDuration:", 1)[0]
+stored_carplay_selection = carplay_chapters.rsplit("[self carPlayAssignSelectionHandlerForItem:item handler:", 1)[1]
+require(
+    "timeForChapterSelectionAtIndex:index" in stored_carplay_selection
+    and 'chapterTimes:[chapters valueForKey:@"timecode"]' in stored_carplay_selection
+    and "episode:episodeToPlay" in stored_carplay_selection,
+    "Stored/cold CarPlay chapter selection must honor the same remembered position as the phone player.",
+)
+require(
+    "seekToTime:chapterTime tolerance:NO" in stored_carplay_selection
+    and "at:chapterTime autostart:YES" in stored_carplay_selection,
+    "Both loaded and cold CarPlay playback must use the selected resume time.",
+)
 
 chapter_selection = player_info.split("- (void) tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath", 1)[1]
 chapter_selection = chapter_selection.split("else if ([self _hasBookmarks]", 1)[0]
@@ -36,7 +51,7 @@ require(
 )
 require(
     "[[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO "
-    "at:MAX(0.0, chapter.timecode) autostart:YES preservingPlaybackSource:YES];" in chapter_selection,
+    "at:MAX(0.0, time) autostart:YES preservingPlaybackSource:YES];" in chapter_selection,
     "When the app was reopened and the player is not loaded, tapping a chapter must start that episode at the chapter time.",
 )
 require(

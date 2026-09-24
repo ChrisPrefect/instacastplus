@@ -2041,3 +2041,7 @@
 "Play Last" = "Play Last";
 "Shuffle and repeat are not supported for podcasts." = "Shuffle and repeat are not supported for podcasts.";
 "Playback Mode" = "Playback Mode";
+
+"Replay after Pause Explanation" = "After a pause longer than 10 minutes, playback resumes 30 seconds earlier.";
+"Remember Chapter Position" = "Remember Chapter Position";
+"Remember Chapter Position Explanation" = "Remember the position when selecting another chapter and resume there when returning. Tap the current chapter again to restart it.";

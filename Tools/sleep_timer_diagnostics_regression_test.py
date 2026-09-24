@@ -16,7 +16,9 @@ expiry = body(audio, '- (void)stopPlaybackTimer:')
 assert expiry.index('@"expired"') < expiry.index('[[PlaybackManager playbackManager] pause]') < expiry.index('@"pause-completed"')
 assert 'self.lastSleepTimerTick = ' in expiry
 for reason in ['touch', 'motion', 'volume']:
-    assert app.count(f'diagnosticReason:@"{reason}"') == 2, f'Both reset branches must identify {reason}'
+    assert f'_resetSleepTimerForActivity:@"{reason}"' in app, f'Missing {reason} activity source'
+assert '[session resetSleepTimerForActivity:reason]' in body(app, '- (void)_resetSleepTimerForActivity:')
+assert '_logSleepTimerEvent:reason' in body(audio, '- (void)resetSleepTimerForActivity:')
 assert '30.0' in body(audio, '- (void)_logSleepTimerEvent:'), 'Repeated sensor resets must not flood the log'
 assert 'sleepTimerDiagnosticsMetadata' in body(player, '- (void)_logBackgroundPlaybackCheckpointIfNeeded'), 'Background playback must expose inactive/stalled timers too'
 metadata = body(player, '- (NSMutableDictionary*)_playbackDiagnosticsMetadataForEpisode:')

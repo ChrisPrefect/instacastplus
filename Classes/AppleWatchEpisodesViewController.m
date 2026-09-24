@@ -4,6 +4,7 @@
 //
 
 #import "AppleWatchEpisodesViewController.h"
+#import "ICShareItem.h"
 #import "AppleWatchSyncManager.h"
 #import "CDModel.h"
 #import "DatabaseManager.h"
@@ -919,6 +920,9 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     return [UIContextMenuConfiguration configurationWithIdentifier:nil previewProvider:nil actionProvider:^UIMenu* (NSArray<UIMenuElement*>* suggestedActions) {
         (void)suggestedActions;
         NSMutableArray<UIMenuElement*>* actions = [NSMutableArray array];
+        if (episode) {
+            [actions addObject:[ICShareItem shareActionForEpisode:episode fromViewController:self sourceView:tableView sourceRect:[tableView rectForRowAtIndexPath:indexPath]]];
+        }
 
         if (episode && !state.downloadedOnWatch && !state.removingFromWatch) {
             BOOL retriesFailure = [state.watchStatus isEqualToString:ICAppleWatchStatusFailed];

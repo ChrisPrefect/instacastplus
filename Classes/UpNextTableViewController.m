@@ -7,6 +7,7 @@
 //
 
 #import "UpNextTableViewController.h"
+#import "ICShareItem.h"
 #import "EpisodesTableViewCell.h"
 #import "PlaybackManager.h"
 #import "ImageCacheManager.h"
@@ -655,6 +656,7 @@ static NSString* kUpNextCell = @"UpNextCell";
                                                 previewProvider:nil
                                                  actionProvider:^UIMenu*(NSArray<UIMenuElement*>* suggestedActions) {
             NSMutableArray<UIMenuElement*>* actions = [NSMutableArray array];
+            [actions addObject:[ICShareItem shareActionForEpisode:episode fromViewController:weakSelf sourceView:tableView sourceRect:[tableView rectForRowAtIndexPath:indexPath]]];
 
             UIAction* favoriteAction = [UIAction actionWithTitle:(episode.starred) ? @"Unmark Favorite".ls : @"Mark as Favorite".ls
                                                            image:[UIImage systemImageNamed:episode.starred ? @"star.slash" : @"star"]

@@ -38,6 +38,8 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
 
     self.clearsSelectionOnViewWillAppear = YES;
+    self.tableView.rowHeight = UITableViewAutomaticDimension;
+    self.tableView.estimatedRowHeight = 60;
     self.navigationItem.title = @"Playback".ls;
 
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -84,7 +86,7 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
 {
     switch (section) {
         case kPlaybackSection:
-            return 8;
+            return 9;
         default:
             break;
     }
@@ -121,7 +123,14 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
                 cell.textLabel.text = @"Replay after Pause".ls;
                 control.on = [USER_DEFAULTS boolForKey:PlayerReplayAfterPause];
 
-                cell.detailTextLabel.text = nil;
+                UIListContentConfiguration* content = [cell defaultContentConfiguration];
+                content.text = @"Replay after Pause".ls;
+                content.textProperties.color = ICTextColor;
+                content.textProperties.font = [UIFont systemFontOfSize:ICFontSize(17)];
+                content.secondaryText = @"Replay after Pause Explanation".ls;
+                content.secondaryTextProperties.color = ICMutedTextColor;
+                content.secondaryTextProperties.numberOfLines = 0;
+                cell.contentConfiguration = content;
 
                 control.tag = indexPath.row;
                 [control addTarget:self action:@selector(togglePlayerSettings:) forControlEvents:UIControlEventValueChanged];
@@ -212,8 +221,29 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
                 cell.textLabel.text = @"Disable Auto-Lock".ls;
                 control.on = [USER_DEFAULTS boolForKey:DisableAutoLock];
 
-                cell.detailTextLabel.text = nil;
+                UIListContentConfiguration* content = [cell defaultContentConfiguration];
+                content.text = @"Disable Auto-Lock".ls;
+                content.textProperties.color = ICTextColor;
+                content.textProperties.font = [UIFont systemFontOfSize:ICFontSize(17)];
+                cell.contentConfiguration = content;
 
+                [control addTarget:self action:@selector(togglePlayerSettings:) forControlEvents:UIControlEventValueChanged];
+                return cell;
+            }
+            case 8:
+            {
+                UITableViewCell* cell = [self switchCell];
+                UISwitch* control = (UISwitch*)cell.accessoryView;
+                control.tag = indexPath.row;
+                control.on = [USER_DEFAULTS boolForKey:PlayerRememberChapterPosition];
+                UIListContentConfiguration* content = [cell defaultContentConfiguration];
+                content.text = @"Remember Chapter Position".ls;
+                content.textProperties.color = ICTextColor;
+                content.textProperties.font = [UIFont systemFontOfSize:ICFontSize(17)];
+                content.secondaryText = @"Remember Chapter Position Explanation".ls;
+                content.secondaryTextProperties.color = ICMutedTextColor;
+                content.secondaryTextProperties.numberOfLines = 0;
+                cell.contentConfiguration = content;
                 [control addTarget:self action:@selector(togglePlayerSettings:) forControlEvents:UIControlEventValueChanged];
                 return cell;
             }
@@ -345,6 +375,9 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     }
     else if (sender.tag == 7) {
         [USER_DEFAULTS setBool:sender.on forKey:DisableAutoLock];
+    }
+    else if (sender.tag == 8) {
+        [USER_DEFAULTS setBool:sender.on forKey:PlayerRememberChapterPosition];
     }
 }
 

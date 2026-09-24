@@ -291,34 +291,26 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 //as labeled...reset the timer
 -(void)resetIdleTimer
 {
-    BOOL isTouchActive = [USER_DEFAULTS boolForKey:ScreenTouchIntelligentSleep];
-    BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
-    if (isIntelligentTimerActive){
-        if (isTouchActive){
-            if (myidleTimer)
-            {
-                [myidleTimer invalidate];
-            }
-            //convert the wait period into minutes rather than seconds
-            NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
-            [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
-            NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
-            if ([PlaybackManager playbackManager].isPodcastPlaying)
-            {
-                if (sleepTimer > 0)
-                {
-                    [[AudioSession sharedAudioSession] setTimerValue:sleepTimer diagnosticReason:@"touch"];
-                    int timeout = (int)sleepTimer * 60;
-                    myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
-                }
-                else if (lastSleepTimer > 0 && [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
-                {
-                    [[AudioSession sharedAudioSession] setTimerValue:lastSleepTimer diagnosticReason:@"touch"];
-                    int timeout = (int)lastSleepTimer * 60;
-                    myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
-                }
-            }
-        }
+    if ([USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive] &&
+        [USER_DEFAULTS boolForKey:ScreenTouchIntelligentSleep]) {
+        [self _resetSleepTimerForActivity:@"touch"];
+    }
+}
+
+- (void)_resetSleepTimerForActivity:(NSString*)reason
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _resetSleepTimerForActivity:reason];
+        });
+        return;
+    }
+    AudioSession* session = [AudioSession sharedAudioSession];
+    [session resetSleepTimerForActivity:reason];
+    [myidleTimer invalidate];
+    myidleTimer = nil;
+    if (session.stopDate) {
+        myidleTimer = [NSTimer scheduledTimerWithTimeInterval:session.timerRemainingTime target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
     }
 }
 
@@ -351,32 +343,8 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
                     BOOL isMotionActive = [USER_DEFAULTS boolForKey:DeviceMovementIntelligentSleep];
                     BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
 
-                    if (isIntelligentTimerActive){
-                        if (isMotionActive){
-                            if ([PlaybackManager playbackManager].isPodcastPlaying)
-                            {
-                                if (self->myidleTimer)
-                                {
-                                    [self->myidleTimer invalidate];
-                                }
-                                NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
-                                [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
-                                NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
-                                
-                                if (sleepTimer > 0)
-                                {
-                                    [[AudioSession sharedAudioSession] setTimerValue:sleepTimer diagnosticReason:@"motion"];
-                                    int timeout = (int)sleepTimer * 60;
-                                    self->myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
-                                }
-                                else if (lastSleepTimer > 0 && [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
-                                {
-                                    [[AudioSession sharedAudioSession] setTimerValue:lastSleepTimer diagnosticReason:@"motion"];
-                                    int timeout = (int)lastSleepTimer * 60;
-                                    self->myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
-                                }
-                            }
-                        }
+                    if (isIntelligentTimerActive && isMotionActive) {
+                        [self _resetSleepTimerForActivity:@"motion"];
                     }
                 }
             });
@@ -394,37 +362,10 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 }
 
 -(void) observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
-    
-    if ([keyPath isEqual:@"outputVolume"]) {
-        BOOL isVolumeActive = [USER_DEFAULTS boolForKey:VolumeChangeIntelligentSleep];
-        BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
-        if (isIntelligentTimerActive){
-            if (isVolumeActive){
-                if ([PlaybackManager playbackManager].isPodcastPlaying)
-                {
-                    if (myidleTimer)
-                    {
-                        [myidleTimer invalidate];
-                    }
-                    //convert the wait period into minutes rather than seconds
-                    NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
-                    [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
-                    NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
-                    if (sleepTimer > 0)
-                    {
-                        [[AudioSession sharedAudioSession] setTimerValue:sleepTimer diagnosticReason:@"volume"];
-                        int timeout = (int)sleepTimer * 60;
-                        myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
-                    }
-                    else if (lastSleepTimer > 0 && [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
-                    {
-                        [[AudioSession sharedAudioSession] setTimerValue:lastSleepTimer diagnosticReason:@"volume"];
-                        int timeout = (int)lastSleepTimer * 60;
-                        myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
-                    }
-                }
-            }
-        }
+    if ([keyPath isEqual:@"outputVolume"] &&
+        [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive] &&
+        [USER_DEFAULTS boolForKey:VolumeChangeIntelligentSleep]) {
+        [self _resetSleepTimerForActivity:@"volume"];
     }
 }
 

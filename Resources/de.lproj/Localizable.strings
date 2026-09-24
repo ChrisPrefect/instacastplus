@@ -2041,3 +2041,7 @@
 "Play Last" = "Zuletzt abspielen";
 "Shuffle and repeat are not supported for podcasts." = "Zufallswiedergabe und Wiederholung werden für Podcasts nicht unterstützt.";
 "Playback Mode" = "Wiedergabemodus";
+
+"Replay after Pause Explanation" = "Nach mehr als 10 Minuten Pause springt die Wiedergabe beim Fortsetzen um 30 Sekunden zurück.";
+"Remember Chapter Position" = "Kapitelposition merken";
+"Remember Chapter Position Explanation" = "Beim direkten Kapitelwechsel die Position merken und bei der Rückkehr fortsetzen. Erneutes Antippen des aktuellen Kapitels startet es von vorn.";

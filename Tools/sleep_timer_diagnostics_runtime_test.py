@@ -9,8 +9,8 @@ def method(signature):
     for end in range(brace,len(source)):
         depth+=(source[end]=='{')-(source[end]=='}')
         if not depth:return source[start:end+1]
-methods=[method(s) for s in ['- (NSDictionary*)sleepTimerDiagnosticsMetadata','- (void)_logSleepTimerEvent:', '- (void)setTimerValue:(PlaybackStopTimeValue)timerValue diagnosticReason:', '- (void) setTimerValue:', '- (void)setTimerWithDuration:', '- (void)stopPlaybackTimer:']]
-constants=['ScreenTimerAlwaysActive','IntelligentSleepTimerAlwaysActive','ScreenTouchIntelligentSleep','DeviceMovementIntelligentSleep','VolumeChangeIntelligentSleep','DeviceMovementSensitivity','DisableSleepTimerInCarPlay','DefaultIntelligentSleepTimer','LastSelectedSleepTimer','UncompletedSleepTimeInterval','AudioSessionSleepTimerDidExpireNotification']
+methods=[method(s) for s in ['- (NSDictionary*)sleepTimerDiagnosticsMetadata','- (void)_logSleepTimerEvent:', '- (void)setTimerValue:(PlaybackStopTimeValue)timerValue diagnosticReason:', '- (void) setTimerValue:', '- (void)setTimerWithDuration:', '- (void)_scheduleSleepTimerWithDuration:', '- (void)stopPlaybackTimer:']]
+constants=['ScreenTimerAlwaysActive','IntelligentSleepTimerAlwaysActive','ScreenTouchIntelligentSleep','DeviceMovementIntelligentSleep','VolumeChangeIntelligentSleep','DeviceMovementSensitivity','DisableSleepTimerInCarPlay','DefaultIntelligentSleepTimer','LastSelectedSleepTimer','UncompletedSleepTimeInterval','AudioSessionSleepTimerDidExpireNotification','AudioSessionSleepTimerDidChangeNotification']
 preamble=r'''
 #import <Foundation/Foundation.h>
 #import <execinfo.h>
@@ -62,6 +62,8 @@ static AppStub* App;
 @interface AudioSession:NSObject
 @property Episode* episode;
 @property NSTimer* playbackTimer;
+@property NSTimeInterval sleepTimerDuration;
+@property NSTimeInterval pausedSleepTimerRemainingTime;
 @property NSDate* stopDate;
 @property (nonatomic) PlaybackStopTimeValue timerValue;
 @property BOOL playerWasPlayingBeforeWentToBackground;
@@ -112,7 +114,7 @@ int main(){@autoreleasepool{
  CHECK([events.lastObject[@"metadata"][@"carPlayConnected"] boolValue]);
  s.carPlay=NO;
  [defaults setInteger:17 forKey:UncompletedSleepTimeInterval];s.timerValue=5;
- CHECK(s.stopDate.timeIntervalSinceNow>16 && s.stopDate.timeIntervalSinceNow<18);
+ CHECK(s.stopDate.timeIntervalSinceNow>299 && ![defaults objectForKey:UncompletedSleepTimeInterval]);
  [s setTimerWithDuration:120];CHECK(s.stopDate.timeIntervalSinceNow>119);
  CHECK([events.lastObject[@"metadata"][@"requestedSeconds"] integerValue]==120);
  s.stopDate=[NSDate dateWithTimeIntervalSinceNow:-1];
@@ -124,9 +126,10 @@ int main(){@autoreleasepool{
  BOOL sawExpired=NO;for(NSDictionary* e in events)if([e[@"message"] isEqual:@"expired"])sawExpired=YES;
  CHECK(sawExpired);
  [defaults setBool:YES forKey:ScreenTimerAlwaysActive];[defaults setInteger:5 forKey:DefaultIntelligentSleepTimer];
+ [PlaybackManager playbackManager].paused=NO;
  s.timerValue=5;s.stopDate=[NSDate dateWithTimeIntervalSinceNow:-1];[s stopPlaybackTimer:s.playbackTimer];
  CHECK([PlaybackManager playbackManager].pauseCount==2 && s.timerValue==5 && !s.stopDate);
- CHECK([events.lastObject[@"metadata"][@"timerValid"] boolValue]);
+ CHECK(![events.lastObject[@"metadata"][@"timerValid"] boolValue]);
  [s.playbackTimer invalidate];[defaults removePersistentDomainForName:suite];
  puts("Production timer diagnostics runtime checks passed");
 }return 0;}

@@ -73,6 +73,7 @@
 - (void) seekToTime:(NSTimeInterval)time;
 - (void) seekToTime:(NSTimeInterval)time tolerance:(BOOL)tolerance;
 - (void) seekToChapter:(ICMetadataChapter*)chapter;
+- (NSTimeInterval)timeForChapterSelectionAtIndex:(NSUInteger)index chapterTimes:(NSArray<NSNumber*>*)chapterTimes episode:(CDEpisode*)episode;
 
 - (void) beginSeekingBackward;
 - (void) beginSeekingForward;

@@ -9,6 +9,7 @@
 #import <QuartzCore/QuartzCore.h>
 
 #import "EpisodesTableViewController.h"
+#import "ICShareItem.h"
 #import "EpisodesTableViewCell.h"
 
 #import "InstacastAppDelegate.h"
@@ -2139,6 +2140,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     }
     CDEpisode* episode = self.episodes[indexPath.row];
     NSMutableArray<UIMenuElement*>* actions = [NSMutableArray array];
+    [actions addObject:[ICShareItem shareActionForEpisode:episode fromViewController:self sourceView:self.tableView sourceRect:[self.tableView rectForRowAtIndexPath:indexPath]]];
 
     // Mark as Favorite / Unmark Favorite
     WEAK_SELF

@@ -8,6 +8,7 @@
 
 
 #import "EpisodeViewController.h"
+#import "ICShareItem.h"
 #import "UIManager.h"
 #import "InstacastPlus-Swift.h"
 #import "TranscriptionSettingsViewController.h"
@@ -1549,31 +1550,8 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
 {
     UIBarButtonItem* barButton = [sender isKindOfClass:[UIBarButtonItem class]] ? (UIBarButtonItem*)sender : nil;
 
-    NSURL* feedSourceURL = self.episode.feed.sourceURL;
-    if (!feedSourceURL) {
-        return;
-    }
-
-    NSMutableArray* queryItems = [NSMutableArray arrayWithObject:[NSURLQueryItem queryItemWithName:@"url" value:[feedSourceURL absoluteString]]];
-    if (self.episode.guid.length > 0) {
-        [queryItems addObject:[NSURLQueryItem queryItemWithName:@"guid" value:self.episode.guid]];
-    }
-    NSURLComponents* shareComponents = [NSURLComponents componentsWithString:@"https://instacast.ch/share/episode"];
-    shareComponents.queryItems = queryItems;
-    NSURL* link = shareComponents.URL;
-    if (!link || self.episode.objectHash.length == 0) {
-        return;
-    }
-
-    NSItemProvider* activityItemProvider = [[ICSharePlayCoordinator sharedCoordinator]
-        activityItemProviderForEpisodeIdentifier:self.episode.objectHash
-                                         feedURL:feedSourceURL
-                                     episodeGUID:self.episode.guid
-                                    episodeTitle:self.episode.title ?: @""
-                                    podcastTitle:self.episode.feed.displayTitle ?: self.episode.feed.title ?: @""
-                                      fallbackURL:link];
-    UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[activityItemProvider] applicationActivities:nil];
-    shareController.allowsProminentActivity = YES;
+    UIActivityViewController* shareController = [ICShareItem activityViewControllerForEpisode:self.episode];
+    if (!shareController) return;
     if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
         if (barButton) {
             shareController.popoverPresentationController.barButtonItem = barButton;

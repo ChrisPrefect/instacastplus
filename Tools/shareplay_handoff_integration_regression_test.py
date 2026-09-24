@@ -68,7 +68,7 @@ for token in [
     "activityItemProviderForEpisodeIdentifier:",
     "allowsProminentActivity = YES",
 ]:
-    require(token in episode_view, f"The existing episode share sheet is missing SharePlay: {token}")
+    require(token in read("Classes/ICShareItem.m"), f"The shared episode share sheet is missing SharePlay: {token}")
 
 for token in [
     "activityDidChangeNotification",

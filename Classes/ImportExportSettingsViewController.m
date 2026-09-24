@@ -1171,6 +1171,13 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
     if ([defaults objectForKey:PlayerAutoSkipStartPeriod]) [xml appendFormat:@"    <autoSkipStart>%ld</autoSkipStart>\n", (long)[defaults integerForKey:PlayerAutoSkipStartPeriod]];
     if ([defaults objectForKey:PlayerAutoSkipEndPeriod]) [xml appendFormat:@"    <autoSkipEnd>%ld</autoSkipEnd>\n", (long)[defaults integerForKey:PlayerAutoSkipEndPeriod]];
     if ([defaults objectForKey:PlayerReplayAfterPause]) [xml appendFormat:@"    <replayAfterPause>%ld</replayAfterPause>\n", (long)[defaults integerForKey:PlayerReplayAfterPause]];
+    [xml appendFormat:@"    <rememberChapterPosition>%@</rememberChapterPosition>\n", [defaults boolForKey:PlayerRememberChapterPosition] ? @"true" : @"false"];
+    NSDictionary* chapterPositions = [defaults dictionaryForKey:PlayerChapterPlaybackPositions];
+    if (chapterPositions) {
+        NSData* json = [NSJSONSerialization dataWithJSONObject:chapterPositions options:0 error:error];
+        if (!json) return nil;
+        [xml appendFormat:@"    <chapterPlaybackPositions>%@</chapterPlaybackPositions>\n", [self xmlEscape:[[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding]]];
+    }
     if ([defaults objectForKey:kDefaultPlayerControls]) [xml appendFormat:@"    <playerControls>%ld</playerControls>\n", (long)[defaults integerForKey:kDefaultPlayerControls]];
     if ([defaults objectForKey:kDefaultDontDeleteUpNextWhenChangingEpisode]) [xml appendFormat:@"    <dontDeleteUpNext>%@</dontDeleteUpNext>\n", [defaults boolForKey:kDefaultDontDeleteUpNextWhenChangingEpisode] ? @"true" : @"false"];
     if ([defaults objectForKey:ContinuousPlayFromFeed]) [xml appendFormat:@"    <continuousPlay>%@</continuousPlay>\n", [defaults boolForKey:ContinuousPlayFromFeed] ? @"true" : @"false"];

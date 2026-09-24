@@ -84,6 +84,9 @@ struct WNowPlaying: Codable, Sendable {
     let timestamp: Date
 
     var hasSleepTimer: Bool {
+        if isPaused {
+            return (sleepTimerRemaining ?? 0) > 0
+        }
         if let stopDate = sleepTimerStopDate {
             return stopDate.timeIntervalSinceNow > 0
         }
@@ -91,8 +94,9 @@ struct WNowPlaying: Codable, Sendable {
     }
 
     var sleepTimerFormatted: String? {
-        guard let stopDate = sleepTimerStopDate else { return nil }
-        let remaining = max(0, Int(stopDate.timeIntervalSinceNow))
+        let interval = isPaused ? sleepTimerRemaining : sleepTimerStopDate?.timeIntervalSinceNow
+        guard let interval else { return nil }
+        let remaining = max(0, Int(ceil(interval)))
         let minutes = remaining / 60
         let seconds = remaining % 60
         if minutes > 0 {

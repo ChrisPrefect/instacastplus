@@ -7,6 +7,7 @@
 //
 
 #import <objc/runtime.h>
+#import <math.h>
 
 #import "InstacastPlus-Swift.h"
 #import "PlayerInfoViewController_v5.h"
@@ -49,7 +50,10 @@ static NSString* kFeedPropertyPreferredTranscriptURL = @"preferredTranscriptURL"
 
 static NSDictionary* ICTranscriptCueMake(NSTimeInterval start, NSTimeInterval end, NSString* text)
 {
-    if (text.length == 0 || start < 0) {
+    // Playback converts seconds to a signed 64-bit millisecond CMTime value.
+    NSTimeInterval maximumSeekTime = (double)INT64_MAX / 1000.0;
+    if (text.length == 0 || !isfinite(start) || !isfinite(end) || start < 0 ||
+        start >= maximumSeekTime || end >= maximumSeekTime) {
         return nil;
     }
     return @{ @"start": @(start), @"end": @(end), @"text": text };
@@ -444,7 +448,7 @@ static NSArray<NSDictionary*>* ICTranscriptParsePlainText(NSString* text)
     }
 
     // Static transcript fallback: no timing metadata available.
-    NSDictionary* cue = ICTranscriptCueMake(0, 3153600000.0, normalized);
+    NSDictionary* cue = @{ @"start": @0, @"end": @3153600000.0, @"text": normalized, @"untimed": @YES };
     return cue ? @[cue] : @[];
 }
 
@@ -3865,11 +3869,16 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 - (BOOL)_transcriptTimingVerified
 {
     PlaybackManager *pman = [PlaybackManager playbackManager];
-    return [pman generatedArtifactTimingIsCurrent] && pman.transcriptAudioVerified && [self.selectedTranscriptDescriptor[@"isGenerated"] boolValue] &&
-        [self.selectedTranscriptDescriptor[@"transcriptSnapshot"] isEqualToString:pman.verifiedTranscriptSnapshot] &&
-        [self _transcriptDescriptorIsCurrent:self.selectedTranscriptDescriptor episodeHash:self.transcriptLoadedEpisodeHash] &&
-        self.transcriptLoadedEpisodeHash.length > 0 &&
-        [self.transcriptLoadedEpisodeHash isEqualToString:pman.playingEpisode.objectHash];
+    if (!self.selectedTranscriptDescriptor || self.transcriptCues.count == 0 ||
+        self.transcriptLoadedEpisodeHash.length == 0 ||
+        ![self.transcriptLoadedEpisodeHash isEqualToString:pman.playingEpisode.objectHash]) return NO;
+
+    // Publisher transcripts carry their own timeline. Only generated transcripts
+    // need the local audio/snapshot proof; plain text has no seekable timeline.
+    if (![self.selectedTranscriptDescriptor[@"isGenerated"] boolValue]) {
+        return ![self.transcriptCues.firstObject[@"untimed"] boolValue];
+    }
+    return [self _transcriptDescriptorIsCurrent:self.selectedTranscriptDescriptor episodeHash:self.transcriptLoadedEpisodeHash];
 }
 
 - (NSString*)_audioIdentityNotice
@@ -3960,12 +3969,16 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                 [pman seekToChapter:sourceChapter];
             }
             else {
-                [pman seekToTime:chapter.timecode tolerance:NO];
+                NSArray<NSNumber*>* chapterTimes = [self.chapters valueForKey:@"timecode"];
+                NSTimeInterval time = [pman timeForChapterSelectionAtIndex:indexPath.row chapterTimes:chapterTimes episode:episodeToPlay];
+                [pman seekToTime:time tolerance:NO];
             }
             [pman play];
         }
         else if (episodeToPlay) {
-            [[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO at:MAX(0.0, chapter.timecode) autostart:YES preservingPlaybackSource:YES];
+            NSArray<NSNumber*>* chapterTimes = [self.chapters valueForKey:@"timecode"];
+            NSTimeInterval time = [pman timeForChapterSelectionAtIndex:indexPath.row chapterTimes:chapterTimes episode:episodeToPlay];
+            [[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO at:MAX(0.0, time) autostart:YES preservingPlaybackSource:YES];
         }
         
         [tableView deselectRowAtIndexPath:indexPath animated:YES];

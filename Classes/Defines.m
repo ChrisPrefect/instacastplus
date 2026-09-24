@@ -60,6 +60,8 @@ NSString* PlayerNearChapterEndForwardSkipWindow = @"PlayerNearChapterEndForwardS
 NSString* PlayerAutoSkipEndPeriod = @"PlayerAutoSkipEndPeriod";
 NSString* PlayerAutoSkipStartPeriod = @"PlayerAutoSkipStartPeriod";
 NSString* PlayerReplayAfterPause = @"ReplayAfterPause";
+NSString* PlayerRememberChapterPosition = @"RememberChapterPosition";
+NSString* PlayerChapterPlaybackPositions = @"ChapterPlaybackPositions";
 NSString* DropBoxRootPath = @"DropBoxRootPath";
 NSString* LinkDropBox = @"LinkDropBox";
 
@@ -201,6 +203,7 @@ NSString* AmazonAffiliateEnabled = @"AmazonAffiliateEnabled";
 
 
 NSString* AudioSessionSleepTimerDidExpireNotification = @"AudioSessionSleepTimerDidExpireNotification";
+NSString* AudioSessionSleepTimerDidChangeNotification = @"AudioSessionSleepTimerDidChangeNotification";
 NSString* ApplicationDidDetectMotionNotification = @"ApplicationDidDetectMotionNotification";
 
 static NSDictionary<NSString*, NSNumber*>* _validatedListScrollPositionsDictionary(NSDictionary* rawPositions)

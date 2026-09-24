@@ -263,24 +263,7 @@
 
 -(void)setTimerUpdateOnPlay
 {
-    NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
-    [AudioSession sharedAudioSession].timerValue = sleepTimer;
-    BOOL isAlwaysTimerActive = [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive];
-    if (isAlwaysTimerActive)
-    {
-        if ([USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer] == PlaybackStopTimeNoValue)
-        {
-            NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
-            if (lastSleepTimer > 0)
-            {
-                [AudioSession sharedAudioSession].timerValue = lastSleepTimer;
-            }
-            else
-            {
-                [AudioSession sharedAudioSession].timerValue = PlaybackStopTime5min;
-            }
-        }
-    }
+    [[AudioSession sharedAudioSession] startSleepTimerIfNeeded];
 }
 
     - (void) presentFromParentViewController:(UIViewController*)parentViewController

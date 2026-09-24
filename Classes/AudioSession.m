@@ -49,6 +49,8 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent
 preservingPlaybackSource:(BOOL)preservingPlaybackSource;
 
 @property (nonatomic, strong) NSTimer* playbackTimer;
+@property (nonatomic) NSTimeInterval sleepTimerDuration;
+@property (nonatomic) NSTimeInterval pausedSleepTimerRemainingTime;
 @property (nonatomic, copy) NSString* sleepTimerDiagnosticReason;
 @property (nonatomic, copy) NSString* lastSleepTimerDiagnosticReason;
 @property (nonatomic, strong) NSDate* lastSleepTimerDiagnosticDate;
@@ -683,46 +685,7 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
             [pman play];
             [self updateNowPlayingInfo];
         }
-        NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
-        [AudioSession sharedAudioSession].timerValue = sleepTimer;
-        BOOL isAlwaysTimerActive = [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive];
-        if (isAlwaysTimerActive)
-        {
-            if ([USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer] == PlaybackStopTimeNoValue)
-            {
-                NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
-                if (lastSleepTimer > 0)
-                {
-                    [AudioSession sharedAudioSession].timerValue = lastSleepTimer;
-                }
-                else
-                {
-                    [AudioSession sharedAudioSession].timerValue = PlaybackStopTime5min;
-                }
-            }
-        }
     } else {
-        BOOL isTouchActive = [USER_DEFAULTS boolForKey:ScreenTouchIntelligentSleep];
-        BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
-        
-        BOOL isAlwaysTimerActive = [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive];
-
-        if (((!isTouchActive) || (!isIntelligentTimerActive)) && ([USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer] != PlaybackStopTimeNoValue))
-        {
-            NSTimeInterval tRem = [AudioSession sharedAudioSession].timerRemainingTime;
-            if (tRem > 0)
-            {
-                [USER_DEFAULTS setInteger:round(tRem) forKey:UncompletedSleepTimeInterval];
-            }
-        }
-        else if (isAlwaysTimerActive)
-        {
-            NSTimeInterval tRem = [AudioSession sharedAudioSession].timerRemainingTime;
-            if (tRem > 0)
-            {
-                [USER_DEFAULTS setInteger:round(tRem) forKey:UncompletedSleepTimeInterval];
-            }
-        }
         [pman pause];
     }
 }
@@ -895,6 +858,7 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
         @"timerValid": @(self.playbackTimer.valid),
         @"stopDate": @(self.stopDate.timeIntervalSince1970),
         @"remainingSeconds": @(self.stopDate ? self.stopDate.timeIntervalSinceNow : 0),
+        @"pausedRemainingSeconds": @(self.pausedSleepTimerRemainingTime),
         @"lastTimerTick": @(self.lastSleepTimerTick.timeIntervalSince1970),
         @"lastResetDate": @(self.lastSleepTimerResetDate.timeIntervalSince1970),
         @"lastResetReason": self.lastSleepTimerResetReason ?: @"",
@@ -976,10 +940,22 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
         return;
     }
 
-    // All playback entry points must rearm Always Active after a timer expiry.
-    // Preserve an existing deadline across buffering, chapter changes and repeated Play.
+    // Preserve a running countdown across buffering, chapter changes and repeated Play.
     if (![PlaybackManager playbackManager].isPodcastPlaying || self.stopDate ||
-        ![USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive] || [self _shouldDisableSleepTimerForCarPlay]) {
+        [self _shouldDisableSleepTimerForCarPlay]) {
+        return;
+    }
+
+    if (self.pausedSleepTimerRemainingTime > 0) {
+        [self _scheduleSleepTimerWithDuration:self.pausedSleepTimerRemainingTime];
+        [self _logSleepTimerEvent:@"playback-resume" metadata:@{}];
+        [self willChangeValueForKey:@"timerRemainingTime"];
+        [self didChangeValueForKey:@"timerRemainingTime"];
+        [[NSNotificationCenter defaultCenter] postNotificationName:AudioSessionSleepTimerDidChangeNotification object:self];
+        return;
+    }
+
+    if (![USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive]) {
         return;
     }
 
@@ -991,38 +967,79 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
     [self setTimerValue:timer diagnosticReason:@"playback-start"];
 }
 
+- (void)resetSleepTimerForActivity:(NSString*)reason
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self resetSleepTimerForActivity:reason];
+        });
+        return;
+    }
+
+    // Activity extends the current selection; it must not enable a cancelled timer.
+    if (!self.stopDate || ![PlaybackManager playbackManager].isPodcastPlaying ||
+        [self _shouldDisableSleepTimerForCarPlay]) {
+        return;
+    }
+    [self.playbackTimer invalidate];
+    self.playbackTimer = nil;
+    [self _scheduleSleepTimerWithDuration:self.sleepTimerDuration];
+    [self _logSleepTimerEvent:reason metadata:@{}];
+    [self willChangeValueForKey:@"timerRemainingTime"];
+    [self didChangeValueForKey:@"timerRemainingTime"];
+}
+
 - (NSTimeInterval) timerRemainingTime
 {
-    if (self.stopDate) {
-        if ([PlaybackManager playbackManager].isPodcastPlaying)
-        {
-            NSTimeInterval remaining = [self.stopDate timeIntervalSinceDate:[NSDate date]];
-            return remaining;
-        }
-        else
-        {
-            if ([USER_DEFAULTS objectForKey:UncompletedSleepTimeInterval] != nil)
-            {
-                NSTimeInterval sleepTimer = [USER_DEFAULTS integerForKey:UncompletedSleepTimeInterval];
-                return (sleepTimer) - 1;
+    return self.stopDate ? self.stopDate.timeIntervalSinceNow : self.pausedSleepTimerRemainingTime;
+}
+
+- (void)pauseSleepTimer
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            BOOL hadRunningTimer = (self.stopDate != nil);
+            [self pauseSleepTimer];
+            // Reconcile an overtaking Play only if this Pause stopped a timer.
+            // A newer cancellation has already removed its deadline.
+            if (hadRunningTimer) {
+                [self startSleepTimerIfNeeded];
             }
-            else
-            {
-                NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
-                NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
-                if (sleepTimer > 0)
-                {
-                    return (sleepTimer*60) - 1;
-                }
-                else if (lastSleepTimer > 0)
-                {
-                    return (lastSleepTimer*60) - 1;
-                }
-            }
-        }
+        });
+        return;
     }
-    
-    return 0;
+
+    if (!self.stopDate) {
+        return;
+    }
+
+    NSTimeInterval remaining = MAX(0, self.stopDate.timeIntervalSinceNow);
+    if ([USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive] &&
+        [USER_DEFAULTS boolForKey:ScreenTouchIntelligentSleep]) {
+        remaining = self.sleepTimerDuration;
+    }
+    self.pausedSleepTimerRemainingTime = remaining;
+    [self.playbackTimer invalidate];
+    self.playbackTimer = nil;
+    self.stopDate = nil;
+    [self _logSleepTimerEvent:@"playback-pause" metadata:@{}];
+    [self willChangeValueForKey:@"timerRemainingTime"];
+    [self didChangeValueForKey:@"timerRemainingTime"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:AudioSessionSleepTimerDidChangeNotification object:self];
+}
+
+- (void)_scheduleSleepTimerWithDuration:(NSTimeInterval)seconds
+{
+    if ([PlaybackManager playbackManager].paused) {
+        self.pausedSleepTimerRemainingTime = seconds;
+        self.stopDate = nil;
+        return;
+    }
+
+    self.pausedSleepTimerRemainingTime = 0;
+    self.stopDate = [NSDate dateWithTimeIntervalSinceNow:seconds];
+    self.playbackTimer = [NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(stopPlaybackTimer:) userInfo:nil repeats:YES];
+    [[NSRunLoop currentRunLoop] addTimer:self.playbackTimer forMode:NSRunLoopCommonModes];
 }
 
 - (void) setTimerValue:(PlaybackStopTimeValue)timerValue
@@ -1046,30 +1063,13 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
     
     [self.playbackTimer invalidate];
     self.playbackTimer = nil;
+    self.sleepTimerDuration = MAX(0, timerValue * 60);
+    self.pausedSleepTimerRemainingTime = 0;
+    [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
     
     if (timerValue > 0)
     {
-        //Devd to do
-        if ([USER_DEFAULTS objectForKey:UncompletedSleepTimeInterval] != nil)
-        {
-            BOOL isTouchActive = [USER_DEFAULTS boolForKey:ScreenTouchIntelligentSleep];
-            BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
-            if ((isIntelligentTimerActive) && (isTouchActive))
-            {
-                self.stopDate = [NSDate dateWithTimeIntervalSinceNow:timerValue*60];
-            }
-            else
-            {
-                NSTimeInterval sleepTimer = [USER_DEFAULTS integerForKey:UncompletedSleepTimeInterval];
-                self.stopDate = [NSDate dateWithTimeIntervalSinceNow:sleepTimer];
-            }
-        }
-        else
-        {
-            self.stopDate = [NSDate dateWithTimeIntervalSinceNow:timerValue*60];
-        }
-        self.playbackTimer = [NSTimer scheduledTimerWithTimeInterval:1  target:self selector:@selector(stopPlaybackTimer:) userInfo:nil repeats:YES];
-        [[NSRunLoop currentRunLoop] addTimer:self.playbackTimer forMode:NSRunLoopCommonModes];
+        [self _scheduleSleepTimerWithDuration:self.sleepTimerDuration];
     }
     else
     {
@@ -1080,6 +1080,7 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
                     metadata:@{@"requestedMinutes": @(requestedValue), @"previousStopDate": @(previousStopDate)}];
     [self willChangeValueForKey:@"timerRemainingTime"];
     [self didChangeValueForKey:@"timerRemainingTime"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:AudioSessionSleepTimerDidChangeNotification object:self];
 }
 
 - (void)setTimerWithDuration:(NSTimeInterval)seconds
@@ -1091,22 +1092,29 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
         return;
     }
 
+    NSTimeInterval requestedSeconds = seconds;
+    if ([self _shouldDisableSleepTimerForCarPlay]) {
+        seconds = 0;
+    }
+
     [self.playbackTimer invalidate];
     self.playbackTimer = nil;
+    self.sleepTimerDuration = MAX(0, seconds);
+    self.pausedSleepTimerRemainingTime = 0;
+    [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
 
     if (seconds > 0) {
         _timerValue = 1; // mark as active (non-zero)
-        self.stopDate = [NSDate dateWithTimeIntervalSinceNow:seconds];
-        self.playbackTimer = [NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(stopPlaybackTimer:) userInfo:nil repeats:YES];
-        [[NSRunLoop currentRunLoop] addTimer:self.playbackTimer forMode:NSRunLoopCommonModes];
+        [self _scheduleSleepTimerWithDuration:seconds];
     } else {
         _timerValue = PlaybackStopTimeNoValue;
         self.stopDate = nil;
     }
 
-    [self _logSleepTimerEvent:@"timer-duration" metadata:@{@"requestedSeconds": @(seconds)}];
+    [self _logSleepTimerEvent:@"timer-duration" metadata:@{@"requestedSeconds": @(requestedSeconds)}];
     [self willChangeValueForKey:@"timerRemainingTime"];
     [self didChangeValueForKey:@"timerRemainingTime"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:AudioSessionSleepTimerDidChangeNotification object:self];
 }
 
 - (void)stopPlaybackTimer:(NSTimer*)timer
@@ -1151,7 +1159,13 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
             [USER_DEFAULTS setInteger:fellAsleepCount + 1 forKey:@"SleepTimerFellAsleepCount"];
             self.playerWasPlayingBeforeWentToBackground = NO;
             [PlaybackManager playbackManager].hasBeenPlayingWhenInterrupted = NO;
+            [self.playbackTimer invalidate];
+            self.playbackTimer = nil;
             self.stopDate = nil;
+            self.pausedSleepTimerRemainingTime = 0;
+            [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
+            [self willChangeValueForKey:@"timerRemainingTime"];
+            [self didChangeValueForKey:@"timerRemainingTime"];
             [self _logSleepTimerEvent:@"pause-completed" metadata:@{}];
             [[NSNotificationCenter defaultCenter] postNotificationName:AudioSessionSleepTimerDidExpireNotification object:self];
         }

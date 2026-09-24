@@ -66,7 +66,7 @@ enum ICIntentBridge {
     }
 
     static func pause() {
-        if !pm.isPaused { pm.pause() }
+        pm.pause()
     }
 
     /// Toggle play/pause; if nothing is loaded, continue the most recently played episode.
@@ -117,9 +117,10 @@ enum ICIntentBridge {
 
     // MARK: - Sleep timer
 
-    static func setSleepTimer(minutes: Int) {
+    static func setSleepTimer(minutes: Int) -> Bool {
         let seconds = max(1, minutes) * 60
         AudioSession.shared()?.setTimerWithDuration(TimeInterval(seconds))
+        return sleepTimerActive
     }
 
     static func cancelSleepTimer() {

@@ -874,53 +874,13 @@ static UIImage* ICPlayerTransportImage(NSString* name)
 
 - (void) togglePlay:(id)sender
 {
-	PlaybackManager* pman = [PlaybackManager playbackManager];
+    PlaybackManager* pman = [PlaybackManager playbackManager];
     PlayHapticFeedback(ICHapticFeedbackMedium);
-    //devd to do-full screen
-	if (pman.paused) {
-		[pman play];
-        NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
-        [AudioSession sharedAudioSession].timerValue = sleepTimer;
-        BOOL isTouchActive = [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive];
-        if (isTouchActive)
-        {
-            if ([USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer] == PlaybackStopTimeNoValue)
-            {
-                NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
-                if (lastSleepTimer > 0)
-                {
-                    [AudioSession sharedAudioSession].timerValue = lastSleepTimer;
-                }
-                else
-                {
-                    [AudioSession sharedAudioSession].timerValue = PlaybackStopTime5min;
-                }
-            }
-        }
-	} else {
-        BOOL isTouchActive = [USER_DEFAULTS boolForKey:ScreenTouchIntelligentSleep];
-        BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
-        
-        BOOL isAlwaysTimerActive = [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive];
-        
-        if (((!isTouchActive) || (!isIntelligentTimerActive)) && ([USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer] != PlaybackStopTimeNoValue))
-        {
-            NSTimeInterval tRem = [AudioSession sharedAudioSession].timerRemainingTime;
-            if (tRem > 0)
-            {
-                [USER_DEFAULTS setInteger:round(tRem) forKey:UncompletedSleepTimeInterval];
-            }
-        }
-        else if (isAlwaysTimerActive)
-        {
-            NSTimeInterval tRem = [AudioSession sharedAudioSession].timerRemainingTime;
-            if (tRem > 0)
-            {
-                [USER_DEFAULTS setInteger:round(tRem) forKey:UncompletedSleepTimeInterval];
-            }
-        }
+    if (pman.paused) {
+        [pman play];
+    } else {
         [pman pause];
-	}
+    }
 }
 
 - (void) beganChangingProgress:(id)sender

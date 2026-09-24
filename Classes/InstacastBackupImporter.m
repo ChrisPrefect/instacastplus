@@ -3107,6 +3107,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"autoSkipStart":           PlayerAutoSkipStartPeriod,
         @"autoSkipEnd":             PlayerAutoSkipEndPeriod,
         @"replayAfterPause":        PlayerReplayAfterPause,
+        @"rememberChapterPosition": PlayerRememberChapterPosition,
         @"autoCacheAudio":          AutoCacheNewAudioEpisodes,
         @"autoCacheVideo":          AutoCacheNewVideoEpisodes,
         @"autoDeletePlayed":        AutoDeleteAfterFinishedPlaying,
@@ -3187,6 +3188,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
     };
 
     NSSet *boolKeys = [NSSet setWithArray:@[
+        @"rememberChapterPosition",
         @"autoCacheAudio", @"autoCacheVideo", @"autoDeletePlayed", @"disableAutoLock",
         @"sleepTimerAlways", @"disableSleepTimerCarPlay", @"autoDeleteMarkedPlayed", @"autoDeleteNews",
         @"podcastRefreshOnAppStart",
@@ -3251,6 +3253,16 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         [[ICiCloudSyncManager sharedManager] restoreSyncOptionsWithEpisodes:restoredEpisodesSyncEnabled
                                                               subscriptions:restoredSubscriptionsSyncEnabled
                                                                      settings:restoredSettingsSyncEnabled];
+    }
+
+    NSString* chapterPositionsJSON = backup.settings.values[@"chapterPlaybackPositions"];
+    if (chapterPositionsJSON.length > 0) {
+        id positions = [NSJSONSerialization JSONObjectWithData:[chapterPositionsJSON dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+        if ([positions isKindOfClass:[NSDictionary class]] &&
+            [NSPropertyListSerialization propertyList:positions isValidForFormat:NSPropertyListBinaryFormat_v1_0]) {
+            [defaults setObject:positions forKey:PlayerChapterPlaybackPositions];
+            count++;
+        }
     }
 
     NSArray *credentialKeys = @[@"openAIAPIKey", @"anthropicAPIKey", @"kimiAPIKey", @"openAIOAuthAccessToken", @"openAIOAuthRefreshToken", @"openAIOAuthIDToken", @"openAIOAuthAccountID", @"openAIOAuthAccountEmail", @"openAIOAuthFedRAMP"];

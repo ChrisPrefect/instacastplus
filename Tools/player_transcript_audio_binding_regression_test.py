@@ -22,6 +22,7 @@ def method(signature):
 methods = method("- (BOOL)_transcriptDescriptorIsCurrent:")
 if "- (BOOL)_generatedTranscriptMayLoadForEpisodeHash:" in source:
     methods += "\n" + method("- (BOOL)_generatedTranscriptMayLoadForEpisodeHash:")
+methods += "\n" + method("- (BOOL)_transcriptTimingVerified")
 program = r'''
 #import <Foundation/Foundation.h>
 @interface Episode:NSObject @property NSString *objectHash; @end
@@ -48,6 +49,9 @@ program = r'''
 - (NSString*)transcriptSnapshotIdentifierFor:(NSString*)hash { return self.snapshot; }
 @end
 @interface Player:NSObject
+@property NSDictionary *selectedTranscriptDescriptor;
+@property NSString *transcriptLoadedEpisodeHash;
+@property NSArray *transcriptCues;
 - (BOOL)_generatedTranscriptMayLoadForEpisodeHash:(NSString*)hash;
 @end
 @implementation Player
@@ -75,6 +79,21 @@ int main() { @autoreleasepool {
  CHECK("new transcript cannot inherit old proof",NO);
  p.transcriptAudioVerified=NO;d=@{@"isGenerated":@NO};
  CHECK("publisher transcript uses its separate source contract",YES);
+ player.selectedTranscriptDescriptor=d;player.transcriptLoadedEpisodeHash=@"episode";
+ player.transcriptCues=@[@{@"start":@140.988,@"end":@148.514,@"text":@"Publisher cue"}];
+ #define TIMING(name, expected) do { BOOL actual=[player _transcriptTimingVerified]; printf("%s: %s\n",name,actual==(expected)?"PASS":"FAIL"); failures += actual != (expected); } while(0)
+ TIMING("publisher WebVTT must allow tap and automatic follow without generated audio proof",YES);
+ player.transcriptLoadedEpisodeHash=@"old-episode";
+ TIMING("publisher transcript from previous episode must not seek",NO);
+ player.transcriptLoadedEpisodeHash=@"episode";player.selectedTranscriptDescriptor=nil;
+ TIMING("missing transcript source must not seek",NO);
+ player.selectedTranscriptDescriptor=d;player.transcriptCues=@[@{@"start":@0,@"end":@3153600000.0,@"text":@"Untimed text",@"untimed":@YES}];
+ TIMING("untimed publisher text must not claim synchronized playback",NO);
+ player.transcriptCues=@[@{@"start":@140.988,@"end":@148.514,@"text":@"Generated cue"}];
+ player.selectedTranscriptDescriptor=@{@"isGenerated":@YES,@"transcriptSnapshot":@"srt-B"};
+ TIMING("generated transcript still requires matching audio proof",NO);
+ p.transcriptAudioVerified=YES;p.verifiedTranscriptSnapshot=@"srt-B";
+ TIMING("generated transcript with matching audio proof remains interactive",YES);
  return failures ? 1 : 0;
 } }
 '''.replace("METHODS", methods)
@@ -92,3 +111,6 @@ assert "_transcriptDescriptorIsCurrent:" in method("- (void)_applyLoadedTranscri
 assert method("- (void)_refreshTranscriptState").count("_transcriptDescriptorIsCurrent:") == 2
 observer = source.split('forKeyPath:@"transcriptAudioVerified" task:', 1)[1].split("}];", 1)[0]
 assert "_refreshTranscriptState" in observer, "Audio proof changes must load or clear the displayed transcript"
+
+for signature in ["- (void)_transcriptTextViewTapped:", "- (void)_updateTranscriptSyncTimerState", "- (void)_updateTranscriptCueForPlaybackTime:"]:
+    assert "_transcriptTimingVerified" in method(signature), signature

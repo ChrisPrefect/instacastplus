@@ -1948,9 +1948,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (MPRemoteCommandHandlerStatus) _pauseEvent:(MPRemoteCommandEvent*)event
 {
-    if (!self.paused) {
-        [self pause];
-    }
+    [self pause];
     return MPRemoteCommandHandlerStatusSuccess;
 }
 
@@ -3346,6 +3344,7 @@ didReceiveResponse:(NSURLResponse *)response
         [self _saveCurrentPlaybackPosition];
         SEND_UPDATE
     }
+    [[AudioSession sharedAudioSession] pauseSleepTimer];
 }
 
 - (void) playPause
@@ -3459,9 +3458,58 @@ didReceiveResponse:(NSURLResponse *)response
         [self _findAndSetCurrentChapter:-1];
     } afterDelay:5.0];
     
-    NSTimeInterval time = CMTimeGetSeconds(chapter.start);
+    NSMutableArray<NSNumber*>* chapterTimes = [NSMutableArray arrayWithCapacity:self.chapters.count];
+    for (ICMetadataChapter* item in self.chapters) {
+        [chapterTimes addObject:@(CMTimeGetSeconds(item.start))];
+    }
+    NSTimeInterval time = [self timeForChapterSelectionAtIndex:[self.chapters indexOfObject:chapter]
+                                                chapterTimes:chapterTimes episode:self.playingEpisode];
     [self _suppressAutoSkipMarkerAtTime:time];
     [self seekToTime:time tolerance:NO];
+}
+
+- (NSTimeInterval)timeForChapterSelectionAtIndex:(NSUInteger)index chapterTimes:(NSArray<NSNumber*>*)chapterTimes episode:(CDEpisode*)episode
+{
+    NSTimeInterval start = chapterTimes[index].doubleValue;
+    if (![USER_DEFAULTS boolForKey:PlayerRememberChapterPosition] || episode.objectHash.length == 0) return start;
+
+    NSMutableDictionary* allPositions = [[USER_DEFAULTS dictionaryForKey:PlayerChapterPlaybackPositions] mutableCopy] ?: [NSMutableDictionary dictionary];
+    NSDictionary* saved = allPositions[episode.objectHash];
+    NSMutableDictionary* positions = [saved isKindOfClass:[NSDictionary class]] &&
+        [saved[@"positions"] isKindOfClass:[NSDictionary class]] && [saved[@"chapterTimes"] isEqual:chapterTimes]
+        ? [saved[@"positions"] mutableCopy] : [NSMutableDictionary dictionary];
+    NSInteger currentIndex = NSNotFound;
+    NSTimeInterval currentTime = 0;
+    NSTimeInterval duration = self.duration;
+    if ([self.playingEpisode.objectHash isEqualToString:episode.objectHash] && duration > 0) {
+        // position includes an in-flight seek, unlike AVPlayer's currentTime.
+        double position = self.position;
+        currentTime = position * duration;
+        for (NSUInteger i = 0; i < chapterTimes.count; i++) {
+            // Compare in the same coordinates so a pending seek stays at its chapter boundary.
+            if (position >= chapterTimes[i].doubleValue / duration) currentIndex = i;
+            else break;
+        }
+        if (currentIndex != NSNotFound) currentTime = MAX(currentTime, chapterTimes[currentIndex].doubleValue);
+    }
+
+    NSString* key = [@(index) stringValue];
+    NSTimeInterval target = start;
+    if (currentIndex == (NSInteger)index) {
+        [positions removeObjectForKey:key];
+    } else {
+        if (currentIndex != NSNotFound) {
+            positions[[@(currentIndex) stringValue]] = @(currentTime);
+        }
+        NSNumber* remembered = positions[key];
+        NSTimeInterval end = index + 1 < chapterTimes.count ? chapterTimes[index + 1].doubleValue : episode.duration;
+        if ([remembered isKindOfClass:[NSNumber class]] && remembered.doubleValue >= start && remembered.doubleValue < end) {
+            target = remembered.doubleValue;
+        }
+    }
+    allPositions[episode.objectHash] = @{@"chapterTimes": chapterTimes, @"positions": positions};
+    [USER_DEFAULTS setObject:allPositions forKey:PlayerChapterPlaybackPositions];
+    return target;
 }
 
 - (NSTimeInterval) _scrubbTime

@@ -57,6 +57,8 @@ extern NSString* PlayerNearChapterEndForwardSkipWindow;
 extern NSString* PlayerAutoSkipEndPeriod;
 extern NSString* PlayerAutoSkipStartPeriod;
 extern NSString* PlayerReplayAfterPause;
+extern NSString* PlayerRememberChapterPosition;
+extern NSString* PlayerChapterPlaybackPositions;
 extern NSString* DropBoxRootPath;
 extern NSString* LinkDropBox;
 
@@ -262,4 +264,5 @@ extern NSString* AmazonAffiliateEnabled;
 
 
 extern NSString* AudioSessionSleepTimerDidExpireNotification;
+extern NSString* AudioSessionSleepTimerDidChangeNotification;
 extern NSString* ApplicationDidDetectMotionNotification;

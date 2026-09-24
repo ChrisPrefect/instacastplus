@@ -53,6 +53,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 @property (nonatomic, copy) dispatch_block_t pendingControlActionExportBlock;
 @property (nonatomic, strong) NSTimer *listsDebounceTimer;
 @property (nonatomic, strong) NSTimer *reloadTimelineTimer;
+@property (nonatomic, strong) NSNumber *lastObservedPlaybackPaused;
 
 // Listening time tracking
 @property (nonatomic, strong) NSDate *lastListeningTimestamp;
@@ -199,6 +200,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
     // Sleep timer
     [nc addObserver:self selector:@selector(_sleepTimerExpired:) name:AudioSessionSleepTimerDidExpireNotification object:nil];
+    [nc addObserver:self selector:@selector(_sleepTimerChanged:) name:AudioSessionSleepTimerDidChangeNotification object:nil];
 
     // Core Data changes (for smart playlist updates)
     [nc addObserver:self selector:@selector(_coreDataDidChange:) name:NSManagedObjectContextObjectsDidChangeNotification object:DMANAGER.objectContext];
@@ -292,7 +294,14 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_playbackDidUpdate:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self _scheduleDebouncedNowPlayingExport];
+        NSNumber *paused = @([PlaybackManager playbackManager].isPaused);
+        if (![self.lastObservedPlaybackPaused isEqualToNumber:paused]) {
+            self.lastObservedPlaybackPaused = paused;
+            [self exportNowPlayingSnapshot];
+            [WidgetKitHelper reloadNowPlayingTimelineForStateChange];
+        } else {
+            [self _scheduleDebouncedNowPlayingExport];
+        }
         // Track listening time (every 10 seconds)
         [self _trackListeningTime];
         [self _refreshStatsDuringPlaybackIfNeeded];
@@ -384,9 +393,13 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 }
 
 - (void)_sleepTimerExpired:(NSNotification *)note {
+    [self _sleepTimerChanged:note];
+}
+
+- (void)_sleepTimerChanged:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self exportNowPlayingSnapshot];
-        [WidgetKitHelper reloadNowPlayingTimeline];
+        [WidgetKitHelper reloadNowPlayingTimelineForStateChange];
     });
 }
 
@@ -836,9 +849,11 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
         // Sleep timer
         NSTimeInterval remaining = as.timerRemainingTime;
-        if (remaining > 0 && as.stopDate) {
+        if (remaining > 0) {
             snapshot[@"sleepTimerRemaining"] = @(remaining);
-            snapshot[@"sleepTimerStopDate"] = [self _iso8601String:as.stopDate];
+            if (as.stopDate) {
+                snapshot[@"sleepTimerStopDate"] = [self _iso8601String:as.stopDate];
+            }
         }
 
         // Next/prev episode availability
