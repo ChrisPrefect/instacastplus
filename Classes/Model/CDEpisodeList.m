@@ -234,7 +234,8 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     }
 
     if (!self.unfinished) {
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"position == 0"]];
+        // Played episodes can retain a position; only unconsumed progress is unfinished.
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"consumed == YES OR position == 0"]];
     }
 
     if (!self.played) {
@@ -608,7 +609,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         }
         
         if (!contextSelf.unfinished) {
-            [subPredicates addObject:[NSPredicate predicateWithFormat:@"position == 0"]];
+            [subPredicates addObject:[NSPredicate predicateWithFormat:@"consumed == YES OR position == 0"]];
         }
         
         if (!contextSelf.played) {
