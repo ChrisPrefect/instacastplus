@@ -1,0 +1,3 @@
+Command: xcodebuild -project Instacast.xcodeproj -scheme Instacast -configuration Debug -destination platform=iOS\ Simulator,id=675CC86D-C1EA-41D7-A244-0318E0EE1121 -derivedDataPath build/SimDD build
+** BUILD SUCCEEDED **
+Full log: /tmp/server-status-build-final.log

@@ -390,7 +390,7 @@ private struct ICServerAdsArtifact: Decodable, Sendable {
 }
 
 private enum ICServerAdmissionState: String, Codable, Sendable {
-    case pending, unconfirmed, accepted, rejected
+    case pending, prepared, unconfirmed, accepted, rejected
 }
 
 private struct ICPersistedServerTranscriptionQueue: Codable, Sendable {
@@ -416,6 +416,10 @@ private struct ICPersistedServerTranscriptionQueue: Codable, Sendable {
         var requiresExplicitRetry: Bool? = nil
         var retryImportOnly: Bool? = nil
         var sourceAudioSHA256: String? = nil
+        var waitingForNetwork: Bool? = nil
+        var serverPhase: String? = nil
+        var lastResponseAt: Date? = nil
+        var connectionIssue: Bool? = nil
     }
 
     let items: [Item]
@@ -452,7 +456,27 @@ private struct ICServerCancellation: Codable, Sendable {
     // This is a shared application token, intentionally not a per-user credential.
     // Do not log it or include it in diagnostics.
     private static let bearerToken = "ictr_Bp0J1cdWUxrLxGcCI8M0INcCkntohS_yAPysQJUp5mQ"
+    #if DEBUG && targetEnvironment(simulator)
+    // Dedicated simulator integration tests use a loopback peer; no production token leaves the app.
+    static var debugServerURL: URL? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "--server-flow-test-url") else { return nil }
+        precondition(index + 1 < arguments.count)
+        let url = URL(string: arguments[index + 1])!
+        precondition(url.scheme == "http" && url.host == "127.0.0.1" && url.port != nil &&
+                     url.path == "/api/v1" && url.user == nil && url.password == nil)
+        return url
+    }
+    private let baseURL = ServerTranscriptionManager.debugServerURL ?? URL(string: "https://transcript.instacast.ch/api/v1/")!
+    #else
     private let baseURL = URL(string: "https://transcript.instacast.ch/api/v1/")!
+    #endif
+    private var authorizationToken: String {
+        #if DEBUG && targetEnvironment(simulator)
+        if Self.debugServerURL != nil { return "simulator-fixture" }
+        #endif
+        return Self.bearerToken
+    }
     private var endpointByItem: [ObjectIdentifier: URL] = [:]
     private var metadataByItem: [ObjectIdentifier: (podcastURL: URL?, duration: Double)] = [:]
     private var serverIDByItem: [ObjectIdentifier: Int] = [:]
@@ -489,7 +513,10 @@ private struct ICServerCancellation: Codable, Sendable {
                                                name: NSNotification.Name("UIApplicationProtectedDataDidBecomeAvailable"), object: nil)
         networkMonitor.pathUpdateHandler = { [weak self] path in
             let unavailable = path.status == .unsatisfied
-            Task { @MainActor [weak self] in self?.networkUnavailable = unavailable }
+            Task { @MainActor [weak self] in
+                self?.networkUnavailable = unavailable
+                if !unavailable { self?.resumeIfNeeded() }
+            }
         }
         networkMonitor.start(queue: DispatchQueue(label: "com.instacast.server-transcription.network", qos: .utility))
     }
@@ -502,13 +529,13 @@ private struct ICServerCancellation: Codable, Sendable {
 
     var hasPendingAutomaticItems: Bool {
         hasRetryableCancellations || items.contains {
-            $0.automaticallyScheduled && !$0.requiresExplicitRetryAfterCrash && $0.status != .completed && $0.status != .failed && $0.status != .canceled
+            !$0.requiresExplicitRetryAfterCrash && $0.status != .completed && $0.status != .failed && $0.status != .canceled
         }
     }
 
     var earliestAutomaticWorkDate: Date? {
         let pending = items.filter {
-            $0.automaticallyScheduled && !$0.requiresExplicitRetryAfterCrash && $0.status != .completed && $0.status != .failed && $0.status != .canceled
+            !$0.requiresExplicitRetryAfterCrash && $0.status != .completed && $0.status != .failed && $0.status != .canceled
         }
         let retryableCancellations = cancellations.filter(\.retryable)
         guard !pending.isEmpty || !retryableCancellations.isEmpty else { return nil }
@@ -537,6 +564,9 @@ private struct ICServerCancellation: Codable, Sendable {
             guard existing.status == .completed || existing.status == .failed || existing.status == .canceled else { return false }
         }
         guard TranscriptionQueue.shared.admitQueueItem(episodeHash: episodeHash, automatic: false) else { return false }
+        let restartsServerEpisode = existing.map {
+            serverIDByItem[ObjectIdentifier($0)] != nil && ($0.serverPhase == "failed" || $0.status == .canceled)
+        } ?? false
         if let existing {
             queueCancellation(for: existing)
             items.removeAll { $0 === existing }
@@ -550,14 +580,14 @@ private struct ICServerCancellation: Codable, Sendable {
                             podcastURL: episode.feed?.sourceURL,
                             duration: Double(max(0, episode.duration)),
                             automaticallyScheduled: false)
-        explicitRestartByItem[ObjectIdentifier(item)] = existing?.status == .failed || existing?.status == .canceled
+        explicitRestartByItem[ObjectIdentifier(item)] = restartsServerEpisode
         items.append(item)
         admissionCompletions[ObjectIdentifier(item)] = completion
         persistQueue()
         TranscriptionLogger.shared.resetLog(episodeHash: episodeHash)
         TranscriptionLogger.shared.append(episodeHash: episodeHash,
                                           phase: "server",
-                                          message: NSLocalizedString("Sending transcription request.", comment: ""),
+                                          message: NSLocalizedString("Preparing server transcription on this device.", comment: ""),
                                           detailText: nil)
         postQueueChange()
         processNext()
@@ -589,7 +619,7 @@ private struct ICServerCancellation: Codable, Sendable {
             admittedAny = true
             TranscriptionLogger.shared.append(episodeHash: episodeHash,
                                               phase: "server",
-                                              message: NSLocalizedString("Sending automatic transcription request.", comment: ""),
+                                              message: NSLocalizedString("Preparing automatic server transcription on this device.", comment: ""),
                                               detailText: nil)
         }
         guard admittedAny else { return false }
@@ -619,8 +649,10 @@ private struct ICServerCancellation: Codable, Sendable {
         guard let item = items.first(where: { $0.episodeHash == episodeHash && $0.usesServerTranscription }) else { return }
         if item.requiresExplicitRetryAfterCrash {
             item.requiresExplicitRetryAfterCrash = false
+            item.status = .queued
             item.error = nil
             item.statusDetail = nil
+            item.serverConnectionIssue = false
             item.nextRetryAt = nil
             persistQueue()
             postQueueChange()
@@ -635,11 +667,16 @@ private struct ICServerCancellation: Codable, Sendable {
             if currentItem === item { currentTask?.cancel() }
             sourceAudioSHA256ByItem.removeValue(forKey: ObjectIdentifier(item))
             clientRequestIDByItem[ObjectIdentifier(item)] = UUID().uuidString.lowercased()
-            explicitRestartByItem[ObjectIdentifier(item)] = true
+            explicitRestartByItem[ObjectIdentifier(item)] = serverIDByItem[ObjectIdentifier(item)] != nil &&
+                (item.serverPhase == "failed" || item.status == .canceled)
             serverIDByItem.removeValue(forKey: ObjectIdentifier(item))
             admissionByItem[ObjectIdentifier(item)] = .pending
         }
         item.status = .queued
+        item.serverWaitingForNetwork = false
+        item.serverConnectionIssue = false
+        item.serverPhase = retryImportOnlyByItem[ObjectIdentifier(item)] == true ? "importing" : nil
+        item.serverLastResponseAt = nil
         item.error = nil
         item.statusDetail = nil
         item.progress = 0
@@ -693,6 +730,12 @@ private struct ICServerCancellation: Codable, Sendable {
         if needsIdentityPersistence {
             needsIdentityPersistence = false
             persistQueue()
+        }
+        if !networkUnavailable {
+            for item in items where item.serverWaitingForNetwork && !item.requiresExplicitRetryAfterCrash {
+                item.serverWaitingForNetwork = false
+                item.nextRetryAt = nil
+            }
         }
         processPendingCancellation()
         guard ICAITranscriptionFeaturesAvailable(),
@@ -758,7 +801,7 @@ private struct ICServerCancellation: Codable, Sendable {
         endpointByItem[ObjectIdentifier(item)] = episodeURL
         metadataByItem[ObjectIdentifier(item)] = (podcastURL, duration)
         admissionByItem[ObjectIdentifier(item)] = .pending
-        item.statusDetail = NSLocalizedString("Sending transcription request.", comment: "")
+        item.statusDetail = NSLocalizedString("Preparing server transcription on this device.", comment: "")
         return item
     }
 
@@ -773,6 +816,7 @@ private struct ICServerCancellation: Codable, Sendable {
     private func queueCancellation(for item: ICTranscriptionQueueItem) {
         guard item.status != .canceled,
               admissionByItem[ObjectIdentifier(item)] != .pending,
+              admissionByItem[ObjectIdentifier(item)] != .prepared,
               admissionByItem[ObjectIdentifier(item)] != .rejected else { return }
         let requestID = clientRequestIDByItem[ObjectIdentifier(item)]
         let episodeID = serverIDByItem[ObjectIdentifier(item)]
@@ -869,7 +913,7 @@ private struct ICServerCancellation: Codable, Sendable {
               UserDefaults.standard.bool(forKey: kServerTranscriptionEnabled),
               currentTask == nil,
               let item = items.first(where: { candidate in
-                  !candidate.requiresExplicitRetryAfterCrash && (candidate.status == .queued || candidate.status == .transcribing || candidate.status == .generatingChapters) &&
+                  !candidate.requiresExplicitRetryAfterCrash && !(networkUnavailable && candidate.serverWaitingForNetwork) && (candidate.status == .queued || candidate.status == .transcribing || candidate.status == .generatingChapters) &&
                       !cancellations.contains(where: { $0.episodeHash == candidate.episodeHash }) &&
                       (candidate.nextRetryAt == nil || candidate.nextRetryAt! <= Date())
               }) else {
@@ -885,13 +929,7 @@ private struct ICServerCancellation: Codable, Sendable {
         }
 
         item.nextRetryAt = nil
-        if admissionByItem[ObjectIdentifier(item)] == .pending && networkUnavailable {
-            rejectAdmission(item, message: NSLocalizedString("Not added: no internet connection. Try again when you are online.", comment: ""))
-            persistQueue()
-            postQueueChange()
-            processNext()
-            return
-        }
+        item.serverWaitingForNetwork = false
         currentItem = item
         postQueueChange()
         let requestID = clientRequestIDByItem[ObjectIdentifier(item)]
@@ -907,8 +945,13 @@ private struct ICServerCancellation: Codable, Sendable {
             }
             do {
                 let envelope: ICServerEpisodeEnvelope
-                if let requestID, self.admissionByItem[ObjectIdentifier(item)] != .pending {
+                if let requestID, self.admissionByItem[ObjectIdentifier(item)] == .unconfirmed || self.admissionByItem[ObjectIdentifier(item)] == .accepted {
                     do {
+                        if self.admissionByItem[ObjectIdentifier(item)] == .unconfirmed {
+                            item.serverPhase = "checking_request"
+                            self.updateStatusDetail(NSLocalizedString("Checking whether the server received the saved request.", comment: ""), for: item)
+                            self.postQueueChange()
+                        }
                         envelope = try await self.request(path: "client-requests/\(requestID)", method: "GET", body: nil)
                     } catch {
                         guard (error as NSError).userInfo["serverErrorCode"] as? String == "request_not_found" else { throw error }
@@ -925,18 +968,6 @@ private struct ICServerCancellation: Codable, Sendable {
                 } else if let serverID = self.serverIDByItem[ObjectIdentifier(item)] {
                     envelope = try await self.fetchEpisode(id: serverID)
                 } else if let requestID {
-                    // Persist the uncertainty boundary before POST. Relaunch must reconcile
-                    // this UUID even if the response or the process disappears after commit.
-                    self.admissionByItem[ObjectIdentifier(item)] = .unconfirmed
-                    self.persistQueue()
-                    do {
-                        try await self.awaitQueuePersistence()
-                    } catch {
-                        try self.checkCurrentAttempt(item, requestID: requestID)
-                        self.rejectAdmission(item, message: String(format: NSLocalizedString("Not added: the request could not be saved on this device. %@", comment: ""), error.localizedDescription))
-                        return
-                    }
-                    try self.checkCurrentAttempt(item, requestID: requestID)
                     envelope = try await self.submitEpisode(for: item, url: episodeURL,
                                                             podcastURL: self.podcastURL(for: item),
                                                             title: item.episodeTitle,
@@ -983,11 +1014,15 @@ private struct ICServerCancellation: Codable, Sendable {
             return
         }
         let episode = envelope.episode
+        item.serverLastResponseAt = Date()
+        item.serverPhase = episode.phase
+        item.serverConnectionIssue = false
         if episode.status == "canceled" || envelope.clientRequest?.state == "canceled" || envelope.clientRequest?.state == "deleted" {
             cancelLocally(item, message: NSLocalizedString("This job was canceled on the server.", comment: ""))
             return
         }
         guard let phase = localizedPhase(episode.phase) else {
+            item.requiresExplicitRetryAfterCrash = true
             fail(item, message: NSLocalizedString("Der Transkriptionsserver lieferte eine unbekannte Verarbeitungsphase.", comment: ""))
             return
         }
@@ -997,9 +1032,11 @@ private struct ICServerCancellation: Codable, Sendable {
         if let serviceStatus = envelope.serviceStatus, !serviceStatus.available,
            episode.status == "queued" || episode.status == "running" {
             guard let detail = localizedServiceUnavailableDetail(serviceStatus.code) else {
+                item.requiresExplicitRetryAfterCrash = true
                 fail(item, message: NSLocalizedString("Der Server lieferte einen unbekannten Verarbeitungsstatus.", comment: ""))
                 return
             }
+            item.serverPhase = "paused"
             updateStatusDetail(detail, for: item)
         } else {
             updateStatusDetail(phase, for: item)
@@ -1008,6 +1045,7 @@ private struct ICServerCancellation: Codable, Sendable {
         case "ready":
             retryImportOnlyByItem[ObjectIdentifier(item)] = true
             item.status = .generatingChapters
+            item.serverPhase = "importing"
             updateStatusDetail(NSLocalizedString("Server-Ergebnis wird geprüft und übernommen.", comment: ""), for: item)
             postQueueChange()
             do {
@@ -1036,6 +1074,8 @@ private struct ICServerCancellation: Codable, Sendable {
                 if isRemoteCancellation(error) {
                     cancelLocally(item, message: NSLocalizedString("This job was canceled or removed on the server.", comment: ""))
                 } else if isTransient(error) {
+                    item.serverConnectionIssue = true
+                    item.serverWaitingForNetwork = (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorNotConnectedToInternet
                     guard schedulePoll(item, after: retryAfter(from: error as NSError) ?? Int(Self.retryDelay)) else { return }
                     updateStatusDetail(NSLocalizedString("Server-Ergebnis konnte vorübergehend nicht geladen werden. Neuer Versuch ist geplant.", comment: ""), for: item)
                 } else {
@@ -1051,6 +1091,7 @@ private struct ICServerCancellation: Codable, Sendable {
             if episode.status == "queued" { item.statusStartedAt = nil }
             schedulePoll(item, after: envelope.retryAfterSeconds)
         default:
+            item.requiresExplicitRetryAfterCrash = true
             fail(item, message: NSLocalizedString("Der Server lieferte einen unbekannten Verarbeitungsstatus.", comment: ""))
         }
     }
@@ -1068,9 +1109,7 @@ private struct ICServerCancellation: Codable, Sendable {
             return false
         }
         item.nextRetryAt = Date().addingTimeInterval(TimeInterval(seconds))
-        if item.automaticallyScheduled {
-            TranscriptionQueue.shared.scheduleAutomaticBackgroundProcessingIfNeeded()
-        }
+        TranscriptionQueue.shared.scheduleAutomaticBackgroundProcessingIfNeeded()
         return true
     }
 
@@ -1089,6 +1128,7 @@ private struct ICServerCancellation: Codable, Sendable {
 
     private func handle(error: Error, for item: ICTranscriptionQueueItem) async {
         let nsError = error as NSError
+        item.serverConnectionIssue = isTransient(error)
         if isRemoteCancellation(error) {
             cancelLocally(item, message: NSLocalizedString("This job was canceled or removed on the server.", comment: ""))
             return
@@ -1098,13 +1138,39 @@ private struct ICServerCancellation: Codable, Sendable {
             schedulePoll(item, after: nil)
             return
         }
+        if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorNotConnectedToInternet {
+            item.serverWaitingForNetwork = true
+            item.status = .queued
+            item.statusStartedAt = nil
+            let message = admissionByItem[ObjectIdentifier(item)] == .accepted
+                ? NSLocalizedString("Offline. The server may continue processing. Its status will update when the connection returns.", comment: "")
+                : (admissionByItem[ObjectIdentifier(item)] == .unconfirmed
+                    ? NSLocalizedString("Offline. Whether the server received the request is unknown. The saved request will be checked automatically when the connection returns.", comment: "")
+                    : NSLocalizedString("Saved on this device. Waiting for internet; the request will be sent automatically when the connection returns.", comment: ""))
+            updateStatusDetail(message, for: item)
+            schedulePoll(item, after: Int(Self.retryDelay))
+            finishAdmissionFeedback(item, accepted: false, message: message)
+            return
+        }
         if admissionByItem[ObjectIdentifier(item)] != .accepted {
             if nsError.userInfo["serverAdmitted"] as? Bool == false {
                 rejectAdmission(item, message: admissionRejectionMessage(nsError))
+            } else if !isTransient(error) {
+                // A permanent response is not a delayed acknowledgement. Unreadable
+                // responses retain the UUID for an explicit status check.
+                let message: String
+                if nsError.domain == "ICServerTranscription" {
+                    message = String(format: NSLocalizedString("The server rejected the request (HTTP %ld). %@", comment: ""), nsError.code, nsError.localizedDescription)
+                } else {
+                    message = NSLocalizedString("The server response could not be read. Automatic retries have stopped. Check the saved request again.", comment: "")
+                }
+                item.requiresExplicitRetryAfterCrash = nsError.userInfo["serverRetryable"] as? Bool != false
+                fail(item, message: message)
+                finishAdmissionFeedback(item, accepted: false, message: message)
             } else {
                 item.status = .queued
                 item.statusStartedAt = nil
-                let message = NSLocalizedString("The server has not confirmed the request yet. The status will be checked again automatically.", comment: "")
+                let message = String(format: NSLocalizedString("The connection to the server was interrupted. The saved request will be checked again. %@", comment: ""), nsError.localizedDescription)
                 updateStatusDetail(message, for: item)
                 guard schedulePoll(item, after: retryAfter(from: nsError) ?? Int(Self.retryDelay)) else { return }
                 finishAdmissionFeedback(item, accepted: false, message: message)
@@ -1112,11 +1178,16 @@ private struct ICServerCancellation: Codable, Sendable {
             return
         }
         guard isTransient(error) else {
+            // A broken status response says nothing about the remote processing result.
+            // Reconcile the existing request; never turn this into a forced new job.
+            item.requiresExplicitRetryAfterCrash = true
             fail(item, message: nsError.localizedDescription)
             return
         }
         guard schedulePoll(item, after: retryAfter(from: nsError) ?? Int(Self.retryDelay)) else { return }
         if let detail = localizedServiceUnavailableDetail(nsError.userInfo["serverErrorCode"] as? String) {
+            item.serverConnectionIssue = false
+            item.serverPhase = "paused"
             updateStatusDetail(detail, for: item)
         } else {
             updateStatusDetail(NSLocalizedString("Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant.", comment: ""), for: item)
@@ -1198,6 +1269,22 @@ private struct ICServerCancellation: Codable, Sendable {
     private func submitEpisode(for item: ICTranscriptionQueueItem, url: URL, podcastURL: URL?, title: String, duration: Double,
                                requestID: String, explicitRestart: Bool) async throws -> ICServerEpisodeEnvelope {
         let audioSHA256 = try await submissionAudioSHA256(for: item, requestID: requestID)
+        if networkUnavailable { throw URLError(.notConnectedToInternet) }
+        // The audio and UUID are durable before sending. Only an actual send can
+        // have an unknown remote outcome and require reconciliation after restart.
+        if admissionByItem[ObjectIdentifier(item)] != .accepted {
+            admissionByItem[ObjectIdentifier(item)] = .unconfirmed
+        }
+        persistQueue()
+        do { try await awaitQueuePersistence() }
+        catch {
+            throw NSError(domain: "ICServerTranscription", code: 58,
+                          userInfo: [NSLocalizedDescriptionKey: error.localizedDescription, "serverAdmitted": false])
+        }
+        try checkCurrentAttempt(item, requestID: requestID)
+        item.serverPhase = "sending"
+        updateStatusDetail(NSLocalizedString("Sending the saved request to the server.", comment: ""), for: item)
+        postQueueChange()
         var body: [String: Any] = [
             "episode_url": url.absoluteString,
             "client_audio_sha256": audioSHA256,
@@ -1222,7 +1309,9 @@ private struct ICServerCancellation: Codable, Sendable {
               let snapshot = TranscriptionEngine.artifactSnapshotIdentifier(at: url) else {
             throw rejected(NSLocalizedString("Download the complete episode before starting transcription.", comment: ""))
         }
-        updateStatusDetail(NSLocalizedString("Checking audio file.", comment: ""), for: item)
+        item.serverPhase = "checking_audio"
+        updateStatusDetail(NSLocalizedString("Checking the downloaded audio on this device.", comment: ""), for: item)
+        postQueueChange()
         let actual: String
         do { actual = try await ICAudioIdentity.sha256(of: url) }
         catch is CancellationError { throw CancellationError() }
@@ -1232,6 +1321,9 @@ private struct ICServerCancellation: Codable, Sendable {
             throw rejected(NSLocalizedString("The audio file has changed. Start a new transcription request.", comment: ""))
         }
         sourceAudioSHA256ByItem[ObjectIdentifier(item)] = actual
+        if admissionByItem[ObjectIdentifier(item)] == .pending {
+            admissionByItem[ObjectIdentifier(item)] = .prepared
+        }
         persistQueue()
         do { try await awaitQueuePersistence() }
         catch { throw rejected(error.localizedDescription) }
@@ -1249,7 +1341,7 @@ private struct ICServerCancellation: Codable, Sendable {
     private func request<T: Decodable>(path: String, method: String, body: [String: Any]?) async throws -> T {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.httpMethod = method
-        request.setValue("Bearer \(Self.bearerToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(authorizationToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(try clientIdentifier(), forHTTPHeaderField: "X-Instacast-Client-ID")
         request.setValue(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "4.0", forHTTPHeaderField: "X-Instacast-App-Version")
@@ -1299,7 +1391,7 @@ private struct ICServerCancellation: Codable, Sendable {
                                       message: NSLocalizedString("Ein Server-Artefakt hat einen ungültigen Deskriptor.", comment: ""))
         }
         var request = URLRequest(url: expectedURL)
-        request.setValue("Bearer \(Self.bearerToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(authorizationToken)", forHTTPHeaderField: "Authorization")
         request.setValue(try clientIdentifier(), forHTTPHeaderField: "X-Instacast-Client-ID")
         request.setValue(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "4.0", forHTTPHeaderField: "X-Instacast-App-Version")
         request.setValue("iOS", forHTTPHeaderField: "X-Instacast-Platform")
@@ -1699,6 +1791,7 @@ private struct ICServerCancellation: Codable, Sendable {
 
     private func scheduleRetryWake() {
         retryWakeTask?.cancel()
+        guard !networkUnavailable else { return }
         let episodeDates = items.filter { item in
             !item.requiresExplicitRetryAfterCrash && ICAITranscriptionFeaturesAvailable() && UserDefaults.standard.bool(forKey: kServerTranscriptionEnabled) &&
                 !cancellations.contains(where: { $0.episodeHash == item.episodeHash })
@@ -1753,7 +1846,11 @@ private struct ICServerCancellation: Codable, Sendable {
                          statusStartedAt: item.statusStartedAt,
                          requiresExplicitRetry: item.requiresExplicitRetryAfterCrash,
                          retryImportOnly: retryImportOnlyByItem[ObjectIdentifier(item)],
-                         sourceAudioSHA256: sourceAudioSHA256ByItem[ObjectIdentifier(item)])
+                         sourceAudioSHA256: sourceAudioSHA256ByItem[ObjectIdentifier(item)],
+                         waitingForNetwork: item.serverWaitingForNetwork,
+                         serverPhase: item.serverPhase,
+                         lastResponseAt: item.serverLastResponseAt,
+                         connectionIssue: item.serverConnectionIssue)
         }, cancellations: cancellations, ownerClientID: ownerClientID)
         let fileURL = queueFileURL
         pendingPersistenceCount += 1
@@ -1841,6 +1938,10 @@ private struct ICServerCancellation: Codable, Sendable {
             item.completedAt = stored.completedAt
             item.progress = item.status == .completed ? 1 : 0
             item.statusDetail = stored.statusDetail
+            item.serverWaitingForNetwork = stored.waitingForNetwork == true
+            item.serverPhase = stored.serverPhase
+            item.serverLastResponseAt = stored.lastResponseAt
+            item.serverConnectionIssue = stored.connectionIssue == true
             item.statusStartedAt = stored.statusStartedAt
             item.requiresExplicitRetryAfterCrash = stored.requiresExplicitRetry == true
             if let retryAt = item.nextRetryAt,
@@ -1863,8 +1964,8 @@ private struct ICServerCancellation: Codable, Sendable {
             // Old snapshots without a numeric receipt may already have sent POST.
             admissionByItem[ObjectIdentifier(item)] = stored.admissionState ?? (stored.serverEpisodeID == nil ? .unconfirmed : .accepted)
             if admissionByItem[ObjectIdentifier(item)] == .unconfirmed,
-               item.status == .queued, !item.requiresExplicitRetryAfterCrash {
-                item.statusDetail = NSLocalizedString("The server has not confirmed the request yet. The status will be checked again automatically.", comment: "")
+               item.status == .queued, !item.requiresExplicitRetryAfterCrash, !item.serverWaitingForNetwork {
+                item.statusDetail = NSLocalizedString("Checking whether the server received the saved request.", comment: "")
             }
             if stored.admissionState == .pending {
                 // A durable unconfirmed marker is mandatory before POST. A remaining
@@ -1903,8 +2004,8 @@ private struct ICServerCancellation: Codable, Sendable {
     }
 
     private func postQueueChange() {
-        // Background task ownership includes network and persistence activity. Those
-        // transitions must not cause episode cells/settings to lay out on every poll.
+        // Publish visible status, including the scheduled check shown in the UI.
+        // Network/persistence ownership alone must not redraw the queue.
         publishProcessingChange()
         let state: NSDictionary = [
             "items": items.map { item -> NSDictionary in
@@ -1915,6 +2016,11 @@ private struct ICServerCancellation: Codable, Sendable {
                     "progress": item.progress,
                     "statusDetail": item.statusDetail as Any? ?? NSNull(),
                     "requiresExplicitRetry": item.requiresExplicitRetryAfterCrash,
+                    "waitingForNetwork": item.serverWaitingForNetwork,
+                    "serverPhase": item.serverPhase as Any? ?? NSNull(),
+                    "lastResponseAt": item.serverLastResponseAt as Any? ?? NSNull(),
+                    "connectionIssue": item.serverConnectionIssue,
+                    "nextRetryAt": item.nextRetryAt as Any? ?? NSNull(),
                     "admission": admissionByItem[ObjectIdentifier(item)]?.rawValue as Any? ?? NSNull(),
                     "statusStartedAt": item.statusStartedAt as Any? ?? NSNull(),
                     "completedAt": item.completedAt as Any? ?? NSNull(),

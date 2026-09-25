@@ -1,0 +1,37 @@
+{
+  "passed" : true,
+  "rows" : [
+    {
+      "height" : 102,
+      "requiredHeight" : 62.333333333333336,
+      "statusHeight" : 63,
+      "font" : 13,
+      "fits" : true,
+      "text" : "Saved on this device. Waiting for internet; the request will be sent automatically when the connection returns."
+    },
+    {
+      "height" : 80,
+      "requiredHeight" : 31.333333333333332,
+      "statusHeight" : 41,
+      "font" : 13,
+      "fits" : true,
+      "text" : "Sending the saved request to the server."
+    },
+    {
+      "height" : 117,
+      "requiredHeight" : 77.666666666666671,
+      "statusHeight" : 78,
+      "font" : 13,
+      "fits" : true,
+      "text" : "Step 2 of 4 · Transcribing audio\nThe server does not provide a remaining time.\nNext status check in this app: 16:14:12"
+    },
+    {
+      "height" : 114,
+      "requiredHeight" : 77.666666666666671,
+      "statusHeight" : 78,
+      "font" : 13,
+      "fits" : true,
+      "text" : "The server response could not be read. Automatic retries have stopped. Check the saved request again.\nTap for options."
+    }
+  ]
+}

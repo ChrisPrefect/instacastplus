@@ -1,0 +1,44 @@
+{
+  "action": "status",
+  "commandID": "5fc8902f-9988-4f84-82ce-0908e0f409ba",
+  "ok": true,
+  "queue": [
+    {
+      "automaticallyScheduled": false,
+      "chapterOnly": false,
+      "completedAt": "2026-09-25T14:57:06Z",
+      "episodeHash": "eb55a53a6e50c8e1bb005fe6a317487b",
+      "episodeTitle": "Stadtbibliothek und Lesekreis",
+      "error": "",
+      "feedTitle": "Server flow fixture",
+      "nextRetryAt": "",
+      "progress": 1,
+      "requiresExplicitRetryAfterCrash": false,
+      "retryAttempt": 0,
+      "serverPhase": "importing",
+      "shouldGenerateAnalysis": true,
+      "status": 6,
+      "statusDetail": "",
+      "statusName": "completed",
+      "statusStartedAt": "",
+      "usesServerTranscription": true
+    }
+  ],
+  "selectedChapterModel": {
+    "deleteBlockedReason": "",
+    "downloaded": false,
+    "downloading": false,
+    "downloadSizeBytes": 2629991680,
+    "downloadSizeText": "2.63 GB",
+    "identifier": "gemma-4-e2b-it-q4-k",
+    "requiresDownload": true,
+    "role": 1,
+    "roleTitle": "Kapitel generieren",
+    "selected": true,
+    "shortTitle": "Gemma 4",
+    "sizeOnDiskBytes": 0,
+    "title": "Gemma 4 E2B-it"
+  },
+  "source": "commandFile",
+  "timestamp": "2026-09-25T14:57:07Z"
+}

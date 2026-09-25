@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-09-25T14:59:47.563446+00:00",
+  "source_sha256": {
+    "Classes/ServerTranscriptionManager.swift": "e586fba13dc58ffb8f237bfbf8dd881bc21fca2bfed23c0ac8f8d822feca152a",
+    "Classes/TranscriptionQueue.swift": "b034711b158600723217463a9eb266937c80f7fe29f589ff3fc5b2affcc91a89",
+    "Classes/TranscriptionQueueViewController.m": "195e332c7df6574e634d5756e2fe4e9a7fb1c7e05881f9e55c4e5ead429ebdbf",
+    "Classes/EpisodeViewController.m": "b2d40724d584c382e08c476fbc0300bed2cb43805d6736d4c52f0c45455b9ce2",
+    "Classes/EpisodesTableViewController.m": "120526db5d8473ba399817242bbc9bb3bade0fb32a9ad63ba02e8575acb33051",
+    "Classes/ICEpisodeSwipeActionHandler.m": "b46b0f785ef4305df7d33b08c23c5b57caced7384eef3e55bd9fa70ca3bc579a",
+    "Classes/ICTranscriptionDebugAutomation.swift": "895adf4ca7c6815728302d3ebffb3b244c8da3a5bf1a32b50e4810361fbaf48f"
+  },
+  "app_flow": true,
+  "build_succeeded": true,
+  "status_scenarios": {
+    "status-en-320-import": 1,
+    "status-completed": 1,
+    "status-en-320-running": 1,
+    "status-en-320-completed": 1,
+    "status-en-320-failed": 1,
+    "status-running": 1,
+    "status-failed": 1,
+    "status-offline": 1,
+    "status-en-320-offline": 1,
+    "status-sending": 1,
+    "status-import": 1,
+    "status-retrying": 1
+  }
+}

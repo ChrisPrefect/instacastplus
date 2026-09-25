@@ -35,3 +35,5 @@
 // App Intents (Siri / Shortcuts) support
 #import "CDList.h"
 #import "PlayerSpeedButton.h"
+
+#import "TranscriptionQueueViewController.h"

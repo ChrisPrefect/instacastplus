@@ -1,0 +1,11 @@
+2026-09-25 16:53:30.540 run[86453:5050751] [ServerTranscription] Queue persistence failed: The file couldn’t be saved because there isn’t enough space.
+2026-09-25 16:53:30.543 run[86453:5050751] [ServerTranscription] Queue persistence failed: The file couldn’t be saved because there isn’t enough space.
+2026-09-25 16:53:30.543 run[86453:5050751] [ServerTranscription] Queue persistence failed: The file couldn’t be saved because there isn’t enough space.
+An unknown server phase cannot authorize regeneration; keep a status-check action
+run/main.swift:1855: Fatal error: Admission contract failures: 1
+Traceback (most recent call last):
+  File "/Users/Chris/Developer/instacastplus/Tools/server_transcription_admission_runtime_test.py", line 57, in <module>
+    subprocess.run([str(executable)], check=True, timeout=30)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-cancellation-test-sazero0a/run']' died with <Signals.SIGTRAP: 5>.

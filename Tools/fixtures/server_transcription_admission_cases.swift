@@ -11,10 +11,28 @@
    let envelope = try JSONDecoder().decode(ICServerEpisodeEnvelope.self,from:response)
    await manager.apply(envelope,to:item,requestID:manager.clientRequestIDByItem[ObjectIdentifier(item)])
    expect(item.status == .transcribing,"Unknown total progress must not fail a valid active phase")
+   expect(item.serverPhase == phase && item.serverLastResponseAt != nil,"UI must receive the confirmed phase and response time")
    expect(item.progress == 0,"Restored weighted progress must be cleared")
    expect(item.statusDetail?.contains("Step \(index+1) of 4") == true,"Each phase must name its actual processing step")
    manager.retryWakeTask?.cancel()
   }
+  let unknown=Harness(server:FakeServer(),file:dir.appendingPathComponent("unknown-phase.json"))
+  let unknownItem=unknown.add(accepted:true)
+  let unknownEnvelope=try JSONDecoder().decode(ICServerEpisodeEnvelope.self,from:Data(#"{"api_version":"v1","episode":{"id":42,"status":"running","phase":"new-unknown-phase","warnings":[],"artifacts":[]},"retry_after_seconds":30}"#.utf8))
+  await unknown.apply(unknownEnvelope,to:unknownItem,requestID:unknown.clientRequestIDByItem[ObjectIdentifier(unknownItem)])
+  expect(unknownItem.requiresExplicitRetryAfterCrash,"An unknown server phase cannot authorize regeneration; keep a status-check action")
+  unknown.retryWakeTask?.cancel()
+  let continuityServer=FakeServer()
+  let continuity=Harness(server:continuityServer,file:dir.appendingPathComponent("accepted-contract-error.json"))
+  let continuityItem=continuity.add(accepted:true)
+  let originalID=continuity.clientRequestIDByItem[ObjectIdentifier(continuityItem)]
+  expect(continuity.hasPendingAutomaticItems,"Manual accepted server work must remain eligible for background status/import")
+  await continuity.handle(error:NSError(domain:"ICServerTranscription.Contract",code:21,userInfo:[NSLocalizedDescriptionKey:"Invalid response identity"]),for:continuityItem)
+  expect(continuityItem.requiresExplicitRetryAfterCrash,"Unreadable accepted state must request a status check, not force regeneration")
+  continuity.retryEpisodeHash(continuityItem.episodeHash);await continuity.durable()
+  expect(continuity.clientRequestIDByItem[ObjectIdentifier(continuityItem)] == originalID,"Checking an accepted request must preserve its identity")
+  expect(continuityServer.postBodies.isEmpty,"Checking an accepted request must not submit a new transcription")
+  continuity.retryWakeTask?.cancel()
   for code in ["queue_full","client_queue_full","provider_unavailable","worker_unavailable","resources_unavailable"] {
    let server=FakeServer();server.rejectionCode=code
    let manager=Harness(server:server,file:dir.appendingPathComponent(code+".json"));let item=manager.add();manager.start();await manager.durable()
@@ -47,9 +65,29 @@
   expect(apiError.error.admitted == false,"Wire error must preserve authoritative admission refusal")
   let offlineServer=FakeServer();let offline=Harness(server:offlineServer,file:dir.appendingPathComponent("known-offline.json"));offline.networkUnavailable=true
   let offlineItem=offline.add();offline.start();await offline.durable()
-  expect(offlineItem.status == .failed && offlineServer.events.isEmpty,"Known offline before POST must reject without sending")
+  expect(offlineItem.status == .queued && offlineServer.events.isEmpty,"Offline submission must remain queued without sending")
+  expect(offline.hasPendingAutomaticItems && offline.earliestAutomaticWorkDate != nil,"Manual offline requests need automatic background network scheduling")
+  offline.retryWakeTask?.cancel()
+  let offlineRestored=Harness(server:offlineServer,file:offline.queueFileURL);offlineRestored.networkUnavailable=true;offlineRestored.loadPersistedQueue()
+  expect(offlineRestored.items.first?.status == .queued,"Offline intent must survive restart as queued")
+  offlineRestored.networkUnavailable=false;offlineRestored.resumeIfNeeded();await offlineRestored.durable()
+  expect(offlineServer.postBodies.count == 1,"Network recovery must submit saved offline intent automatically")
+  expect(offlineServer.postBodies.first?["client_request_id"] as? String == offline.clientRequestIDByItem[ObjectIdentifier(offlineItem)],"Offline restart must preserve request UUID")
+  offlineRestored.retryWakeTask?.cancel()
   offline.dequeueEpisodeHash(offlineItem.episodeHash);await offline.durable()
   expect(offline.cancellations.isEmpty,"Never-sent rejection must not invent pending server cancellation")
+  // Regression: a locally rejected attempt must not force regeneration on the server.
+  let retryServer=FakeServer(); let retry=Harness(server:retryServer,file:dir.appendingPathComponent("local-retry.json"))
+  let retryItem=retry.add(); retry.rejectAdmission(retryItem,message:"offline")
+  retry.retryEpisodeHash(retryItem.episodeHash); await retry.durable()
+  expect(retryServer.postBodies.last?["force"] as? Bool == false,"Retry after local rejection must not send force=true")
+  retry.retryWakeTask?.cancel()
+  let forbidden=Harness(server:FakeServer(),file:dir.appendingPathComponent("forbidden.json"));let forbiddenItem=forbidden.add()
+  forbidden.admissionByItem[ObjectIdentifier(forbiddenItem)] = .unconfirmed
+  await forbidden.handle(error:NSError(domain:"ICServerTranscription",code:403,userInfo:["serverRetryable":false,NSLocalizedDescriptionKey:"force is disabled for API clients"]),for:forbiddenItem)
+  expect(forbiddenItem.status == .failed && forbiddenItem.nextRetryAt == nil,"HTTP403 must stop the confirmation loop and report a failure")
+  expect(forbiddenItem.error?.contains("403") == true,"HTTP rejection must name its actual status")
+  forbidden.retryWakeTask?.cancel()
   let heldServer=FakeServer();heldServer.holdAck=true
   let held=Harness(server:heldServer,file:dir.appendingPathComponent("held.json"));let heldItem=held.add();var feedback:[Bool]=[]
   held.admissionCompletions[ObjectIdentifier(heldItem)] = { accepted,_ in feedback.append(accepted) }
@@ -66,17 +104,17 @@
    let path=dir.appendingPathComponent("ambiguous-\(malformed).json")
    let manager=Harness(server:server,file:path);let item=manager.add();let id=manager.clientRequestIDByItem[ObjectIdentifier(item)]!
    manager.start();await manager.durable()
-   expect(item.status == .queued,"Unknown POST outcome must remain visibly unconfirmed")
+   expect(item.status == (malformed ? .failed : .queued),"Malformed replies stop visibly; lost transport replies stay queued")
    expect(item.statusStartedAt == nil,"Unconfirmed admission must not start processing timer")
-   expect(item.nextRetryAt != nil,"Unknown POST outcome must reconcile")
+   expect(malformed ? (item.nextRetryAt == nil && item.requiresExplicitRetryAfterCrash) : item.nextRetryAt != nil,"Malformed replies require explicit status check; lost replies reconcile automatically")
    item.progress = 0.5
    item.statusDetail = "Die Serveraufnahme ist unbestätigt. Die App prüft dieselbe Anfrage erneut; bitte nicht doppelt einreichen."
    manager.persistQueue(); await manager.durable()
    manager.retryWakeTask?.cancel()
    let restarted=Harness(server:server,file:path);restarted.loadPersistedQueue();let restored=restarted.items[0]
    expect(restored.progress == 0,"Relaunch must discard legacy weighted progress")
-   expect(restored.statusDetail?.contains("The server has not confirmed the request yet.") == true,"Relaunch must refresh legacy confirmation wording")
-   restarted.setDue(restored);await restarted.durable()
+   if !malformed { expect(restored.statusDetail?.contains("Checking whether the server received") == true,"Relaunch must name request reconciliation") }
+   if malformed { restarted.retryEpisodeHash(restored.episodeHash) } else { restarted.setDue(restored) };await restarted.durable()
    expect(server.getEvents == [id],"Restart must reconcile same UUID by GET before any POST")
    expect(server.events == ["POST:"+id],"Lost acknowledgement must not repeat known accepted POST")
    expect(restarted.serverIDByItem[ObjectIdentifier(restored)] != nil,"Reconciliation must bind accepted receipt")

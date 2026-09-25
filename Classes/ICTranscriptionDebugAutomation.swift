@@ -229,6 +229,45 @@ import UIKit
         let episodeHash = parameters["episodeHash"] ?? parameters["hash"]
 
         switch action {
+        #if DEBUG && targetEnvironment(simulator)
+        case "serverFlowFixture":
+            guard let endpoint = ServerTranscriptionManager.debugServerURL,
+                  let context = DatabaseManager.shared()?.objectContext else {
+                response = errorResponse(action: action, message: "Requires an explicit loopback test peer in a dedicated simulator.")
+                break
+            }
+            let feed = NSEntityDescription.insertNewObject(forEntityName: "Feed", into: context) as! CDFeed
+            feed.title = "Server flow fixture"
+            feed.sourceURL = endpoint.deletingLastPathComponent().appendingPathComponent("fixture.xml")
+            feed.subscribed = true
+            let episode = NSEntityDescription.insertNewObject(forEntityName: "Episode", into: context) as! CDEpisode
+            episode.feed = feed
+            episode.title = "Stadtbibliothek und Lesekreis"
+            episode.guid = UUID().uuidString
+            episode.pubDate = Date()
+            episode.duration = 115
+            episode.reconstructObjectHash()
+            let medium = NSEntityDescription.insertNewObject(forEntityName: "Medium", into: context) as! CDMedium
+            medium.episode = episode
+            medium.fileURL = URL(string: "/fixture.wav", relativeTo: endpoint)!.absoluteURL
+            medium.mimeType = "audio/wav"
+            do {
+                try context.save()
+                UserDefaults.standard.set(true, forKey: kServerTranscriptionEnabled)
+                response["episodeHash"] = episode.objectHash
+                response["downloadStarted"] = CacheManager.shared()?.cacheEpisode(episode) ?? false
+            } catch { response = errorResponse(action: action, message: error.localizedDescription) }
+        case "serverFlowStart":
+            guard ServerTranscriptionManager.debugServerURL != nil,
+                  let episodeHash,
+                  let episode = (DatabaseManager.shared()?.episodes(withObjectHashes: [episodeHash]) as? [CDEpisode])?.first,
+                  let presenter = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                    .flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController else {
+                response = errorResponse(action: action, message: "Fixture episode or test peer missing.")
+                break
+            }
+            TranscriptionQueueViewController.startServerTranscription(episode: episode, presenter: presenter)
+        #endif
         case "status":
             response["queue"] = queue.debugQueueSnapshot()
             response["selectedChapterModel"] = modelDictionary(ICDownloadableModelStore.selectedModel(for: .textToChapters))

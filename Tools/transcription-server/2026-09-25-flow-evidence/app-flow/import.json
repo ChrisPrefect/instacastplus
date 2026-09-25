@@ -1,0 +1,170 @@
+{
+  "action": "inspect",
+  "commandID": "969d3c24-9d4c-4005-8d4f-d2de91e2a3b4",
+  "inspection": {
+    "artifacts": {
+      "analysis": {
+        "bytes": 1148,
+        "exists": true,
+        "modifiedAt": "2026-09-25T14:57:06Z",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/7D0444F0-703B-40FE-9548-F17004D72BEC/Documents/Transcripts/eb55a53a6e50c8e1bb005fe6a317487b_analysis.json"
+      },
+      "chapterDebug": {
+        "bytes": 0,
+        "exists": false,
+        "modifiedAt": "",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/7D0444F0-703B-40FE-9548-F17004D72BEC/Documents/Transcripts/eb55a53a6e50c8e1bb005fe6a317487b_chapter_debug.json"
+      },
+      "chapters": {
+        "bytes": 0,
+        "exists": false,
+        "modifiedAt": "",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/7D0444F0-703B-40FE-9548-F17004D72BEC/Documents/Transcripts/eb55a53a6e50c8e1bb005fe6a317487b_chapters.json"
+      },
+      "checkpoint": {
+        "bytes": 0,
+        "exists": false,
+        "modifiedAt": "",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/7D0444F0-703B-40FE-9548-F17004D72BEC/Documents/Transcripts/eb55a53a6e50c8e1bb005fe6a317487b_checkpoint.json"
+      },
+      "episodeLog": {
+        "bytes": 1140,
+        "exists": true,
+        "modifiedAt": "2026-09-25T14:57:06Z",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/7D0444F0-703B-40FE-9548-F17004D72BEC/Documents/Transcripts/eb55a53a6e50c8e1bb005fe6a317487b_log.json"
+      },
+      "music": {
+        "bytes": 0,
+        "exists": false,
+        "modifiedAt": "",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/7D0444F0-703B-40FE-9548-F17004D72BEC/Documents/Transcripts/eb55a53a6e50c8e1bb005fe6a317487b_music.json"
+      },
+      "srt": {
+        "bytes": 2835,
+        "exists": true,
+        "modifiedAt": "2026-09-25T14:57:06Z",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/7D0444F0-703B-40FE-9548-F17004D72BEC/Documents/Transcripts/eb55a53a6e50c8e1bb005fe6a317487b.srt"
+      }
+    },
+    "chapters": [
+      {
+        "end": 44.31,
+        "isSponsor": false,
+        "start": 0,
+        "title": "Besuch in der Stadtbibliothek"
+      },
+      {
+        "end": 71.69,
+        "isSponsor": true,
+        "start": 44.31,
+        "title": "Sponsor: Beispiel Kaffee"
+      },
+      {
+        "end": 75.05,
+        "isSponsor": false,
+        "start": 71.69,
+        "title": "Besuch in der Stadtbibliothek"
+      },
+      {
+        "end": 114.836,
+        "isSponsor": false,
+        "start": 75.05,
+        "title": "Der neue Lesekreis"
+      }
+    ],
+    "episodeHash": "eb55a53a6e50c8e1bb005fe6a317487b",
+    "log": [
+      {
+        "detailText": "",
+        "message": "Server-Auftrag wird auf diesem Gerät vorbereitet.",
+        "phase": "server",
+        "timestamp": "2026-09-25T14:56:55Z"
+      },
+      {
+        "detailText": "",
+        "message": "Die heruntergeladene Audiodatei wird auf diesem Gerät geprüft.",
+        "phase": "status",
+        "timestamp": "2026-09-25T14:56:55Z"
+      },
+      {
+        "detailText": "",
+        "message": "Der gespeicherte Auftrag wird an den Server gesendet.",
+        "phase": "status",
+        "timestamp": "2026-09-25T14:56:55Z"
+      },
+      {
+        "detailText": "",
+        "message": "Wartet auf Verarbeitung",
+        "phase": "status",
+        "timestamp": "2026-09-25T14:56:55Z"
+      },
+      {
+        "detailText": "",
+        "message": "Schritt 1 von 4 · Audio wird geladen",
+        "phase": "status",
+        "timestamp": "2026-09-25T14:56:57Z"
+      },
+      {
+        "detailText": "",
+        "message": "Schritt 2 von 4 · Transkript wird erstellt",
+        "phase": "status",
+        "timestamp": "2026-09-25T14:56:59Z"
+      },
+      {
+        "detailText": "",
+        "message": "Schritt 3 von 4 · Transkript wird analysiert",
+        "phase": "status",
+        "timestamp": "2026-09-25T14:57:01Z"
+      },
+      {
+        "detailText": "",
+        "message": "Schritt 4 von 4 · Ergebnisse werden vorbereitet",
+        "phase": "status",
+        "timestamp": "2026-09-25T14:57:03Z"
+      },
+      {
+        "detailText": "",
+        "message": "Server-Ergebnis ist bereit.",
+        "phase": "status",
+        "timestamp": "2026-09-25T14:57:05Z"
+      },
+      {
+        "detailText": "",
+        "message": "Server-Ergebnis wird geprüft und übernommen.",
+        "phase": "status",
+        "timestamp": "2026-09-25T14:57:05Z"
+      },
+      {
+        "detailText": "",
+        "message": "Server-Transkription übernommen",
+        "phase": "server",
+        "timestamp": "2026-09-25T14:57:06Z"
+      }
+    ],
+    "queue": [
+      {
+        "automaticallyScheduled": false,
+        "chapterOnly": false,
+        "completedAt": "2026-09-25T14:57:06Z",
+        "episodeHash": "eb55a53a6e50c8e1bb005fe6a317487b",
+        "episodeTitle": "Stadtbibliothek und Lesekreis",
+        "error": "",
+        "feedTitle": "Server flow fixture",
+        "nextRetryAt": "",
+        "progress": 1,
+        "requiresExplicitRetryAfterCrash": false,
+        "retryAttempt": 0,
+        "serverPhase": "importing",
+        "shouldGenerateAnalysis": true,
+        "status": 6,
+        "statusDetail": "",
+        "statusName": "completed",
+        "statusStartedAt": "",
+        "usesServerTranscription": true
+      }
+    ]
+  },
+  "ok": true,
+  "source": "commandFile",
+  "timestamp": "2026-09-25T14:57:08Z"
+}

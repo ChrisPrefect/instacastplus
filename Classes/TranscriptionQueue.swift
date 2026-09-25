@@ -161,6 +161,10 @@ private final class ICMetadataParserSendableBox: @unchecked Sendable {
     @objc var nextRetryAt: Date?
     @objc var requiresExplicitRetryAfterCrash = false
     @objc var usesServerTranscription = false
+    @objc var serverWaitingForNetwork = false
+    @objc var serverPhase: String?
+    @objc var serverLastResponseAt: Date?
+    @objc var serverConnectionIssue = false
 
     @objc init(episodeHash: String, episodeTitle: String, feedTitle: String,
                audioURL: URL?, language: String?) {
@@ -445,7 +449,10 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         }
         let server = ServerTranscriptionManager.shared
         if server.unconfirmedAdmissionCount > 0 {
-            lines.append(String(format: NSLocalizedString("%ld transcription requests are awaiting confirmation.", comment: ""), server.unconfirmedAdmissionCount))
+            lines.append(String(format: NSLocalizedString("%ld requests are saved on this device and have not yet been accepted by the server.", comment: ""), server.unconfirmedAdmissionCount))
+        }
+        if serverCount > 0 {
+            lines.append(NSLocalizedString("Accepted jobs run on the server even when you leave this app. Results are updated when you open the app.", comment: ""))
         }
         if server.hasPendingCancellations {
             let cancellationSummary = server.queueStorageError == nil
@@ -1475,9 +1482,11 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     }
 
     @objc func debugQueueSnapshot() -> NSArray {
-        let snapshot = items.map { item -> NSDictionary in
+        let snapshot = displayItems.map { item -> NSDictionary in
             [
                 "episodeHash": item.episodeHash,
+                "serverPhase": item.serverPhase ?? "",
+                "usesServerTranscription": item.usesServerTranscription,
                 "episodeTitle": item.episodeTitle,
                 "feedTitle": item.feedTitle,
                 "status": item.status.rawValue,
@@ -3420,7 +3429,8 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         }
         let hasCancellationWork = chapterGen.hasPendingOpenAIBackgroundCancellationWork || ServerTranscriptionManager.shared.hasRetryableCancellations
         let serverAutomaticItems = ServerTranscriptionManager.shared.items.filter {
-            $0.automaticallyScheduled && $0.status != .completed && $0.status != .failed && $0.status != .canceled
+            !$0.requiresExplicitRetryAfterCrash &&
+                $0.status != .completed && $0.status != .failed && $0.status != .canceled
         }
         guard !automaticItems.isEmpty || !serverAutomaticItems.isEmpty || hasCancellationWork else { return }
         if let continuedPath = UserDefaults.standard.string(forKey: "ICTranscriptionActiveContinuedPath"),

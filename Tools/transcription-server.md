@@ -137,13 +137,15 @@ Der iOS-Simulator-Build und die fokussierten App-Regressionen inklusive acht aus
 
 ## Annahme und Fehlerzustände – 6. September 2026
 
-Die App unterscheidet dauerhaft `pending` (noch nicht gesendet), `unconfirmed` (Annahme nach Versand unklar), `accepted` und `rejected`. Erst eine gültige Serverbestätigung zeigt einen angenommenen Auftrag an. Die Prüfung einer Annahme reserviert einen der 25 Plätze, damit gleichzeitige Bedienaktionen das App-Limit nicht überschreiten.
+Die App unterscheidet dauerhaft `pending` (Audio noch nicht fertig geprüft), `prepared` (Audio geprüft, Auftrag lokal gespeichert), `unconfirmed` (Annahme nach Versand unklar), `accepted` und `rejected`. Erst eine gültige Serverbestätigung zeigt einen angenommenen Auftrag an. Die Prüfung einer Annahme reserviert einen der 25 Plätze, damit gleichzeitige Bedienaktionen das App-Limit nicht überschreiten.
 
 | Ereignis | Verhalten |
 | --- | --- |
-| Kein Internet vor dem POST, lokaler Speicherfehler | Keine HTTP-Anfrage; keine Annahme, verständliche Fehlermeldung, Platz wieder frei. |
+| Kein Internet vor dem POST | Audio und unveränderlicher Auftrag bleiben lokal gespeichert. Automatische Übermittlung bei Netzrückkehr; keine behauptete Serverannahme. |
+| Lokaler Speicherfehler | Keine HTTP-Anfrage vor dauerhafter Speicherung; konkreter Speicherfehler und erneuter Zugriff als Aktion. |
 | Server/Worker/Provider nicht bereit, kein Guthaben oder Kontingent, zu wenig Ressourcen, Queue voll | Server bestätigt `error.admitted: false`; App lehnt ab und zeigt den konkreten Grund. Keine versteckte Wiederaufnahme. |
-| Antwort nach POST verloren, Proxyfehler oder ungültige Erfolgsmeldung | Annahme bleibt ausdrücklich unbestätigt. Abgleich derselben UUID vor erneutem POST verhindert doppelte Aufträge. Ein bloßer Verbindungsfehler beweist keine Ablehnung. |
+| Antwort nach POST verloren oder vorübergehender Verbindungsfehler | Abgleich derselben UUID vor erneutem POST verhindert doppelte Aufträge. Ein Verbindungsfehler beweist keine Ablehnung. |
+| Dauerhafte HTTP-Ablehnung oder ungültige Antwort | Kein endloses Warten auf Bestätigung. Ablehnung mit Ursache; bei unlesbarer Antwort oder unbekanntem Status ausdrücklicher Abgleich des gespeicherten Auftrags, keine automatische Neugenerierung. |
 | App-Neustart | Angenommene/unbestätigte Aufträge werden abgeglichen. Ein lediglich lokal vorbereitetes `pending` wird als nicht hinzugefügt wiederhergestellt und braucht einen ausdrücklichen neuen Versuch. |
 | Ausfall nach bestätigter Annahme | Identität und Zwischenstände bleiben erhalten; sichtbarer Wartegrund. Ein langer Offline-Zeitraum allein beendet keinen Auftrag. |
 | Serverabbruch oder Löschung | Dauerhafte Abbruch-Einträge führen beim nächsten erfolgreichen Abgleich zum Abbruch in der App. Offline ist ein sofortiger Abgleich technisch unmöglich. |
@@ -298,3 +300,19 @@ Der Health-Endpunkt war mit `provider_unavailable` gesperrt: installiert war CLI
 17 Adaptertests, fünf Usage-Tests und der echte CLI-Inventartest bestanden. Die drei betroffenen Dateien wurden nach SHA256-Abgleich und Quellsicherung unter `var/backups/codex-cli-20260915` ausgeliefert; beide Dienste wurden bei leerer Queue neu gestartet. Danach bestätigte `/health` wieder `ok:true`. Patch und Prüfsummen: `transcription-server/2026-09-15-codex-cli.patch` und `2026-09-15-codex-cli-manifest.json`. Keine Aufträge oder Ergebnisartefakte wurden verändert.
 
 Der isolierte Kapitelbenchmark verwendet `Tools/ios27_chapter_comparison.py`, den tatsächlichen Server-Prompt und dieselbe Transkription für beide Modelle. Die Originalkapitel werden ausschließlich zur Auswertung verwendet. Benchmark-Ergebnisse und Verbrauch werden in separaten Dateien statt in der Produktionsqueue gespeichert.
+
+## Durchgängige Statusführung – 25. September 2026
+
+Alle manuellen Startwege öffnen dieselbe Statusansicht. Aktueller Zustand und letzte
+Serverantwort, nächster automatischer Schritt, kontextabhängige Aktion und die drei
+Abschnitte Vorbereitung / Server / Übernahme sind getrennt dargestellt. Der technische
+Verlauf ist über einen eigenen Eintrag erreichbar. Prozentwerte oder Restzeiten ohne
+Messgrundlage werden nicht angezeigt. Der lokale Hintergrund-Schalter erscheint nur
+bei offenen lokalen Aufträgen; alle offenen Serveraufträge sind für die vorhandene
+netzgebundene iOS-Hintergrundplanung berücksichtigt. iOS bestimmt den Ausführungszeitpunkt.
+
+Fehler beim Statusabgleich behalten die Request-Identität. Importfehler laden denselben
+Serverstand erneut. Nur eine tatsächlich fehlgeschlagene oder abgebrochene Serververarbeitung
+berechtigt einen erzwungenen Neustart. Screenshot des ursprünglichen Problems, Live-Diagnose,
+fehlgeschlagene Vorher-Tests, Simulatoransichten und App/HTTP/Import-Durchlauf:
+[Prüfnachweis](transcription-server/2026-09-25-flow-evidence/README.md).

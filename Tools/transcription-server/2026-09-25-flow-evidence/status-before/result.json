@@ -1,0 +1,25 @@
+{
+  "historyHidden" : false,
+  "passed" : 0,
+  "title" : false,
+  "nextAction" : false,
+  "process" : false,
+  "nodes" : [
+    {
+      "id" : "",
+      "text" : "Status — Previous diagnostic event"
+    },
+    {
+      "id" : "",
+      "text" : "16:35:35"
+    },
+    {
+      "id" : "",
+      "text" : "Aktueller Stand\n\nSchritt 2 von 4 · Transkript wird erstellt\nDer Server meldet keine geschätzte Restdauer.\nNächste Statusabfrage in dieser App: 16:36:05"
+    },
+    {
+      "id" : "",
+      "text" : "Bisheriger Verlauf"
+    }
+  ]
+}

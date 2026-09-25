@@ -1,0 +1,89 @@
+{
+  "historyHidden" : true,
+  "passed" : 1,
+  "title" : true,
+  "nextAction" : true,
+  "process" : true,
+  "nodes" : [
+    {
+      "id" : "",
+      "text" : "Diagnoseverlauf"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auf dem Server verarbeiten"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vorbereiten und senden"
+    },
+    {
+      "id" : "",
+      "text" : "Wartet auf Internet"
+    },
+    {
+      "id" : "ICServerAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag abbrechen"
+    },
+    {
+      "id" : "ICServerNextAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Wird automatisch fortgesetzt, sobald diese App wieder Internetzugang hat. Im Hintergrund bestimmt iOS den Zeitpunkt. Beim Öffnen der App wird der Auftrag direkt fortgesetzt."
+    },
+    {
+      "id" : "ICServerStatusTitle",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Wartet auf Internet"
+    },
+    {
+      "id" : "",
+      "text" : "Auf diesem Gerät gespeichert. Wartet auf Internet und wird bei Netzrückkehr automatisch gesendet."
+    },
+    {
+      "id" : "",
+      "text" : "So geht es weiter"
+    },
+    {
+      "id" : "",
+      "text" : "Ablauf"
+    },
+    {
+      "id" : "",
+      "text" : ""
+    }
+  ]
+}

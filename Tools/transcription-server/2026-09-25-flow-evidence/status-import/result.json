@@ -1,0 +1,89 @@
+{
+  "historyHidden" : true,
+  "passed" : 1,
+  "title" : true,
+  "nextAction" : true,
+  "process" : true,
+  "nodes" : [
+    {
+      "id" : "",
+      "text" : "Diagnoseverlauf"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id" : "",
+      "text" : "Ergebnis nicht übernommen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auf dem Server verarbeiten"
+    },
+    {
+      "id" : "",
+      "text" : "Abgeschlossen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vorbereiten und senden"
+    },
+    {
+      "id" : "",
+      "text" : "Abgeschlossen"
+    },
+    {
+      "id" : "ICServerAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Ergebnis erneut laden"
+    },
+    {
+      "id" : "ICServerNextAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Das Ergebnis bleibt auf dem Server verfügbar. Du kannst es erneut laden, ohne noch einmal transkribieren zu lassen."
+    },
+    {
+      "id" : "ICServerStatusTitle",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Ergebnis nicht übernommen"
+    },
+    {
+      "id" : "",
+      "text" : "Das Server-Ergebnis ist unvollständig oder enthält doppelte Artefakte.\n\nLetzte Serverantwort: 25.09.26, 16:57:26"
+    },
+    {
+      "id" : "",
+      "text" : "So geht es weiter"
+    },
+    {
+      "id" : "",
+      "text" : "Ablauf"
+    },
+    {
+      "id" : "",
+      "text" : ""
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+PASS: retry bounds, accepted/unconfirmed ownership retained, pause persisted, explicit same-UUID check, poisoned saved date rejected

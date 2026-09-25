@@ -1,0 +1,89 @@
+{
+  "historyHidden" : true,
+  "passed" : 1,
+  "title" : true,
+  "nextAction" : true,
+  "process" : true,
+  "nodes" : [
+    {
+      "id" : "",
+      "text" : "Diagnostic history"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Save result on this device"
+    },
+    {
+      "id" : "",
+      "text" : "Not started"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Process on the server"
+    },
+    {
+      "id" : "",
+      "text" : "Creating transcript"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Prepare and send request"
+    },
+    {
+      "id" : "",
+      "text" : "Completed"
+    },
+    {
+      "id" : "ICServerAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Cancel request"
+    },
+    {
+      "id" : "ICServerNextAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Next status check in this app: 16:50:35\nThe server does not provide a remaining time.\nYou can leave this screen. Server processing continues independently; this app retrieves the result when it can run."
+    },
+    {
+      "id" : "ICServerStatusTitle",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Creating transcript"
+    },
+    {
+      "id" : "",
+      "text" : "Last server response: 25.09.2026, 16:50:05"
+    },
+    {
+      "id" : "",
+      "text" : "What happens next"
+    },
+    {
+      "id" : "",
+      "text" : "Process"
+    },
+    {
+      "id" : "",
+      "text" : ""
+    }
+  ]
+}

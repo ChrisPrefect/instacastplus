@@ -1,0 +1,89 @@
+{
+  "historyHidden" : true,
+  "passed" : 1,
+  "title" : true,
+  "nextAction" : true,
+  "process" : true,
+  "nodes" : [
+    {
+      "id" : "",
+      "text" : "Diagnoseverlauf"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auf dem Server verarbeiten"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vorbereiten und senden"
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag wird gesendet"
+    },
+    {
+      "id" : "ICServerAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag abbrechen"
+    },
+    {
+      "id" : "ICServerNextAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Dieser Schritt läuft. Der Status wird automatisch aktualisiert."
+    },
+    {
+      "id" : "ICServerStatusTitle",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag wird gesendet"
+    },
+    {
+      "id" : "",
+      "text" : "Der gespeicherte Auftrag wird an den Server gesendet."
+    },
+    {
+      "id" : "",
+      "text" : "So geht es weiter"
+    },
+    {
+      "id" : "",
+      "text" : "Ablauf"
+    },
+    {
+      "id" : "",
+      "text" : ""
+    }
+  ]
+}

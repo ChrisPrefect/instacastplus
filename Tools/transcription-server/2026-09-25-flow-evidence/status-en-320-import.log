@@ -1,0 +1,97 @@
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-7sunsa5n/main.m:368:292: warning: capturing 'walk' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  368 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                                                                                                                                                                                                                                                                                    ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-7sunsa5n/main.m:368:32: note: block will be retained by the captured object
+  368 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                ^~~~
+1 warning generated.
+com.iteconomy.instacastplus.server-status-test: 85890
+{
+  "historyHidden": true,
+  "passed": 1,
+  "title": true,
+  "nextAction": true,
+  "process": true,
+  "nodes": [
+    {
+      "id": "",
+      "text": "Diagnostic history"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Save result on this device"
+    },
+    {
+      "id": "",
+      "text": "Result could not be saved"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Process on the server"
+    },
+    {
+      "id": "",
+      "text": "Completed"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Prepare and send request"
+    },
+    {
+      "id": "",
+      "text": "Completed"
+    },
+    {
+      "id": "ICServerAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Retrieve result again"
+    },
+    {
+      "id": "ICServerNextAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "The server result remains available. Retry retrieving it without transcribing again."
+    },
+    {
+      "id": "ICServerStatusTitle",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Result could not be saved"
+    },
+    {
+      "id": "",
+      "text": "The server result is incomplete or contains duplicate artifacts.\n\nLast server response: 25.09.2026, 16:50:08"
+    },
+    {
+      "id": "",
+      "text": "What happens next"
+    },
+    {
+      "id": "",
+      "text": "Process"
+    },
+    {
+      "id": "",
+      "text": ""
+    }
+  ]
+}

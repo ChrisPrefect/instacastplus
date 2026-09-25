@@ -1,0 +1,89 @@
+{
+  "historyHidden" : true,
+  "passed" : 1,
+  "title" : true,
+  "nextAction" : true,
+  "process" : true,
+  "nodes" : [
+    {
+      "id" : "",
+      "text" : "Diagnostic history"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Save result on this device"
+    },
+    {
+      "id" : "",
+      "text" : "Not started"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Process on the server"
+    },
+    {
+      "id" : "",
+      "text" : "Transcription stopped"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Prepare and send request"
+    },
+    {
+      "id" : "",
+      "text" : "Completed"
+    },
+    {
+      "id" : "ICServerAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Try again"
+    },
+    {
+      "id" : "ICServerNextAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "No further attempt is scheduled. Resolve the reason above, then try again."
+    },
+    {
+      "id" : "ICServerStatusTitle",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Transcription stopped"
+    },
+    {
+      "id" : "",
+      "text" : "The server result is incomplete or contains duplicate artifacts.\n\nLast server response: 25.09.2026, 16:50:06"
+    },
+    {
+      "id" : "",
+      "text" : "What happens next"
+    },
+    {
+      "id" : "",
+      "text" : "Process"
+    },
+    {
+      "id" : "",
+      "text" : ""
+    }
+  ]
+}

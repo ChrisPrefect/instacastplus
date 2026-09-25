@@ -1,0 +1,85 @@
+{
+  "passed": true,
+  "scope": "Full simulator app, real media download/hash, HTTP, persisted request, all server phases, strict artifact import and status screen; inference replayed from matching real artifacts",
+  "device": "79C6B540-E8DC-4E2A-8171-25BB70F7E5D1",
+  "audio_sha256": "92747209c31b54463fa69e40d7b29b15894a13ff00664e86ca8066112984b6d0",
+  "episodeHash": "eb55a53a6e50c8e1bb005fe6a317487b",
+  "posts": [
+    {
+      "podcast_url": "http://127.0.0.1:58687/api/fixture.xml",
+      "wait_seconds": 0,
+      "client_audio_sha256": "92747209c31b54463fa69e40d7b29b15894a13ff00664e86ca8066112984b6d0",
+      "client_duration_seconds": 115,
+      "episode_url": "http://127.0.0.1:58687/fixture.wav",
+      "title": "Stadtbibliothek und Lesekreis",
+      "force": false,
+      "client_request_id": "50714c63-c9b0-4633-983a-9a534f03bb19"
+    }
+  ],
+  "events": [
+    [
+      "GET",
+      "/fixture.wav"
+    ],
+    [
+      "POST",
+      "/api/v1/episodes"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/50714c63-c9b0-4633-983a-9a534f03bb19"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/50714c63-c9b0-4633-983a-9a534f03bb19"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/50714c63-c9b0-4633-983a-9a534f03bb19"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/50714c63-c9b0-4633-983a-9a534f03bb19"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/50714c63-c9b0-4633-983a-9a534f03bb19"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/50714c63-c9b0-4633-983a-9a534f03bb19"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/50714c63-c9b0-4633-983a-9a534f03bb19"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/50714c63-c9b0-4633-983a-9a534f03bb19"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/50714c63-c9b0-4633-983a-9a534f03bb19"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/50714c63-c9b0-4633-983a-9a534f03bb19"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/2"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/4"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/3"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/1"
+    ]
+  ]
+}

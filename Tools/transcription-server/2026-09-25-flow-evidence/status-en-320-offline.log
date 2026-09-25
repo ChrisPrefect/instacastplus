@@ -1,0 +1,97 @@
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-6bkhi086/main.m:368:292: warning: capturing 'walk' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  368 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                                                                                                                                                                                                                                                                                    ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-6bkhi086/main.m:368:32: note: block will be retained by the captured object
+  368 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                ^~~~
+1 warning generated.
+com.iteconomy.instacastplus.server-status-test: 85762
+{
+  "historyHidden": true,
+  "passed": 1,
+  "title": true,
+  "nextAction": true,
+  "process": true,
+  "nodes": [
+    {
+      "id": "",
+      "text": "Diagnostic history"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Save result on this device"
+    },
+    {
+      "id": "",
+      "text": "Not started"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Process on the server"
+    },
+    {
+      "id": "",
+      "text": "Not started"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Prepare and send request"
+    },
+    {
+      "id": "",
+      "text": "Waiting for internet"
+    },
+    {
+      "id": "ICServerAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Cancel request"
+    },
+    {
+      "id": "ICServerNextAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Continues automatically when this app has internet access. In the background, iOS decides when the app can run; opening the app resumes it immediately."
+    },
+    {
+      "id": "ICServerStatusTitle",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Waiting for internet"
+    },
+    {
+      "id": "",
+      "text": "Saved on this device. Waiting for internet; the request will be sent automatically when the connection returns."
+    },
+    {
+      "id": "",
+      "text": "What happens next"
+    },
+    {
+      "id": "",
+      "text": "Process"
+    },
+    {
+      "id": "",
+      "text": ""
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "environment": "macOS-27.0-arm64-arm-64bit",
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "Tools/server_transcription_admission_runtime_test.py"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "python3",
+        "Tools/server_transcription_cancellation_runtime_test.py"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "python3",
+        "Tools/server_transcription_errors_runtime_test.py"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "python3",
+        "Tools/server_transcription_presentation_runtime_test.py"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "python3",
+        "Tools/server_transcription_storage_runtime_test.py"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "python3",
+        "Tools/server_transcription_retry_interval_runtime_test.py"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "python3",
+        "Tools/server_poll_lifecycle_runtime_test.py"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "python3",
+        "Tools/localization_coverage_regression_test.py"
+      ],
+      "exitCode": 0
+    }
+  ],
+  "build": {
+    "command": "xcodebuild -project Instacast.xcodeproj -scheme Instacast -configuration Debug -destination 'platform=iOS Simulator,id=675CC86D-C1EA-41D7-A244-0318E0EE1121' -derivedDataPath build/SimDD build",
+    "result": "BUILD SUCCEEDED",
+    "log": "/tmp/server-flow-build-final.log"
+  },
+  "sourceSHA256": {
+    "Classes/ServerTranscriptionManager.swift": "9853e87fe3c4d35d251ebbc7ae4f11d83d8a0291948363d52420fbe8c645448a",
+    "Classes/TranscriptionQueue.swift": "d9a95d119f7c3ac29eae2ebce8ebfcdd91ea6ebcb8ae04d04da440d5f5e7cd08",
+    "Classes/TranscriptionQueueViewController.m": "b8892b09210bc6ce2c102b13f48b0d6a9e82ebff21fbfb9e07e739660ee8e2d9",
+    "Resources/de.lproj/Localizable.strings": "d8d5a00ec4c655b62f34b2fbeeed80b9e934370aa515fe81bc35f38d9fe5bc73",
+    "Resources/en.lproj/Localizable.strings": "0149a78b0d59b003d2c8c4cdcf0dd4261f215d08c336ccaafcae9ab643f396ef"
+  },
+  "layout": [
+    {
+      "command": "python3 Tools/server_transcription_layout_runtime_test.py --locale de --width 393 --output Tools/transcription-server/2026-09-25-flow-evidence/layout-de",
+      "result": true
+    },
+    {
+      "command": "python3 Tools/server_transcription_layout_runtime_test.py --locale en --width 320 --output Tools/transcription-server/2026-09-25-flow-evidence/layout-en-320",
+      "result": true
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "action": "status",
+  "commandID": "launch-20260925-161859-784",
+  "ok": true,
+  "queue": [],
+  "selectedChapterModel": {
+    "deleteBlockedReason": "",
+    "downloaded": false,
+    "downloading": false,
+    "downloadSizeBytes": 2629991680,
+    "downloadSizeText": "2.63 GB",
+    "identifier": "gemma-4-e2b-it-q4-k",
+    "requiresDownload": true,
+    "role": 1,
+    "roleTitle": "Kapitel generieren",
+    "selected": true,
+    "shortTitle": "Gemma 4",
+    "sizeOnDiskBytes": 0,
+    "title": "Gemma 4 E2B-it"
+  },
+  "source": "launchArgument",
+  "timestamp": "2026-09-25T14:19:00Z"
+}

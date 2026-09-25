@@ -1,0 +1,103 @@
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-y6brtlis/main.m:383:292: warning: capturing 'walk' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  383 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                                                                                                                                                                                                                                                                                    ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-y6brtlis/main.m:383:32: note: block will be retained by the captured object
+  383 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-y6brtlis/main.m:381:3: warning: capturing 'vc' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  381 |  [vc.view layoutIfNeeded];[vc.tableView layoutIfNeeded];
+      |   ^~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-y6brtlis/main.m:380:2: note: block will be retained by the captured object
+  380 |  vc.capture = ^{
+      |  ^~
+2 warnings generated.
+com.iteconomy.instacastplus.server-status-test: 87216
+{
+  "historyHidden": true,
+  "passed": 1,
+  "title": true,
+  "nextAction": true,
+  "process": true,
+  "nodes": [
+    {
+      "id": "",
+      "text": "Diagnoseverlauf"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id": "",
+      "text": "Noch nicht begonnen"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Auf dem Server verarbeiten"
+    },
+    {
+      "id": "",
+      "text": "Noch nicht begonnen"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Auftrag vorbereiten und senden"
+    },
+    {
+      "id": "",
+      "text": "Wartet auf Internet"
+    },
+    {
+      "id": "ICServerAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Auftrag abbrechen"
+    },
+    {
+      "id": "ICServerNextAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Wird automatisch fortgesetzt, sobald diese App wieder Internetzugang hat. Im Hintergrund bestimmt iOS den Zeitpunkt. Beim Öffnen der App wird der Auftrag direkt fortgesetzt."
+    },
+    {
+      "id": "ICServerStatusTitle",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Wartet auf Internet"
+    },
+    {
+      "id": "",
+      "text": "Auf diesem Gerät gespeichert. Wartet auf Internet und wird bei Netzrückkehr automatisch gesendet."
+    },
+    {
+      "id": "",
+      "text": "So geht es weiter"
+    },
+    {
+      "id": "",
+      "text": "Ablauf"
+    },
+    {
+      "id": "",
+      "text": ""
+    }
+  ]
+}

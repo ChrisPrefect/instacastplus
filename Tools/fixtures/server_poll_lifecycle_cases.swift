@@ -12,16 +12,16 @@
   }
   manager.setDue(item);await manager.durable()
   var failures:[String]=[]
-  if manager.visibleChanges != 0 { failures.append("Identical accepted queued poll published \(manager.visibleChanges) visible changes, expected0") }
+  if manager.visibleChanges != 2 { failures.append("Scheduled check start/end must publish two timing changes, got \(manager.visibleChanges)") }
   if manager.processingChanges != [true,false] { failures.append("Background lifecycle must see busy then idle after durable completion") }
   manager.visibleChanges=0;manager.processingChanges=[];server.status="running"
   manager.setDue(item);await manager.durable()
-  if manager.visibleChanges != 1 { failures.append("Changed processing status must publish exactly one visible change") }
+  if manager.visibleChanges != 2 { failures.append("Changed processing status and next check must publish two visible changes") }
   if manager.processingChanges != [true,false] { failures.append("Real status change must retain lifecycle completion") }
   manager.visibleChanges=0;manager.processingChanges=[]
   let second=manager.add(hash:"second",accepted:true);manager.start();await manager.durable()
   manager.visibleChanges=0;manager.processingChanges=[];item.nextRetryAt=nil;second.nextRetryAt=nil;manager.processNext();await manager.durable()
-  if manager.visibleChanges != 0 { failures.append("Identical multi-job polling must not reload visible queue") }
+  if manager.visibleChanges != 3 { failures.append("Two pending jobs share their initial timing change and publish both completions, got \(manager.visibleChanges)") }
   if manager.processingChanges != [true,false] { failures.append("Sequential durable jobs must not publish false idle between them: \(manager.processingChanges)") }
   manager.visibleChanges=0;manager.processingChanges=[]
   manager.dequeueEpisodeHash(item.episodeHash);await manager.durable()
@@ -29,5 +29,5 @@
   if manager.processingChanges.last != false { failures.append("Durable cancellation completion must publish idle") }
   manager.retryWakeTask?.cancel();NotificationCenter.default.removeObserver(visibleObserver);NotificationCenter.default.removeObserver(processingObserver)
   if !failures.isEmpty { FileHandle.standardError.write(Data((failures.joined(separator:"\n")+"\n").utf8));fatalError("Poll lifecycle regression") }
-  print("PASS: unchanged polls0 visible events; real status/cancel changes visible; busy/idle lifecycle preserved without false idle between queued jobs")
+  print("PASS: scheduled check start/end visible; real status/cancel changes visible; busy/idle lifecycle preserved without false idle between queued jobs")
  }

@@ -7,6 +7,8 @@ class ICTranscriptionQueueItem: NSObject {
  var status = ICTranscriptionStatus.queued; var progress: Float = 0
  var requiresExplicitRetryAfterCrash = false
  var error: String?; var statusDetail: String?; var statusStartedAt: Date?; var completedAt: Date?; var nextRetryAt: Date?
+ var serverWaitingForNetwork = false
+ var serverPhase: String?; var serverLastResponseAt: Date?; var serverConnectionIssue = false
  var usesServerTranscription = true; var automaticallyScheduled = false; var shouldGenerateAnalysis = true
  init(episodeHash: String, episodeTitle: String, feedTitle: String, audioURL: URL?, language: String?) {
   self.episodeHash=episodeHash; self.episodeTitle=episodeTitle; self.feedTitle=feedTitle
@@ -56,6 +58,7 @@ typealias EpisodeAnalysisResult = String
  var rejectionCode: String?; var pollErrorCode: String?; var malformedAck = false; var getEvents: [String] = []
  var postGate: CheckedContinuation<Void, Never>?
  var registrations: [String:Int] = [:]; var byURL: [String:Int] = [:]; var tombstones = Set<String>(); var nextID = 100
+ var postBodies: [[String:Any]] = []
  var events: [String] = []; var status = "queued"; var terminalCode: String?
  var warnings: [[String:Any]] = []
  var artifacts: [[String:Any]] = []
@@ -73,6 +76,7 @@ typealias EpisodeAnalysisResult = String
   }
   var requestID: String?; var episodeID: Int?
   if method == "POST" {
+   postBodies.append(body!)
    requestID=body!["client_request_id"] as? String
    let id=requestID!; events.append("POST:"+id)
    if let rejectionCode { throw NSError(domain:"ICServerTranscription",code:503,userInfo:["serverErrorCode":rejectionCode,"serverRetryable":true,"serverAdmitted":false,"retryAfter":300]) }

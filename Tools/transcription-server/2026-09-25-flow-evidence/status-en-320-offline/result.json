@@ -1,0 +1,89 @@
+{
+  "historyHidden" : true,
+  "passed" : 1,
+  "title" : true,
+  "nextAction" : true,
+  "process" : true,
+  "nodes" : [
+    {
+      "id" : "",
+      "text" : "Diagnostic history"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Save result on this device"
+    },
+    {
+      "id" : "",
+      "text" : "Not started"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Process on the server"
+    },
+    {
+      "id" : "",
+      "text" : "Not started"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Prepare and send request"
+    },
+    {
+      "id" : "",
+      "text" : "Waiting for internet"
+    },
+    {
+      "id" : "ICServerAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Cancel request"
+    },
+    {
+      "id" : "ICServerNextAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Continues automatically when this app has internet access. In the background, iOS decides when the app can run; opening the app resumes it immediately."
+    },
+    {
+      "id" : "ICServerStatusTitle",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Waiting for internet"
+    },
+    {
+      "id" : "",
+      "text" : "Saved on this device. Waiting for internet; the request will be sent automatically when the connection returns."
+    },
+    {
+      "id" : "",
+      "text" : "What happens next"
+    },
+    {
+      "id" : "",
+      "text" : "Process"
+    },
+    {
+      "id" : "",
+      "text" : ""
+    }
+  ]
+}

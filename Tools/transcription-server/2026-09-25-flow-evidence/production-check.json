@@ -1,0 +1,27 @@
+{
+  "checkedAt": "2026-09-25T14:18:38.327544+00:00",
+  "health": {
+    "ok": true,
+    "queued_jobs": 0,
+    "running_jobs": 0,
+    "episodes": 109,
+    "transcription_workers": {
+      "transcript-instacast-worker.service": true,
+      "transcript-instacast-worker-2.service": false
+    },
+    "service_status": null
+  },
+  "incidentRequest": {
+    "request_id": "c938666f-fd40-4b66-b1da-9d5de90b6734",
+    "state": "unconfirmed",
+    "episode_id": null,
+    "created_at": "2026-09-25T04:51:44+00:00",
+    "updated_at": "2026-09-25T04:51:44+00:00"
+  },
+  "incidentWindowUTC": [
+    "2026-09-25T04:45:00Z",
+    "2026-09-25T05:05:00Z"
+  ],
+  "http403PostCount": 21,
+  "incident404Count": 20
+}

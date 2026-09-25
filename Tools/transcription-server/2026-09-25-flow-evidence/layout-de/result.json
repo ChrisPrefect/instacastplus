@@ -1,0 +1,37 @@
+{
+  "passed" : true,
+  "rows" : [
+    {
+      "height" : 102,
+      "requiredHeight" : 62.333333333333336,
+      "statusHeight" : 63,
+      "font" : 13,
+      "fits" : true,
+      "text" : "Wartet auf Internet\nAuf diesem Gerät gespeichert. Wartet auf Internet und wird bei Netzrückkehr automatisch gesendet."
+    },
+    {
+      "height" : 86,
+      "requiredHeight" : 46.666666666666664,
+      "statusHeight" : 47,
+      "font" : 13,
+      "fits" : true,
+      "text" : "Auftrag wird vorbereitet\nDer gespeicherte Auftrag wird an den Server gesendet."
+    },
+    {
+      "height" : 80,
+      "requiredHeight" : 31.333333333333332,
+      "statusHeight" : 41,
+      "font" : 13,
+      "fits" : true,
+      "text" : "Auftrag wird vorbereitet\nSchritt 2 von 4 · Transkript wird erstellt"
+    },
+    {
+      "height" : 114,
+      "requiredHeight" : 77.666666666666671,
+      "statusHeight" : 78,
+      "font" : 13,
+      "fits" : true,
+      "text" : "Transkription gestoppt\nDie Serverantwort konnte nicht gelesen werden. Automatische Versuche wurden gestoppt. Prüfe den gespeicherten Auftrag erneut."
+    }
+  ]
+}

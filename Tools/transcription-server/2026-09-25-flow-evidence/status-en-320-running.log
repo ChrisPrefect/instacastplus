@@ -1,0 +1,97 @@
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-wjo1uumz/main.m:368:292: warning: capturing 'walk' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  368 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                                                                                                                                                                                                                                                                                    ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-wjo1uumz/main.m:368:32: note: block will be retained by the captured object
+  368 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                ^~~~
+1 warning generated.
+com.iteconomy.instacastplus.server-status-test: 85802
+{
+  "historyHidden": true,
+  "passed": 1,
+  "title": true,
+  "nextAction": true,
+  "process": true,
+  "nodes": [
+    {
+      "id": "",
+      "text": "Diagnostic history"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Save result on this device"
+    },
+    {
+      "id": "",
+      "text": "Not started"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Process on the server"
+    },
+    {
+      "id": "",
+      "text": "Creating transcript"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Prepare and send request"
+    },
+    {
+      "id": "",
+      "text": "Completed"
+    },
+    {
+      "id": "ICServerAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Cancel request"
+    },
+    {
+      "id": "ICServerNextAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Next status check in this app: 16:50:35\nThe server does not provide a remaining time.\nYou can leave this screen. Server processing continues independently; this app retrieves the result when it can run."
+    },
+    {
+      "id": "ICServerStatusTitle",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Creating transcript"
+    },
+    {
+      "id": "",
+      "text": "Last server response: 25.09.2026, 16:50:05"
+    },
+    {
+      "id": "",
+      "text": "What happens next"
+    },
+    {
+      "id": "",
+      "text": "Process"
+    },
+    {
+      "id": "",
+      "text": ""
+    }
+  ]
+}

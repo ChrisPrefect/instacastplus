@@ -1,3 +1,4 @@
+#import "TranscriptionQueueViewController.h"
 #import "ICEpisodeSwipeActionHandler.h"
 
 #import "AppleWatchSyncManager.h"
@@ -311,17 +312,10 @@
     return YES;
 }
 
-+ (BOOL)_serverTranscribeEpisode:(CDEpisode*)episode
++ (BOOL)_serverTranscribeEpisode:(CDEpisode*)episode fromViewController:(UIViewController*)viewController
 {
     if (!ICAITranscriptionFeaturesAvailable() || ![USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) return NO;
-    BOOL staged = [[ServerTranscriptionManager shared] enqueueEpisode:episode completion:^(BOOL accepted, NSString* message) {
-        if (accepted) PlaySoundFile(@"AffirmIn", NO);
-        [self _showTranscriptionToastWithText:message];
-    }];
-    if (staged) [self _showTranscriptionToastWithText:NSLocalizedString(@"Sending transcription request.", nil)];
-    if (!staged && [[ServerTranscriptionManager shared] hasActiveItemForEpisodeHash:episode.objectHash]) {
-        [self _showTranscriptionToastWithText:NSLocalizedString(@"A server request for this episode is already being checked or processed.", nil)];
-    }
+    [TranscriptionQueueViewController startServerTranscriptionForEpisode:episode fromViewController:viewController];
     return YES;
 }
 
@@ -399,7 +393,7 @@ presentingViewController:(UIViewController*)viewController
         case ICEpisodeSwipeActionTranscribe:
         {
             BOOL performed = [[TranscriptionQueue resolvedAutomaticBackend] isEqualToString:@"server"]
-                ? [self _serverTranscribeEpisode:episode]
+                ? [self _serverTranscribeEpisode:episode fromViewController:viewController]
                 : [self _transcribeEpisode:episode fromViewController:viewController];
             if (performed && didPerform) didPerform();
             return performed;

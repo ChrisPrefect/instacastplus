@@ -1,0 +1,89 @@
+{
+  "historyHidden" : true,
+  "passed" : 1,
+  "title" : true,
+  "nextAction" : true,
+  "process" : true,
+  "nodes" : [
+    {
+      "id" : "",
+      "text" : "Diagnoseverlauf"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auf dem Server verarbeiten"
+    },
+    {
+      "id" : "",
+      "text" : "Transkription gestoppt"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vorbereiten und senden"
+    },
+    {
+      "id" : "",
+      "text" : "Abgeschlossen"
+    },
+    {
+      "id" : "ICServerAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Erneut versuchen"
+    },
+    {
+      "id" : "ICServerNextAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Es ist kein weiterer Versuch geplant. Behebe die oben genannte Ursache und versuche es dann erneut."
+    },
+    {
+      "id" : "ICServerStatusTitle",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Transkription gestoppt"
+    },
+    {
+      "id" : "",
+      "text" : "Das Server-Ergebnis ist unvollständig oder enthält doppelte Artefakte.\n\nLetzte Serverantwort: 25.09.26, 16:57:25"
+    },
+    {
+      "id" : "",
+      "text" : "So geht es weiter"
+    },
+    {
+      "id" : "",
+      "text" : "Ablauf"
+    },
+    {
+      "id" : "",
+      "text" : ""
+    }
+  ]
+}

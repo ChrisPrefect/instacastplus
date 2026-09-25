@@ -1,3 +1,4 @@
+#import "TranscriptionQueueViewController.h"
 //
 //  EpisodesTableViewController.m
 //  Instacast
@@ -1976,18 +1977,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     if (!ICAITranscriptionFeaturesAvailable() || ![USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) {
         return;
     }
-    __weak typeof(self) weakSelf = self;
-    BOOL staged = [[ServerTranscriptionManager shared] enqueueEpisode:episode completion:^(BOOL accepted, NSString* message) {
-        if (accepted) PlaySoundFile(@"AffirmIn", NO);
-        [weakSelf _showTranscriptionToastWithText:message];
-    }];
-    if (staged) [self _showTranscriptionToastWithText:NSLocalizedString(@"Sending transcription request.", nil)];
-    if (!staged && [[ServerTranscriptionManager shared] hasActiveItemForEpisodeHash:episode.objectHash]) {
-        // A rejected request must still lead into the queue — otherwise the running
-        // job (and its error state) has no reachable UI.
-        PlayHapticFeedback(ICHapticFeedbackLight);
-        [self _showTranscriptionToastWithText:NSLocalizedString(@"A server request for this episode is already being checked or processed.", nil)];
-    }
+    [TranscriptionQueueViewController startServerTranscriptionForEpisode:episode fromViewController:self];
     [self _transcriptionQueueChanged];
 }
 

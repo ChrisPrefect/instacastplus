@@ -1,3 +1,4 @@
+#import "TranscriptionQueueViewController.h"
     //
 //  EpisodeViewController.m
 //  Instacast
@@ -1452,17 +1453,7 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
     if (serverTranscriptionEnabled && ![[ServerTranscriptionManager shared] hasActiveItemForEpisodeHash:self.episode.objectHash ?: @""]) {
         [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Server transkribieren", nil) image:[UIImage systemImageNamed:@"server.rack"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
-            __weak typeof(self) weakSelf = self;
-            BOOL staged = [[ServerTranscriptionManager shared] enqueueEpisode:self.episode completion:^(BOOL accepted, NSString* message) {
-                if (accepted) {
-                    PlaySoundFile(@"AffirmIn", NO);
-                } else if (weakSelf.view.window) {
-                    UIAlertController* alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Server transcription", nil) message:message preferredStyle:UIAlertControllerStyleAlert];
-                    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                    [weakSelf presentViewController:alert animated:YES completion:nil];
-                }
-            }];
-            (void)staged;
+            [TranscriptionQueueViewController startServerTranscriptionForEpisode:self.episode fromViewController:self];
         }]];
     }
 

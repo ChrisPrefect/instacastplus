@@ -1,0 +1,7 @@
+{
+    completedButton = 0;
+    honestTiming = 1;
+    localButton = 1;
+    serverButton = 0;
+    status = "Preparing request\nStep 2 of 4 \U00b7 Transcribing audio";
+}

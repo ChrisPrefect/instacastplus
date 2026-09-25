@@ -1,0 +1,13 @@
+{
+    completedButton = 1;
+    honestTiming = 0;
+    localButton = 1;
+    serverButton = 1;
+    status = "Step 2 of 4 \U00b7 Transcribing audio";
+}
+Traceback (most recent call last):
+  File "/Users/Chris/Developer/instacastplus/Tools/server_transcription_presentation_runtime_test.py", line 110, in <module>
+    subprocess.run([str(path/'test')],check=True)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-presentation-9z2qwwt6/test']' returned non-zero exit status 1.
