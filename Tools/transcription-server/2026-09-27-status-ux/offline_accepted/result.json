@@ -1,0 +1,108 @@
+{
+  "passed" : 1,
+  "nextAction" : true,
+  "title" : true,
+  "historyHidden" : true,
+  "activity" : false,
+  "confirmed" : true,
+  "informative" : true,
+  "nodes" : [
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Kapitel und Zusammenfassung erstellen"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Transkript erstellen"
+    },
+    {
+      "id" : "",
+      "text" : "Wartet auf Internet"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Audiodatei auf dem Server laden"
+    },
+    {
+      "id" : "",
+      "text" : "Abgeschlossen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag senden"
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vom Server angenommen"
+    },
+    {
+      "id" : "ICServerAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag abbrechen"
+    },
+    {
+      "id" : "ICServerNextAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Wird automatisch fortgesetzt, sobald die App wieder verbunden ist. Beim Öffnen wird die Verbindung sofort geprüft."
+    },
+    {
+      "id" : "ICServerStatusTitle",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Wartet auf Internet"
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vom Server angenommen\n\nKeine Internetverbindung. Der Server kann weiterarbeiten. Der aktuelle Stand wird bei Netzrückkehr abgerufen.\n\nLetzte Serveraktivität: 22:13:09"
+    },
+    {
+      "id" : "",
+      "text" : "So geht es weiter"
+    },
+    {
+      "id" : "",
+      "text" : "Ablauf"
+    }
+  ],
+  "process" : true
+}

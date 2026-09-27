@@ -10,10 +10,21 @@ source = (ROOT / "Classes/PlaybackManager.m").read_text()
 start = source.index("- (void) nextChapter\n")
 end = source.index("\n- (void) previousChapter", start)
 method = source[start:end]
+for signature in ["- (void)_rememberChapterPositionBeforeSkippingToTime:",
+                  "- (NSTimeInterval)timeForChapterSelectionAtIndex:"]:
+    method += signature + source.split(signature, 1)[1].split("\n- (", 1)[0]
 
 program = r'''
 #import <Foundation/Foundation.h>
 #import <CoreMedia/CoreMedia.h>
+#define USER_DEFAULTS NSUserDefaults.standardUserDefaults
+static NSString *PlayerRememberChapterPosition = @"ChapterBoundaryTestRememberPosition";
+static NSString *PlayerChapterPlaybackPositions = @"ChapterBoundaryTestPositions";
+@interface CDEpisode : NSObject
+@property NSString *objectHash;
+@property double duration;
+@end
+@implementation CDEpisode @end
 @interface ICMetadataChapter : NSObject
 @property CMTime start;
 @end
@@ -23,6 +34,9 @@ program = r'''
 @property NSArray *chapters;
 @property NSTimeInterval soughtTime;
 @property NSUInteger seeks;
+@property CDEpisode *playingEpisode;
+@property double position;
+@property double duration;
 - (BOOL)generatedArtifactTimingIsCurrent;
 - (void)seekToTime:(NSTimeInterval)time tolerance:(BOOL)tolerance;
 - (void)nextChapter;

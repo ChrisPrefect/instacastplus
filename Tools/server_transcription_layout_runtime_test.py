@@ -48,7 +48,9 @@ typedef NS_ENUM(NSInteger,ICTranscriptionStatus) { ICTranscriptionStatusNone, IC
 @property ICTranscriptionStatus status;
 @property BOOL usesServerTranscription,serverWaitingForNetwork,requiresExplicitRetryAfterCrash,serverConnectionIssue;
 @property NSString *episodeHash,*statusDetail,*error,*serverPhase;
-@property NSDate *nextRetryAt,*serverLastResponseAt;
+@property NSDate *nextRetryAt,*serverLastResponseAt,*serverActivityUpdatedAt,*serverPhaseStartedAt;
+@property NSString *serverActivity,*serverWorkUnit;
+@property NSNumber *serverWorkCompleted,*serverWorkTotal,*serverEstimatedPhaseRemainingSeconds,*serverQueuePosition;
 @end
 @implementation ICTranscriptionQueueItem @end
 @interface ServerTranscriptionManager:NSObject

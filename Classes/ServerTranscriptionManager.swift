@@ -208,6 +208,58 @@ private struct ICServerMedia: Decodable {
     enum CodingKeys: String, CodingKey { case audioSHA256 = "audio_sha256" }
 }
 
+/// Measured work within one server phase; never an overall job percentage.
+struct ICServerTranscriptionWork: Codable, Sendable, Equatable {
+    let phase: String
+    let activity: String
+    let updatedAt: String?
+    let phaseStartedAt: String?
+    let completed: Double?
+    let total: Double?
+    let unit: String?
+    let estimatedPhaseRemainingSeconds: Double?
+    let queuePosition: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case phase, activity, completed, total, unit
+        case updatedAt = "updated_at"
+        case phaseStartedAt = "phase_started_at"
+        case estimatedPhaseRemainingSeconds = "estimated_phase_remaining_seconds"
+        case queuePosition = "queue_position"
+    }
+
+    var activityUpdatedAt: Date? { updatedAt.flatMap(Self.date) }
+    var startedAt: Date? { phaseStartedAt.flatMap(Self.date) }
+
+    private static func date(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
+    }
+
+    func isValid(for phase: String) -> Bool {
+        guard self.phase == phase,
+              ["running", "queued", "retrying", "paused", "recovering", "complete", "stopped"].contains(activity),
+              updatedAt == nil || activityUpdatedAt != nil,
+              phaseStartedAt == nil || startedAt != nil,
+              queuePosition == nil || queuePosition! > 0 else { return false }
+        if let completed {
+            guard completed.isFinite, completed >= 0,
+                  (phase == "downloading_audio" && unit == "bytes") ||
+                    (phase == "transcribing" && unit == "audio_seconds") else { return false }
+        } else if unit != nil || total != nil { return false }
+        if let total {
+            guard total.isFinite, total > 0, let completed, completed <= total else { return false }
+        }
+        if let estimate = estimatedPhaseRemainingSeconds {
+            guard estimate.isFinite, estimate >= 0, total != nil, activity == "running" else { return false }
+        }
+        return true
+    }
+}
+
 private struct ICServerEpisode: Decodable {
     let id: Int
     let status: String
@@ -218,6 +270,7 @@ private struct ICServerEpisode: Decodable {
     let error: ICServerError?
     let artifacts: [ICServerArtifact]
     let media: ICServerMedia?
+    let work: ICServerTranscriptionWork?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -227,7 +280,7 @@ private struct ICServerEpisode: Decodable {
         case serverDurationSeconds = "server_duration_seconds"
         case warnings
         case error
-        case artifacts, media
+        case artifacts, media, work
     }
 }
 
@@ -420,6 +473,7 @@ private struct ICPersistedServerTranscriptionQueue: Codable, Sendable {
         var serverPhase: String? = nil
         var lastResponseAt: Date? = nil
         var connectionIssue: Bool? = nil
+        var work: ICServerTranscriptionWork? = nil
     }
 
     let items: [Item]
@@ -676,6 +730,7 @@ private struct ICServerCancellation: Codable, Sendable {
         item.serverWaitingForNetwork = false
         item.serverConnectionIssue = false
         item.serverPhase = retryImportOnlyByItem[ObjectIdentifier(item)] == true ? "importing" : nil
+        item.serverWork = nil
         item.serverLastResponseAt = nil
         item.error = nil
         item.statusDetail = nil
@@ -894,6 +949,7 @@ private struct ICServerCancellation: Codable, Sendable {
     }
 
     private func cancelLocally(_ item: ICTranscriptionQueueItem, message: String) {
+        item.serverWork = nil
         finishAdmissionFeedback(item, accepted: false, message: message)
         item.status = .canceled
         item.statusStartedAt = nil
@@ -1017,6 +1073,15 @@ private struct ICServerCancellation: Codable, Sendable {
         item.serverLastResponseAt = Date()
         item.serverPhase = episode.phase
         item.serverConnectionIssue = false
+        item.serverWork = nil
+        if let work = episode.work {
+            guard work.isValid(for: episode.phase) else {
+                item.requiresExplicitRetryAfterCrash = true
+                fail(item, message: NSLocalizedString("The server response could not be read. Automatic retries have stopped. Check the saved request again.", comment: ""))
+                return
+            }
+            item.serverWork = work
+        }
         if episode.status == "canceled" || envelope.clientRequest?.state == "canceled" || envelope.clientRequest?.state == "deleted" {
             cancelLocally(item, message: NSLocalizedString("This job was canceled on the server.", comment: ""))
             return
@@ -1036,7 +1101,10 @@ private struct ICServerCancellation: Codable, Sendable {
                 fail(item, message: NSLocalizedString("Der Server lieferte einen unbekannten Verarbeitungsstatus.", comment: ""))
                 return
             }
-            item.serverPhase = "paused"
+            if item.serverWork?.activity != "paused" {
+                item.serverPhase = "paused"
+                item.serverWork = nil
+            }
             updateStatusDetail(detail, for: item)
         } else {
             updateStatusDetail(phase, for: item)
@@ -1046,6 +1114,7 @@ private struct ICServerCancellation: Codable, Sendable {
             retryImportOnlyByItem[ObjectIdentifier(item)] = true
             item.status = .generatingChapters
             item.serverPhase = "importing"
+            item.serverWork = nil
             updateStatusDetail(NSLocalizedString("Server-Ergebnis wird geprüft und übernommen.", comment: ""), for: item)
             postQueueChange()
             do {
@@ -1114,6 +1183,7 @@ private struct ICServerCancellation: Codable, Sendable {
     }
 
     private func fail(_ item: ICTranscriptionQueueItem, message: String) {
+        item.serverWork = nil
         item.status = .failed
         item.statusStartedAt = nil
         item.statusDetail = nil
@@ -1187,7 +1257,10 @@ private struct ICServerCancellation: Codable, Sendable {
         guard schedulePoll(item, after: retryAfter(from: nsError) ?? Int(Self.retryDelay)) else { return }
         if let detail = localizedServiceUnavailableDetail(nsError.userInfo["serverErrorCode"] as? String) {
             item.serverConnectionIssue = false
-            item.serverPhase = "paused"
+            if item.serverWork?.activity != "paused" {
+                item.serverPhase = "paused"
+                item.serverWork = nil
+            }
             updateStatusDetail(detail, for: item)
         } else {
             updateStatusDetail(NSLocalizedString("Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant.", comment: ""), for: item)
@@ -1236,7 +1309,7 @@ private struct ICServerCancellation: Codable, Sendable {
         case "queue_full", "client_queue_full":
             reason = NSLocalizedString("The server queue is full. Try again later.", comment: "")
         case "provider_unavailable":
-            reason = NSLocalizedString("Server processing is unavailable. The operator must restore service. Try again later.", comment: "")
+            reason = NSLocalizedString("Transcription is temporarily unavailable. Please try again later.", comment: "")
         case "worker_unavailable", "resources_unavailable":
             reason = NSLocalizedString("The server currently has no processing capacity. Try again later.", comment: "")
         default:
@@ -1254,11 +1327,11 @@ private struct ICServerCancellation: Codable, Sendable {
     private func localizedServiceUnavailableDetail(_ code: String?) -> String? {
         switch code {
         case "provider_unavailable":
-            return NSLocalizedString("Server processing is paused. The operator must restore service; your job will retry automatically.", comment: "")
+            return NSLocalizedString("Your request is saved on the server. Processing will continue automatically when the service is available again.", comment: "")
         case "worker_unavailable":
-            return NSLocalizedString("The transcription server has no available worker. It will retry automatically.", comment: "")
+            return NSLocalizedString("Your request is saved on the server. Processing will continue automatically when the service is available again.", comment: "")
         case "resources_unavailable":
-            return NSLocalizedString("Server processing is paused because server resources are unavailable. Your accepted job will retry automatically.", comment: "")
+            return NSLocalizedString("Your request is saved on the server. Processing will continue automatically when the service is available again.", comment: "")
         case "queue_full", "client_queue_full":
             return NSLocalizedString("The server transcription queue is full. Your job will retry automatically when capacity is available.", comment: "")
         default:
@@ -1283,6 +1356,7 @@ private struct ICServerCancellation: Codable, Sendable {
         }
         try checkCurrentAttempt(item, requestID: requestID)
         item.serverPhase = "sending"
+        item.serverWork = nil
         updateStatusDetail(NSLocalizedString("Sending the saved request to the server.", comment: ""), for: item)
         postQueueChange()
         var body: [String: Any] = [
@@ -1310,6 +1384,7 @@ private struct ICServerCancellation: Codable, Sendable {
             throw rejected(NSLocalizedString("Download the complete episode before starting transcription.", comment: ""))
         }
         item.serverPhase = "checking_audio"
+        item.serverWork = nil
         updateStatusDetail(NSLocalizedString("Checking the downloaded audio on this device.", comment: ""), for: item)
         postQueueChange()
         let actual: String
@@ -1850,7 +1925,8 @@ private struct ICServerCancellation: Codable, Sendable {
                          waitingForNetwork: item.serverWaitingForNetwork,
                          serverPhase: item.serverPhase,
                          lastResponseAt: item.serverLastResponseAt,
-                         connectionIssue: item.serverConnectionIssue)
+                         connectionIssue: item.serverConnectionIssue,
+                         work: item.serverWork)
         }, cancellations: cancellations, ownerClientID: ownerClientID)
         let fileURL = queueFileURL
         pendingPersistenceCount += 1
@@ -1942,6 +2018,7 @@ private struct ICServerCancellation: Codable, Sendable {
             item.serverPhase = stored.serverPhase
             item.serverLastResponseAt = stored.lastResponseAt
             item.serverConnectionIssue = stored.connectionIssue == true
+            if let work = stored.work, work.isValid(for: stored.serverPhase ?? "") { item.serverWork = work }
             item.statusStartedAt = stored.statusStartedAt
             item.requiresExplicitRetryAfterCrash = stored.requiresExplicitRetry == true
             if let retryAt = item.nextRetryAt,
@@ -2020,6 +2097,16 @@ private struct ICServerCancellation: Codable, Sendable {
                     "serverPhase": item.serverPhase as Any? ?? NSNull(),
                     "lastResponseAt": item.serverLastResponseAt as Any? ?? NSNull(),
                     "connectionIssue": item.serverConnectionIssue,
+                    "work": item.serverWork.map { work -> NSDictionary in
+                        ["phase": work.phase, "activity": work.activity,
+                         "updatedAt": work.updatedAt as Any? ?? NSNull(),
+                         "phaseStartedAt": work.phaseStartedAt as Any? ?? NSNull(),
+                         "completed": work.completed as Any? ?? NSNull(),
+                         "total": work.total as Any? ?? NSNull(),
+                         "unit": work.unit as Any? ?? NSNull(),
+                         "estimatedPhaseRemainingSeconds": work.estimatedPhaseRemainingSeconds as Any? ?? NSNull(),
+                         "queuePosition": work.queuePosition as Any? ?? NSNull()]
+                    } as Any? ?? NSNull(),
                     "nextRetryAt": item.nextRetryAt as Any? ?? NSNull(),
                     "admission": admissionByItem[ObjectIdentifier(item)]?.rawValue as Any? ?? NSNull(),
                     "statusStartedAt": item.statusStartedAt as Any? ?? NSNull(),

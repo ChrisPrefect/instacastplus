@@ -17,6 +17,18 @@
 #import <BackgroundTasks/BackgroundTasks.h>
 
 // Shared by the queue row and its detail screen: only measured or scheduled facts.
+static BOOL ICServerWorkerActivityIsCurrent(ICTranscriptionQueueItem* item) {
+    return [item.serverActivity isEqualToString:@"running"] && item.serverActivityUpdatedAt && item.serverActivityUpdatedAt.timeIntervalSinceNow >= -30;
+}
+
+static BOOL ICServerTranscriptionIsActive(ICTranscriptionQueueItem* item) {
+    if (item.status == ICTranscriptionStatusCompleted || item.status == ICTranscriptionStatusCanceled ||
+        item.status == ICTranscriptionStatusFailed || item.requiresExplicitRetryAfterCrash ||
+        item.serverWaitingForNetwork || item.serverConnectionIssue) return NO;
+    if ([@[@"checking_audio", @"sending", @"checking_request", @"importing", @"ready"] containsObject:item.serverPhase ?: @""]) return YES;
+    return ICServerWorkerActivityIsCurrent(item);
+}
+
 static NSString* ICServerTranscriptionTitle(ICTranscriptionQueueItem* item) {
     if (item.status == ICTranscriptionStatusCompleted) return NSLocalizedString(@"Ready to use", nil);
     if (item.status == ICTranscriptionStatusCanceled) return NSLocalizedString(@"Canceled", nil);
@@ -25,6 +37,10 @@ static NSString* ICServerTranscriptionTitle(ICTranscriptionQueueItem* item) {
         ? NSLocalizedString(@"Result could not be saved", nil) : NSLocalizedString(@"Transcription stopped", nil);
     if (item.serverWaitingForNetwork) return NSLocalizedString(@"Waiting for internet", nil);
     if (item.serverConnectionIssue) return NSLocalizedString(@"Connection interrupted", nil);
+    if ([item.serverActivity isEqualToString:@"paused"] || [item.serverPhase isEqualToString:@"paused"]) return NSLocalizedString(@"Processing paused", nil);
+    if ([item.serverActivity isEqualToString:@"queued"]) return NSLocalizedString(@"Waiting on the server", nil);
+    if ([item.serverActivity isEqualToString:@"recovering"] || ([item.serverActivity isEqualToString:@"running"] && !ICServerWorkerActivityIsCurrent(item) && [@[@"downloading_audio", @"transcribing", @"analyzing", @"finalizing"] containsObject:item.serverPhase ?: @""])) return NSLocalizedString(@"Checking server activity", nil);
+    if ([item.serverActivity isEqualToString:@"retrying"]) return NSLocalizedString(@"Waiting for the next attempt", nil);
     NSDictionary* titles = @{
         @"paused": NSLocalizedString(@"Processing paused", nil),
         @"checking_audio": NSLocalizedString(@"Checking audio", nil),
@@ -32,8 +48,8 @@ static NSString* ICServerTranscriptionTitle(ICTranscriptionQueueItem* item) {
         @"checking_request": NSLocalizedString(@"Checking saved request", nil),
         @"queued": NSLocalizedString(@"Waiting on the server", nil),
         @"downloading_audio": NSLocalizedString(@"Server is downloading audio", nil),
-        @"transcribing": NSLocalizedString(@"Creating transcript", nil),
-        @"analyzing": NSLocalizedString(@"Creating chapters and summary", nil),
+        @"transcribing": NSLocalizedString(@"Server is creating the transcript", nil),
+        @"analyzing": NSLocalizedString(@"Server is creating chapters and summary", nil),
         @"finalizing": NSLocalizedString(@"Server is preparing results", nil),
         @"ready": NSLocalizedString(@"Retrieving results", nil),
         @"importing": NSLocalizedString(@"Saving results on this device", nil)
@@ -44,42 +60,60 @@ static NSString* ICServerTranscriptionTitle(ICTranscriptionQueueItem* item) {
 static NSString* ICServerTranscriptionNextAction(ICTranscriptionQueueItem* item) {
     if (item.status == ICTranscriptionStatusCompleted) return NSLocalizedString(@"The transcript, chapters and summary are available in the player.", nil);
     if (item.status == ICTranscriptionStatusCanceled) return NSLocalizedString(@"This request will not restart automatically.", nil);
-    if (item.requiresExplicitRetryAfterCrash) return NSLocalizedString(@"Automatic checks have stopped. Check this saved request again; this will not create a new transcription.", nil);
+    if (item.requiresExplicitRetryAfterCrash) return NSLocalizedString(@"Check the saved request to retrieve its current status. This will not start another transcription.", nil);
     if (item.status == ICTranscriptionStatusFailed) return [item.serverPhase isEqualToString:@"importing"]
         ? NSLocalizedString(@"The server result remains available. Retry retrieving it without transcribing again.", nil)
-        : NSLocalizedString(@"No further attempt is scheduled. Resolve the reason above, then try again.", nil);
-    if (item.serverWaitingForNetwork) return NSLocalizedString(@"Continues automatically when this app has internet access. In the background, iOS decides when the app can run; opening the app resumes it immediately.", nil);
-    NSMutableArray* lines = [NSMutableArray array];
-    if (item.nextRetryAt) {
+        : NSLocalizedString(@"You can try this transcription again.", nil);
+    if (item.serverWaitingForNetwork) return NSLocalizedString(@"Continues automatically when the app reconnects. Opening the app checks the connection immediately.", nil);
+    if ([item.serverPhase isEqualToString:@"paused"]) return NSLocalizedString(@"Processing will resume automatically when the service is available again.", nil);
+    if (item.serverConnectionIssue || [item.serverActivity isEqualToString:@"paused"] || [item.serverActivity isEqualToString:@"recovering"] || [item.serverActivity isEqualToString:@"retrying"] || ([item.serverActivity isEqualToString:@"running"] && !ICServerWorkerActivityIsCurrent(item))) {
+        NSString* action = NSLocalizedString(@"Your request is saved. Its status will be checked again automatically.", nil);
         if (item.nextRetryAt.timeIntervalSinceNow > 0) {
             NSString* time = [NSDateFormatter localizedStringFromDate:item.nextRetryAt dateStyle:NSDateFormatterNoStyle timeStyle:NSDateFormatterMediumStyle];
-            [lines addObject:[NSString stringWithFormat:NSLocalizedString(@"Next status check in this app: %@", nil), time]];
-        } else {
-            [lines addObject:NSLocalizedString(@"The next status check is due and will run when the app can connect.", nil)];
+            return [NSString stringWithFormat:@"%@\n%@", action, [NSString stringWithFormat:NSLocalizedString(@"Next check: %@", nil), time]];
         }
-    } else {
-        [lines addObject:NSLocalizedString(@"This step is in progress. The status updates automatically.", nil)];
+        return action;
     }
-    if ([[ServerTranscriptionManager shared] hasConfirmedAdmissionForEpisodeHash:item.episodeHash] &&
-        ![@[@"importing", @"ready"] containsObject:item.serverPhase ?: @""]) {
-        [lines addObject:NSLocalizedString(@"The server does not provide a remaining time.", nil)];
-        [lines addObject:NSLocalizedString(@"You can leave this screen. Server processing continues independently; this app retrieves the result when it can run.", nil)];
-    }
-    return [lines componentsJoinedByString:@"\n"];
+    if ([item.serverPhase isEqualToString:@"queued"] || [item.serverActivity isEqualToString:@"queued"]) return NSLocalizedString(@"Processing will start automatically when a server slot is available. You can close the app.", nil);
+    if ([@[@"importing", @"ready"] containsObject:item.serverPhase ?: @""]) return NSLocalizedString(@"The completed result is being downloaded and saved. It will then be available in the player.", nil);
+    if ([[ServerTranscriptionManager shared] hasConfirmedAdmissionForEpisodeHash:item.episodeHash]) return NSLocalizedString(@"You can close the app. Processing continues on the server; the app retrieves the finished result automatically when connected.", nil);
+    return NSLocalizedString(@"Once the server accepts the request, processing continues there independently of this app.", nil);
 }
 
 static NSString* ICServerTranscriptionReason(ICTranscriptionQueueItem* item) {
     if (item.status == ICTranscriptionStatusFailed) return item.error;
     if (item.status == ICTranscriptionStatusCompleted || item.status == ICTranscriptionStatusCanceled) return nil;
-    // The headline already names a confirmed phase. Keep interruptions and their reasons visible.
+    if ([item.serverPhase isEqualToString:@"paused"]) return NSLocalizedString(@"The transcription service is temporarily unavailable.", nil);
+    if ([item.serverActivity isEqualToString:@"paused"]) return NSLocalizedString(@"Your request is paused on the server and remains saved.", nil);
+    if ([item.serverActivity isEqualToString:@"recovering"]) return NSLocalizedString(@"The server has not yet confirmed that processing is continuing.", nil);
+    if (([item.serverPhase isEqualToString:@"queued"] || [item.serverActivity isEqualToString:@"queued"]) && item.serverQueuePosition) return [NSString stringWithFormat:NSLocalizedString(@"Position in the server queue: %@", nil), item.serverQueuePosition];
     if (!item.serverConnectionIssue && !item.serverWaitingForNetwork && !item.requiresExplicitRetryAfterCrash &&
         [@[@"queued", @"downloading_audio", @"transcribing", @"analyzing", @"finalizing", @"importing"] containsObject:item.serverPhase ?: @""]) return nil;
     return item.statusDetail;
 }
 
+static BOOL ICServerTranscriptionHasMeasuredProgress(ICTranscriptionQueueItem* item) {
+    return ICServerTranscriptionIsActive(item) && [item.serverActivity isEqualToString:@"running"] &&
+        item.serverWorkCompleted &&
+        ([@"bytes" isEqualToString:item.serverWorkUnit] || [@"audio_seconds" isEqualToString:item.serverWorkUnit]);
+}
+
+static NSString* ICServerAudioTime(NSTimeInterval seconds) {
+    NSInteger total = (NSInteger)seconds;
+    return total >= 3600 ? [NSString stringWithFormat:@"%ld:%02ld:%02ld", (long)(total / 3600), (long)(total / 60 % 60), (long)(total % 60)]
+        : [NSString stringWithFormat:@"%ld:%02ld", (long)(total / 60), (long)(total % 60)];
+}
+
+static NSString* ICServerTranscriptionMeasuredProgress(ICTranscriptionQueueItem* item) {
+    if (!ICServerTranscriptionHasMeasuredProgress(item)) return nil;
+    if (!item.serverWorkTotal && [item.serverWorkUnit isEqualToString:@"bytes"]) return [NSString stringWithFormat:NSLocalizedString(@"Audio downloaded: %@", nil), [NSByteCountFormatter stringFromByteCount:item.serverWorkCompleted.longLongValue countStyle:NSByteCountFormatterCountStyleFile]];
+    if ([item.serverWorkUnit isEqualToString:@"audio_seconds"]) return [NSString stringWithFormat:NSLocalizedString(@"Audio transcribed: %@ of %@", nil), ICServerAudioTime(item.serverWorkCompleted.doubleValue), ICServerAudioTime(item.serverWorkTotal.doubleValue)];
+    return [NSString stringWithFormat:NSLocalizedString(@"Audio downloaded: %@ of %@", nil), [NSByteCountFormatter stringFromByteCount:item.serverWorkCompleted.longLongValue countStyle:NSByteCountFormatterCountStyleFile], [NSByteCountFormatter stringFromByteCount:item.serverWorkTotal.longLongValue countStyle:NSByteCountFormatterCountStyleFile]];
+}
+
 static NSString* ICServerTranscriptionStatusText(ICTranscriptionQueueItem* item) {
-    // Keep the overview scannable; precise timing and recovery live on the status page.
     NSString* detail = ICServerTranscriptionReason(item);
+    if (!detail.length) detail = ICServerTranscriptionMeasuredProgress(item);
     if (item.status == ICTranscriptionStatusCompleted) detail = NSLocalizedString(@"Transcript, chapters and summary saved", nil);
     if (item.status == ICTranscriptionStatusCanceled) detail = nil;
     NSString* title = ICServerTranscriptionTitle(item);
@@ -144,6 +178,7 @@ static NSString* ICServerTranscriptionStatusText(ICTranscriptionQueueItem* item)
     NSDateFormatter* _timeFormatter;
     UILabel* _emptyStateLabel;
     ICTranscriptionQueueItem* _currentItem;
+    NSTimer* _activityExpiryTimer;
 }
 
 - (void)viewDidLoad {
@@ -172,6 +207,17 @@ static NSString* ICServerTranscriptionStatusText(ICTranscriptionQueueItem* item)
                                                  name:@"ICTranscriptionDidFinishNotification" object:nil];
 }
 
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self _reload];
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    [_activityExpiryTimer invalidate];
+    _activityExpiryTimer = nil;
+}
+
 - (void)_leaveStatus {
     if (self.navigationController.viewControllers.count > 1) [self.navigationController popViewControllerAnimated:YES];
     else [self dismissViewControllerAnimated:YES completion:nil];
@@ -182,6 +228,7 @@ static NSString* ICServerTranscriptionStatusText(ICTranscriptionQueueItem* item)
 }
 
 - (void)dealloc {
+    [_activityExpiryTimer invalidate];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
@@ -198,6 +245,13 @@ static NSString* ICServerTranscriptionStatusText(ICTranscriptionQueueItem* item)
     self.tableView.backgroundColor = _currentItem && !self.showsHistory ? UIColor.systemGroupedBackgroundColor : ICBackgroundColor;
     self.tableView.backgroundView = (_entries.count == 0 && !_currentItem) ? _emptyStateLabel : nil;
     [self.tableView reloadData];
+    [_activityExpiryTimer invalidate];
+    _activityExpiryTimer = nil;
+    NSTimeInterval remaining = 30 + _currentItem.serverActivityUpdatedAt.timeIntervalSinceNow;
+    if (self.view.window && [_currentItem.serverActivity isEqualToString:@"running"] && remaining > 0) {
+        __weak typeof(self) weakSelf = self;
+        _activityExpiryTimer = [NSTimer scheduledTimerWithTimeInterval:remaining repeats:NO block:^(NSTimer* timer) { [weakSelf _reload]; }];
+    }
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView*)tableView {
@@ -212,7 +266,8 @@ static NSString* ICServerTranscriptionStatusText(ICTranscriptionQueueItem* item)
 - (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section {
     if (!_currentItem || self.showsHistory) return _entries.count;
     if (section == 1) return 2;
-    if (section == 2) return 3;
+    if (section == 0) return ICServerTranscriptionHasMeasuredProgress(_currentItem) ? 2 : 1;
+    if (section == 2) return 5;
     return 1;
 }
 
@@ -238,16 +293,26 @@ static NSString* ICServerTranscriptionStatusText(ICTranscriptionQueueItem* item)
     cell.detailTextLabel.textColor = ICMutedTextColor;
     cell.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
-    if (indexPath.section == 0) {
+    if (indexPath.section == 0 && indexPath.row == 1) {
+        return [self _measuredProgressCell];
+    } else if (indexPath.section == 0) {
         cell.accessibilityIdentifier = @"ICServerStatusTitle";
         cell.textLabel.text = ICServerTranscriptionTitle(_currentItem);
         cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleTitle2];
         NSMutableArray* detail = [NSMutableArray array];
+        if ([[ServerTranscriptionManager shared] hasConfirmedAdmissionForEpisodeHash:_currentItem.episodeHash]) [detail addObject:NSLocalizedString(@"Request accepted by the server", nil)];
         NSString* reason = ICServerTranscriptionReason(_currentItem);
         if (reason.length && _currentItem.status != ICTranscriptionStatusCompleted) [detail addObject:reason];
-        if (_currentItem.serverLastResponseAt) {
-            NSString* date = [NSDateFormatter localizedStringFromDate:_currentItem.serverLastResponseAt dateStyle:NSDateFormatterShortStyle timeStyle:NSDateFormatterMediumStyle];
-            [detail addObject:[NSString stringWithFormat:NSLocalizedString(@"Last server response: %@", nil), date]];
+        NSDate* activityAt = _currentItem.serverActivityUpdatedAt ?: _currentItem.serverLastResponseAt;
+        if (activityAt && _currentItem.status != ICTranscriptionStatusCompleted) {
+            NSString* time = [NSDateFormatter localizedStringFromDate:activityAt dateStyle:NSDateFormatterNoStyle timeStyle:NSDateFormatterMediumStyle];
+            [detail addObject:[NSString stringWithFormat:_currentItem.serverActivityUpdatedAt ? NSLocalizedString(@"Last server activity: %@", nil) : NSLocalizedString(@"Status updated: %@", nil), time]];
+        }
+        if (ICServerTranscriptionIsActive(_currentItem)) {
+            UIActivityIndicatorView* activity = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+            activity.accessibilityIdentifier = @"ICServerActivity";
+            [activity startAnimating];
+            cell.accessoryView = activity;
         }
         cell.detailTextLabel.text = [detail componentsJoinedByString:@"\n\n"];
         BOOL failed = _currentItem.status == ICTranscriptionStatusFailed || _currentItem.requiresExplicitRetryAfterCrash;
@@ -266,21 +331,63 @@ static NSString* ICServerTranscriptionStatusText(ICTranscriptionQueueItem* item)
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     } else if (indexPath.section == 2) {
         cell.accessibilityIdentifier = @"ICServerProcess";
-        NSArray* titles = @[NSLocalizedString(@"Prepare and send request", nil), NSLocalizedString(@"Process on the server", nil), NSLocalizedString(@"Save result on this device", nil)];
+        NSArray* titles = @[NSLocalizedString(@"Send request", nil), NSLocalizedString(@"Download audio on the server", nil), NSLocalizedString(@"Create transcript", nil), NSLocalizedString(@"Create chapters and summary", nil), NSLocalizedString(@"Save result on this device", nil)];
         BOOL accepted = [[ServerTranscriptionManager shared] hasConfirmedAdmissionForEpisodeHash:_currentItem.episodeHash];
-        BOOL importing = [_currentItem.serverPhase isEqualToString:@"importing"] || [_currentItem.serverPhase isEqualToString:@"ready"];
-        NSInteger current = _currentItem.status == ICTranscriptionStatusCompleted ? 3 : (importing ? 2 : (accepted ? 1 : 0));
+        NSDictionary* stages = @{@"queued": @1, @"downloading_audio": @1, @"transcribing": @2, @"analyzing": @3, @"finalizing": @3, @"ready": @4, @"importing": @4};
+        NSInteger current = _currentItem.status == ICTranscriptionStatusCompleted ? 5 : (stages[_currentItem.serverPhase ?: @""] ? [stages[_currentItem.serverPhase] integerValue] : (accepted ? 1 : 0));
         BOOL done = indexPath.row < current;
+        BOOL stopped = _currentItem.status == ICTranscriptionStatusFailed || _currentItem.status == ICTranscriptionStatusCanceled || _currentItem.requiresExplicitRetryAfterCrash;
         cell.textLabel.text = titles[indexPath.row];
-        cell.imageView.image = [UIImage systemImageNamed:done ? @"checkmark.circle.fill" : (indexPath.row == current ? @"circle.inset.filled" : @"circle")];
-        cell.imageView.tintColor = done ? UIColor.systemGreenColor : (indexPath.row == current ? ICTintColor : ICMutedTextColor);
-        cell.detailTextLabel.text = done ? NSLocalizedString(@"Completed", nil) : (indexPath.row == current ? ICServerTranscriptionTitle(_currentItem) : NSLocalizedString(@"Not started", nil));
+        cell.imageView.image = [UIImage systemImageNamed:done ? @"checkmark.circle.fill" : (indexPath.row == current && !stopped ? @"circle.inset.filled" : @"circle")];
+        cell.imageView.tintColor = done ? UIColor.systemGreenColor : (indexPath.row == current && !stopped ? ICTintColor : ICMutedTextColor);
+        cell.detailTextLabel.text = done ? (indexPath.row == 0 ? NSLocalizedString(@"Request accepted by the server", nil) : NSLocalizedString(@"Completed", nil)) : (indexPath.row == current ? ICServerTranscriptionTitle(_currentItem) : NSLocalizedString(@"Not started", nil));
     } else {
         cell.textLabel.text = NSLocalizedString(@"Diagnostic history", nil);
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
         cell.accessibilityTraits |= UIAccessibilityTraitButton;
     }
+    return cell;
+}
+
+- (UITableViewCell*)_measuredProgressCell {
+    UITableViewCell* cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    cell.accessibilityIdentifier = @"ICServerMeasuredProgress";
+    cell.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    UILabel* label = [[UILabel alloc] init];
+    label.text = ICServerTranscriptionMeasuredProgress(_currentItem);
+    label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
+    label.adjustsFontForContentSizeCategory = YES;
+    label.numberOfLines = 0;
+    UIStackView* stack = [[UIStackView alloc] initWithArrangedSubviews:@[label]];
+    if (_currentItem.serverWorkTotal.doubleValue > 0) {
+        UIProgressView* progress = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
+        progress.progress = _currentItem.serverWorkCompleted.doubleValue / _currentItem.serverWorkTotal.doubleValue;
+        progress.progressTintColor = ICTintColor;
+        progress.accessibilityLabel = label.text;
+        [stack addArrangedSubview:progress];
+    }
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.spacing = 10;
+    if (_currentItem.serverWorkTotal.doubleValue > 0 && _currentItem.serverEstimatedPhaseRemainingSeconds.doubleValue > 0) {
+        UILabel* estimate = [[UILabel alloc] init];
+        NSInteger minutes = (NSInteger)ceil(_currentItem.serverEstimatedPhaseRemainingSeconds.doubleValue / 60);
+        estimate.text = [NSString stringWithFormat:NSLocalizedString(@"About %ld min remaining for this step", nil), (long)minutes];
+        estimate.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
+        estimate.adjustsFontForContentSizeCategory = YES;
+        estimate.textColor = ICMutedTextColor;
+        estimate.numberOfLines = 0;
+        [stack addArrangedSubview:estimate];
+    }
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [cell.contentView addSubview:stack];
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.leadingAnchor constraintEqualToAnchor:cell.contentView.layoutMarginsGuide.leadingAnchor],
+        [stack.trailingAnchor constraintEqualToAnchor:cell.contentView.layoutMarginsGuide.trailingAnchor],
+        [stack.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:12],
+        [stack.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-12]
+    ]];
     return cell;
 }
 

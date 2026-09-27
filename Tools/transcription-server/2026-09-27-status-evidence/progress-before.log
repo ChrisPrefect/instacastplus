@@ -1,0 +1,161 @@
+/home/instacast/domains/transcript.instacast.ch/.venv/lib/python3.10/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_01_health_reports_stopped_workers (queue_admission_regression.AdmissionTests) ... ok
+test_admin_and_api_share_global_admission_limit (queue_admission_regression.AdmissionTests) ... ok
+test_balance_check_is_cached_and_recovers_after_invalidation (queue_admission_regression.AdmissionTests) ... ok
+test_client_capacity_and_reuse (queue_admission_regression.AdmissionTests) ... ok
+test_completed_jobs_release_capacity (queue_admission_regression.AdmissionTests) ... ok
+test_concurrent_admission_cannot_exceed_client_limit (queue_admission_regression.AdmissionTests) ... ok
+test_global_capacity_and_existing_reads (queue_admission_regression.AdmissionTests) ... ok
+test_mysql_lock_covers_commit_and_rollback (queue_admission_regression.AdmissionTests) ... ok
+test_pending_episode_reports_service_pause_without_losing_identity (queue_admission_regression.AdmissionTests) ... ok
+test_podcast_bulk_admission_is_atomic_and_counted (queue_admission_regression.AdmissionTests) ... ok
+test_provider_402_preserves_job_phase_and_attempt_budget (queue_admission_regression.AdmissionTests) ... ok
+test_provider_balance_blocks_health_and_admission (queue_admission_regression.AdmissionTests) ... ok
+test_provider_block_prevents_claiming_any_episode (queue_admission_regression.AdmissionTests) ... ok
+test_ready_reuse_at_capacity_with_workers_down (queue_admission_regression.AdmissionTests) ... ok
+test_retry_cannot_bypass_client_capacity (queue_admission_regression.AdmissionTests) ... ok
+test_schema_exposes_admission_contract (queue_admission_regression.AdmissionTests) ... ok
+test_shared_job_membership_consumes_slot (queue_admission_regression.AdmissionTests) ... ok
+test_stopped_workers_only_reject_new_work (queue_admission_regression.AdmissionTests) ... ok
+test_systemd_requires_actual_running_pid (queue_admission_regression.AdmissionTests) ... ok
+test_asr_counts_only_finished_chunks_without_context (__main__.WorkStatusTests) ... FAIL
+test_current_phase_throughput_and_phase_reset (__main__.WorkStatusTests) ... ERROR
+test_http_queue_acceptance_claim_and_phase (__main__.WorkStatusTests) ... FAIL
+test_invalid_counts_cannot_be_published (__main__.WorkStatusTests) ... test_new_claim_rejects_old_measurements (__main__.WorkStatusTests) ... ERROR
+test_real_download_child_publishes_counts (__main__.WorkStatusTests) ... FAIL
+test_retry_and_pause_are_not_running (__main__.WorkStatusTests) ... FAIL
+test_stale_activity_is_not_refreshed_by_episode_write (__main__.WorkStatusTests) ... ERROR
+
+======================================================================
+ERROR: test_current_phase_throughput_and_phase_reset (__main__.WorkStatusTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 73, in test_current_phase_throughput_and_phase_reset
+    self.measured(job, 100, 600)
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 48, in measured
+    worker.set_episode_progress(job['episode_id'], phase, None,
+TypeError: set_episode_progress() got an unexpected keyword argument 'measurement'
+
+======================================================================
+ERROR: test_invalid_counts_cannot_be_published (__main__.WorkStatusTests) (completed=nan, total=100)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 127, in test_invalid_counts_cannot_be_published
+    self.measured(job,completed,total)
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 48, in measured
+    worker.set_episode_progress(job['episode_id'], phase, None,
+TypeError: set_episode_progress() got an unexpected keyword argument 'measurement'
+
+======================================================================
+ERROR: test_invalid_counts_cannot_be_published (__main__.WorkStatusTests) (completed=-1, total=100)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 127, in test_invalid_counts_cannot_be_published
+    self.measured(job,completed,total)
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 48, in measured
+    worker.set_episode_progress(job['episode_id'], phase, None,
+TypeError: set_episode_progress() got an unexpected keyword argument 'measurement'
+
+======================================================================
+ERROR: test_invalid_counts_cannot_be_published (__main__.WorkStatusTests) (completed=101, total=100)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 127, in test_invalid_counts_cannot_be_published
+    self.measured(job,completed,total)
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 48, in measured
+    worker.set_episode_progress(job['episode_id'], phase, None,
+TypeError: set_episode_progress() got an unexpected keyword argument 'measurement'
+
+======================================================================
+ERROR: test_invalid_counts_cannot_be_published (__main__.WorkStatusTests) (completed=10, total=0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 127, in test_invalid_counts_cannot_be_published
+    self.measured(job,completed,total)
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 48, in measured
+    worker.set_episode_progress(job['episode_id'], phase, None,
+TypeError: set_episode_progress() got an unexpected keyword argument 'measurement'
+
+======================================================================
+ERROR: test_invalid_counts_cannot_be_published (__main__.WorkStatusTests) (completed=True, total=100)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 127, in test_invalid_counts_cannot_be_published
+    self.measured(job,completed,total)
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 48, in measured
+    worker.set_episode_progress(job['episode_id'], phase, None,
+TypeError: set_episode_progress() got an unexpected keyword argument 'measurement'
+
+======================================================================
+ERROR: test_invalid_counts_cannot_be_published (__main__.WorkStatusTests) (completed=10, total=inf)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 127, in test_invalid_counts_cannot_be_published
+    self.measured(job,completed,total)
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 48, in measured
+    worker.set_episode_progress(job['episode_id'], phase, None,
+TypeError: set_episode_progress() got an unexpected keyword argument 'measurement'
+
+======================================================================
+ERROR: test_new_claim_rejects_old_measurements (__main__.WorkStatusTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 110, in test_new_claim_rejects_old_measurements
+    self.measured(job, 200, 600)
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 48, in measured
+    worker.set_episode_progress(job['episode_id'], phase, None,
+TypeError: set_episode_progress() got an unexpected keyword argument 'measurement'
+
+======================================================================
+ERROR: test_stale_activity_is_not_refreshed_by_episode_write (__main__.WorkStatusTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 88, in test_stale_activity_is_not_refreshed_by_episode_write
+    self.measured(job, 100, 600)
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 48, in measured
+    worker.set_episode_progress(job['episode_id'], phase, None,
+TypeError: set_episode_progress() got an unexpected keyword argument 'measurement'
+
+======================================================================
+FAIL: test_asr_counts_only_finished_chunks_without_context (__main__.WorkStatusTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 160, in test_asr_counts_only_finished_chunks_without_context
+    self.assertEqual(60,state.get('completed_audio_seconds'),'In-flight first-pass segments are not final ASR completion')
+AssertionError: 60 != None : In-flight first-pass segments are not final ASR completion
+
+======================================================================
+FAIL: test_http_queue_acceptance_claim_and_phase (__main__.WorkStatusTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 53, in test_http_queue_acceptance_claim_and_phase
+    result = self.response(2)
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 43, in response
+    self.assertIn('work', result, 'No observable worker activity/measurement in accepted HTTP response')
+AssertionError: 'work' not found in {'id': 2, 'status': 'queued', 'phase': 'queued', 'progress': None, 'title': '1', 'episode_url': 'https://example.org/1.mp3', 'podcast_url': None, 'created_at': '2026-09-27T20:07:47+00:00', 'updated_at': '2026-09-27T20:07:47+00:00', 'completed_at': None, 'server_duration_seconds': None, 'client_duration_seconds': None, 'duration_delta_seconds': None, 'audio_bytes': None, 'audio_etag': None, 'media': {'audio_sha256': None}, 'warnings': [], 'error': None, 'artifacts': []} : No observable worker activity/measurement in accepted HTTP response
+
+======================================================================
+FAIL: test_real_download_child_publishes_counts (__main__.WorkStatusTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 148, in test_real_download_child_publishes_counts
+    work=self.response(job['episode_id'])['work']
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 43, in response
+    self.assertIn('work', result, 'No observable worker activity/measurement in accepted HTTP response')
+AssertionError: 'work' not found in {'id': 1, 'status': 'running', 'phase': 'downloading_audio', 'progress': None, 'title': '0', 'episode_url': 'https://example.org/0.mp3', 'podcast_url': None, 'created_at': '2026-09-27T20:07:47+00:00', 'updated_at': '2026-09-27T20:07:47+00:00', 'completed_at': None, 'server_duration_seconds': None, 'client_duration_seconds': None, 'duration_delta_seconds': None, 'audio_bytes': None, 'audio_etag': None, 'media': {'audio_sha256': None}, 'warnings': [], 'error': None, 'artifacts': []} : No observable worker activity/measurement in accepted HTTP response
+
+======================================================================
+FAIL: test_retry_and_pause_are_not_running (__main__.WorkStatusTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 104, in test_retry_and_pause_are_not_running
+    work = self.response(job['episode_id'])['work']
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 43, in response
+    self.assertIn('work', result, 'No observable worker activity/measurement in accepted HTTP response')
+AssertionError: 'work' not found in {'id': 1, 'status': 'running', 'phase': 'downloading_audio', 'progress': None, 'title': '0', 'episode_url': 'https://example.org/0.mp3', 'podcast_url': None, 'created_at': '2026-09-27T20:07:48+00:00', 'updated_at': '2026-09-27T20:07:48+00:00', 'completed_at': None, 'server_duration_seconds': None, 'client_duration_seconds': None, 'duration_delta_seconds': None, 'audio_bytes': None, 'audio_etag': None, 'media': {'audio_sha256': None}, 'warnings': [], 'error': None, 'artifacts': []} : No observable worker activity/measurement in accepted HTTP response
+
+----------------------------------------------------------------------
+Ran 27 tests in 8.618s
+
+FAILED (failures=4, errors=9)

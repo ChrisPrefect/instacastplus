@@ -1,0 +1,17 @@
+{
+    bytesWithoutTotal = 1;
+    completedButton = 0;
+    honestTiming = 1;
+    localButton = 1;
+    pausedWork = 0;
+    queuedNextStep = 0;
+    serverButton = 0;
+    staleActivityHidden = 1;
+    status = "Server is creating the transcript";
+}
+Traceback (most recent call last):
+  File "/Users/Chris/Developer/instacastplus/Tools/server_transcription_presentation_runtime_test.py", line 121, in <module>
+    subprocess.run([str(path/'test')],check=True)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-presentation-5y3lpt8g/test']' returned non-zero exit status 1.

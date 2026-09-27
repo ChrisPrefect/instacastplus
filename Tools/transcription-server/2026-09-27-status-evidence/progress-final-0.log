@@ -1,0 +1,21 @@
+/home/instacast/domains/transcript.instacast.ch/.venv/lib/python3.10/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_additive_migration_keeps_existing_job (__main__.WorkStatusTests) ... ok
+test_asr_counts_only_finished_chunks_without_context (__main__.WorkStatusTests) ... ok
+test_budget_configuration_is_not_a_customer_action (__main__.WorkStatusTests) ... ok
+test_current_phase_throughput_and_phase_reset (__main__.WorkStatusTests) ... ok
+test_healthy_http_poll_interval_and_capacity_budget (__main__.WorkStatusTests) ... ok
+test_http_queue_acceptance_claim_and_phase (__main__.WorkStatusTests) ... ok
+test_invalid_counts_cannot_be_published (__main__.WorkStatusTests) ... ok
+test_new_claim_rejects_old_measurements (__main__.WorkStatusTests) ... ok
+test_provider_authentication_is_product_message_in_http (__main__.WorkStatusTests) ... ok
+test_real_download_child_publishes_counts (__main__.WorkStatusTests) ... ok
+test_retry_and_pause_are_not_running (__main__.WorkStatusTests) ... ok
+test_runtime_provider_diagnostics_stay_private (__main__.WorkStatusTests) ... ok
+test_stale_activity_is_not_refreshed_by_episode_write (__main__.WorkStatusTests) ... ok
+test_subprocess_supervisor_reads_real_asr_progress_file (__main__.WorkStatusTests) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 15.727s
+
+OK

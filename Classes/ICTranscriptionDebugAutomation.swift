@@ -261,12 +261,24 @@ import UIKit
             guard ServerTranscriptionManager.debugServerURL != nil,
                   let episodeHash,
                   let episode = (DatabaseManager.shared()?.episodes(withObjectHashes: [episodeHash]) as? [CDEpisode])?.first,
-                  let presenter = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                  let root = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
                     .flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController else {
                 response = errorResponse(action: action, message: "Fixture episode or test peer missing.")
                 break
             }
+            // Run the real start action from the visible screen, including the
+            // fresh-install changelog, rather than underneath an existing modal.
+            var presenter = root
+            while true {
+                if let presented = presenter.presentedViewController { presenter = presented }
+                else if let navigation = presenter as? UINavigationController, let top = navigation.topViewController { presenter = top }
+                else if let tabs = presenter as? UITabBarController, let selected = tabs.selectedViewController { presenter = selected }
+                else { break }
+            }
             TranscriptionQueueViewController.startServerTranscription(episode: episode, presenter: presenter)
+            let shown = presenter.navigationController?.topViewController ??
+                (presenter.presentedViewController as? UINavigationController)?.topViewController
+            response["statusScreenPresented"] = shown.map { NSStringFromClass(type(of: $0)) == "TranscriptionLogDetailViewController" } ?? false
         #endif
         case "status":
             response["queue"] = queue.debugQueueSnapshot()

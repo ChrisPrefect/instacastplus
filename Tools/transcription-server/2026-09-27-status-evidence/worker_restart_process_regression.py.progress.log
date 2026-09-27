@@ -1,0 +1,4 @@
+Resumed same job with intact source/checkpoint and fenced predecessor.
+Resumed same job with intact source/checkpoint and fenced predecessor.
+PASS: SIGTERM service restart
+PASS: SIGKILL host restart

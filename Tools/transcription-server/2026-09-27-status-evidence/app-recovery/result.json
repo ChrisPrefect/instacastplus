@@ -1,0 +1,133 @@
+{
+  "passed": true,
+  "scenario": "recovery",
+  "command": [
+    "Tools/server_transcription_app_flow_test.py",
+    "--device",
+    "79C6B540-E8DC-4E2A-8171-25BB70F7E5D1",
+    "--app",
+    "build/ServerStatusDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app",
+    "--scenario",
+    "recovery",
+    "--output",
+    "Tools/transcription-server/2026-09-27-status-evidence/app-recovery"
+  ],
+  "scope": "Full simulator app, real media download/hash, HTTP, persisted request, all server phases, strict artifact import and status screen; inference replayed from matching real artifacts",
+  "device": "79C6B540-E8DC-4E2A-8171-25BB70F7E5D1",
+  "audio_sha256": "92747209c31b54463fa69e40d7b29b15894a13ff00664e86ca8066112984b6d0",
+  "episodeHash": "c2a40c6748efe422c2d4ae90a0dff25f",
+  "posts": [
+    {
+      "podcast_url": "http://127.0.0.1:64894/api/fixture.xml",
+      "title": "Stadtbibliothek und Lesekreis",
+      "episode_url": "http://127.0.0.1:64894/fixture.wav",
+      "client_audio_sha256": "92747209c31b54463fa69e40d7b29b15894a13ff00664e86ca8066112984b6d0",
+      "force": false,
+      "client_request_id": "beaf8f88-c123-4e40-a34f-b8b01a277efe",
+      "client_duration_seconds": 115,
+      "wait_seconds": 0
+    }
+  ],
+  "events": [
+    [
+      "GET",
+      "/fixture.wav"
+    ],
+    [
+      "POST",
+      "/api/v1/episodes"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/beaf8f88-c123-4e40-a34f-b8b01a277efe"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/3"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/1"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/4"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/2"
+    ]
+  ]
+}

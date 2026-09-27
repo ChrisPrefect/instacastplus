@@ -1,0 +1,27 @@
+[
+  {
+    "command": [
+      "tools/rate_limit_regression.py"
+    ],
+    "returncode": 0,
+    "elapsed": 2.57
+  },
+  {
+    "command": [
+      "tools/queue_admission_mysql_regression.py",
+      "--rates"
+    ],
+    "returncode": 0,
+    "elapsed": 8.87
+  },
+  {
+    "command": [
+      "tools/queue_admission_mysql_regression.py",
+      "--rates",
+      "--test",
+      "test_concurrent_first_requests_count_atomically"
+    ],
+    "returncode": 0,
+    "elapsed": 2.93
+  }
+]

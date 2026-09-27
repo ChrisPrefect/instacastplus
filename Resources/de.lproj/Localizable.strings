@@ -1382,8 +1382,8 @@
 "Der Server lieferte einen unbekannten Verarbeitungsstatus." = "Der Server lieferte einen unbekannten Verarbeitungsstatus.";
 "Der Transkriptionsserver lieferte keine HTTP-Antwort." = "Der Transkriptionsserver lieferte keine HTTP-Antwort.";
 "Die Anfrage an den Transkriptionsserver ist fehlgeschlagen." = "Die Anfrage an den Transkriptionsserver ist fehlgeschlagen.";
-"Ein Server-Artefakt konnte nicht geladen werden." = "Ein Server-Artefakt konnte nicht geladen werden.";
-"Ein Server-Artefakt ist beschädigt." = "Ein Server-Artefakt ist beschädigt.";
+"Ein Server-Artefakt konnte nicht geladen werden." = "Eine Ergebnisdatei konnte nicht vom Server geladen werden.";
+"Ein Server-Artefakt ist beschädigt." = "Eine Ergebnisdatei ist beschädigt.";
 "Das Server-Ergebnis ist unvollständig." = "Das Server-Ergebnis ist unvollständig.";
 "Die Episode wurde während der Server-Verarbeitung entfernt." = "Die Episode wurde während der Server-Verarbeitung entfernt.";
 "Wartet auf Server" = "Wartet auf Server";
@@ -1871,15 +1871,15 @@
 "Server-Zeitmarken sind nicht zuverlässig: %@" = "Server-Zeitmarken sind nicht zuverlässig: %@";
 "Server-Ergebnis konnte vorübergehend nicht geladen werden. Neuer Versuch ist geplant." = "Server-Ergebnis konnte vorübergehend nicht geladen werden. Neuer Versuch ist geplant.";
 "Der Transkriptionsserver lieferte keinen gültigen Zeitpunkt für die nächste Statusabfrage." = "Der Transkriptionsserver lieferte keinen gültigen Zeitpunkt für die nächste Statusabfrage.";
-"Ein Server-Artefakt hat einen ungültigen Deskriptor." = "Ein Server-Artefakt hat einen ungültigen Deskriptor.";
-"Ein Server-Artefakt lieferte keine HTTP-Antwort." = "Ein Server-Artefakt lieferte keine HTTP-Antwort.";
-"Die Größe eines Server-Artefakts stimmt nicht." = "Die Größe eines Server-Artefakts stimmt nicht.";
-"Der Inhaltstyp eines Server-Artefakts stimmt nicht." = "Der Inhaltstyp eines Server-Artefakts stimmt nicht.";
-"Die Versionskennung eines Server-Artefakts stimmt nicht." = "Die Versionskennung eines Server-Artefakts stimmt nicht.";
-"Das Server-Ergebnis ist unvollständig oder enthält doppelte Artefakte." = "Das Server-Ergebnis ist unvollständig oder enthält doppelte Artefakte.";
-"Die Server-Artefakte gehören nicht zum selben Transkript." = "Die Server-Artefakte gehören nicht zum selben Transkript.";
+"Ein Server-Artefakt hat einen ungültigen Deskriptor." = "Die Angaben zu einer Ergebnisdatei sind ungültig.";
+"Ein Server-Artefakt lieferte keine HTTP-Antwort." = "Der Server hat beim Laden einer Ergebnisdatei nicht korrekt geantwortet.";
+"Die Größe eines Server-Artefakts stimmt nicht." = "Die Größe einer Ergebnisdatei stimmt nicht mit der angekündigten Größe überein.";
+"Der Inhaltstyp eines Server-Artefakts stimmt nicht." = "Eine Ergebnisdatei hat ein unerwartetes Format.";
+"Die Versionskennung eines Server-Artefakts stimmt nicht." = "Eine Ergebnisdatei hat nicht die erwartete Version.";
+"Das Server-Ergebnis ist unvollständig oder enthält doppelte Artefakte." = "Das Server-Ergebnis ist unvollständig oder enthält Dateien mehrfach.";
+"Die Server-Artefakte gehören nicht zum selben Transkript." = "Die Ergebnisdateien gehören nicht zum selben Transkript.";
 "Das Server-Ergebnis verwendet eine unbekannte Schema-Version." = "Das Server-Ergebnis verwendet eine unbekannte Schema-Version.";
-"Die Server-Artefakte verwenden unterschiedliche Audiodauern." = "Die Server-Artefakte verwenden unterschiedliche Audiodauern.";
+"Die Server-Artefakte verwenden unterschiedliche Audiodauern." = "Die Ergebnisdateien beziehen sich auf unterschiedliche Audiodauern.";
 "Die Server-Kapitel bilden keine vollständige Basistimeline." = "Die Server-Kapitel bilden keine vollständige Basistimeline.";
 "Die Server-Kapitel bilden keine lückenlose sponsorfreie Basistimeline." = "Die Server-Kapitel bilden keine lückenlose sponsorfreie Basistimeline.";
 "Die Server-Kapitel enden nicht an der Audiodauer." = "Die Server-Kapitel enden nicht an der Audiodauer.";
@@ -1902,7 +1902,6 @@
 
 "The transcription server has no available worker. It will retry automatically." = "Der Transkriptionsserver kann derzeit keine Aufträge verarbeiten. Der Auftrag wird automatisch erneut versucht.";
 
-"Server processing is paused. The operator must restore service; your job will retry automatically." = "Die Server-Verarbeitung ist pausiert. Der Betreiber muss den Dienst wiederherstellen; dein Auftrag wird automatisch erneut versucht.";
 
 "The server transcription queue is full. Your job will retry automatically when capacity is available." = "Die Warteschlange des Transkriptionsservers ist voll. Dein Auftrag wird automatisch erneut versucht, sobald Kapazität verfügbar ist.";
 
@@ -1946,7 +1945,6 @@
 
 "The server queue is full. Try again later." = "Die Serverwarteschlange ist voll. Versuche es später erneut.";
 
-"Server processing is unavailable. The operator must restore service. Try again later." = "Die Serververarbeitung ist nicht verfügbar. Der Betreiber muss den Dienst wiederherstellen. Versuche es später erneut.";
 
 "The server currently has no processing capacity. Try again later." = "Der Server hat derzeit keine Verarbeitungskapazität. Versuche es später erneut.";
 
@@ -2062,7 +2060,6 @@
 "Status and activity" = "Status und Verlauf";
 "Tap for options." = "Tippe für weitere Aktionen.";
 "The connection to the server was interrupted. The saved request will be checked again. %@" = "Die Verbindung zum Server wurde unterbrochen. Der gespeicherte Auftrag wird erneut geprüft. %@";
-"The server does not provide a remaining time." = "Der Server meldet keine geschätzte Restdauer.";
 "The server rejected the request (HTTP %ld). %@" = "Der Server hat die Anfrage abgelehnt (HTTP %ld). %@";
 "The server response could not be read. Automatic retries have stopped. Check the saved request again." = "Die Serverantwort konnte nicht gelesen werden. Automatische Versuche wurden gestoppt. Prüfe den gespeicherten Auftrag erneut.";
 "Offline. Whether the server received the request is unknown. The saved request will be checked automatically when the connection returns." = "Keine Internetverbindung. Ob der Auftrag beim Server angekommen ist, ist noch unklar. Bei Netzrückkehr wird der gespeicherte Auftrag automatisch geprüft.";
@@ -2104,7 +2101,6 @@
 "Remove from list" = "Aus der Liste entfernen";
 "Cancel request" = "Auftrag abbrechen";
 "Last server response: %@" = "Letzte Serverantwort: %@";
-"Prepare and send request" = "Auftrag vorbereiten und senden";
 "Process on the server" = "Auf dem Server verarbeiten";
 "Save result on this device" = "Ergebnis auf diesem Gerät speichern";
 "Not started" = "Noch nicht begonnen";
@@ -2116,3 +2112,38 @@
 
 "Completed" = "Abgeschlossen";
 "Processing paused" = "Verarbeitung pausiert";
+
+"Request accepted by the server" = "Auftrag vom Server angenommen";
+"Server is creating the transcript" = "Server erstellt das Transkript";
+"Server is creating chapters and summary" = "Server erstellt Kapitel und Zusammenfassung";
+"Checking server activity" = "Serveraktivität wird geprüft";
+"Waiting for the next attempt" = "Wartet auf nächsten Versuch";
+"Check the saved request to retrieve its current status. This will not start another transcription." = "Rufe den aktuellen Stand des gespeicherten Auftrags erneut ab. Dabei wird keine weitere Transkription gestartet.";
+"You can try this transcription again." = "Du kannst diese Transkription erneut versuchen.";
+"Continues automatically when the app reconnects. Opening the app checks the connection immediately." = "Wird automatisch fortgesetzt, sobald die App wieder verbunden ist. Beim Öffnen wird die Verbindung sofort geprüft.";
+"Processing will resume automatically when the service is available again." = "Die Verarbeitung wird automatisch fortgesetzt, sobald der Dienst wieder verfügbar ist.";
+"Your request is saved. Its status will be checked again automatically." = "Dein Auftrag bleibt gespeichert. Der aktuelle Stand wird automatisch erneut abgerufen.";
+"Next check: %@" = "Nächste Abfrage: %@";
+"The completed result is being downloaded and saved. It will then be available in the player." = "Das fertige Ergebnis wird geladen und gespeichert. Anschließend ist es im Player verfügbar.";
+"You can close the app. Processing continues on the server; the app retrieves the finished result automatically when connected." = "Du kannst die App schließen. Der Server verarbeitet den Auftrag weiter. Die App lädt das fertige Ergebnis automatisch, sobald sie verbunden ist.";
+"Once the server accepts the request, processing continues there independently of this app." = "Sobald der Server den Auftrag angenommen hat, verarbeitet er ihn unabhängig von dieser App weiter.";
+"The server has not yet confirmed that processing is continuing." = "Die weitere Verarbeitung wurde vom Server noch nicht bestätigt.";
+"Position in the server queue: %@" = "Position in der Server-Warteschlange: %@";
+"Audio transcribed: %@ of %@" = "Audio transkribiert: %@ von %@";
+"Audio downloaded: %@ of %@" = "Audio geladen: %@ von %@";
+"Last server activity: %@" = "Letzte Serveraktivität: %@";
+"Status updated: %@" = "Stand aktualisiert: %@";
+"Send request" = "Auftrag senden";
+"Download audio on the server" = "Audiodatei auf dem Server laden";
+"Create transcript" = "Transkript erstellen";
+"Create chapters and summary" = "Kapitel und Zusammenfassung erstellen";
+"About %ld min remaining for this step" = "Noch etwa %ld Min. für diesen Schritt";
+"Transcription is temporarily unavailable. Please try again later." = "Die Transkription ist vorübergehend nicht verfügbar. Versuche es später erneut.";
+"Your request is saved on the server. Processing will continue automatically when the service is available again." = "Dein Auftrag ist auf dem Server gespeichert. Die Verarbeitung wird automatisch fortgesetzt, sobald der Dienst wieder verfügbar ist.";
+
+"Audio downloaded: %@" = "Audio geladen: %@";
+
+"Processing will start automatically when a server slot is available. You can close the app." = "Die Verarbeitung startet automatisch, sobald der Server Kapazität hat. Du kannst die App schließen.";
+
+"The transcription service is temporarily unavailable." = "Der Transkriptionsdienst ist vorübergehend nicht verfügbar.";
+"Your request is paused on the server and remains saved." = "Dein Auftrag ist auf dem Server pausiert und bleibt gespeichert.";

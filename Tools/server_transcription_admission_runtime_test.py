@@ -44,6 +44,14 @@ admission_run = (ROOT / "Tools/fixtures/server_transcription_admission_cases.swi
 start = fixture.index(" static func run(in dir:URL)")
 end = fixture.index("\n}\n@main", start)
 fixture = fixture[:start] + admission_run + fixture[end:]
+# Compile the actual UI-facing queue model as well, so new observability fields
+# are tested through their real Objective-C accessors instead of copied stubs.
+queue_source = (ROOT / "Classes/TranscriptionQueue.swift").read_text()
+queue_item = queue_source.split("@objc class ICTranscriptionQueueItem:", 1)[1].split("// MARK: - Persisted Queue", 1)[0]
+item_start = fixture.index("class ICTranscriptionQueueItem:")
+item_end = fixture.index("@MainActor class TranscriptionQueue", item_start)
+fixture = fixture[:item_start] + "@objc class ICTranscriptionQueueItem:" + queue_item + fixture[item_end:]
+fixture = fixture.replace("enum ICTranscriptionStatus:", "@objc enum ICTranscriptionStatus:")
 fixture = fixture.replace("// PRODUCTION_TYPES", source.split("@MainActor\n@objc class ServerTranscriptionManager", 1)[0])
 fixture = fixture.replace("// PRODUCTION_METHODS", "\n".join(("@discardableResult\n" if signature == "private func schedulePoll(" else "") + declaration(signature) for signature in signatures))
 # Fail the actual atomic snapshot-write boundary, while retaining all production

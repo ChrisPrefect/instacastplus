@@ -1,0 +1,8 @@
+{
+  "Classes/TranscriptionQueueViewController.m": "cdb11fb92f1b2a26874be374944c89292c0e4ce9fa170a16ffb33f9544280961",
+  "Resources/de.lproj/Localizable.strings": "c69adf4008478a516ea7a560eb909bee50899a8f37d5c86be1247b41e2fc5b57",
+  "Resources/en.lproj/Localizable.strings": "61206a7941db620d8a689b13dcc68eebbb32970c6e58a74ade135130204d9d80",
+  "Tools/server_transcription_status_screen_runtime_test.py": "bbb5014a5ebe5f0aef5766bb15594be3bb22081798e116414f8e62e876077d2e",
+  "Tools/server_transcription_presentation_runtime_test.py": "5671ad2b8e92be4adb4b38725784435a37bb581d311a84c932affd44e42f3e10",
+  "Tools/server_transcription_layout_runtime_test.py": "d3f01b2911f52f04d2974bdff7e5942927401b046f261d53f036aedbcedee4ef"
+}

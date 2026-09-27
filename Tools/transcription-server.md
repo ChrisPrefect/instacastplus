@@ -316,3 +316,29 @@ Serverstand erneut. Nur eine tatsächlich fehlgeschlagene oder abgebrochene Serv
 berechtigt einen erzwungenen Neustart. Screenshot des ursprünglichen Problems, Live-Diagnose,
 fehlgeschlagene Vorher-Tests, Simulatoransichten und App/HTTP/Import-Durchlauf:
 [Prüfnachweis](transcription-server/2026-09-25-flow-evidence/README.md).
+
+## Gemessener Arbeitsfortschritt – 27. September 2026
+
+Direkte Episodenaufträge werden ohne vorgeschalteten Feed-Download angenommen.
+Der öffentliche Vertrag `episode.work` trennt bestätigte Annahme, tatsächlichen
+Workerzustand und phasenbezogene Messwerte: Downloadbytes, vollständig verarbeitete
+Audioabschnitte, Queueposition und eine optionale Schrittrestdauer aus gemessenem
+Durchsatz. Es gibt weiterhin keinen erfundenen Gesamtprozentsatz. Workeraktivität
+stammt aus dem aktuellen Claim; nach 30 Sekunden ohne Heartbeat wird sie als
+ungeklärt angezeigt. Ein laufender Worker wird nicht durch eine zusätzliche
+Prüfung eines gerade unbeteiligten KI-Anbieters als pausiert dargestellt.
+
+Gesunde aktive Aufträge werden alle 5 Sekunden abgefragt; die berechneten Budgets
+decken 25 parallele Clientaufträge ab (450 Leseanfragen pro Client und Minute,
+4500 pro IP). Servicepausen behalten ihre längeren Intervalle. Der bei simultanen
+Erstanfragen reproduzierte MariaDB-Deadlock der Anfragezähler wurde durch Trennung
+des Aufräumens von der atomaren Zählertransaktion behoben.
+
+Die 13 ausgelieferten Dateien, additive Migration `jobs.work_json TEXT`, Sicherung,
+Tests und HTTP-Prüfungen stehen im
+[aktuellen Prüfnachweis](transcription-server/2026-09-27-status-evidence/README.md).
+Sicherung: `var/backups/status-flow-20260927-verified`. Bestehende Auftragszustände
+blieben unverändert. Bei der Liveprüfung waren API und Worker aktiv, die reale
+OpenAI-Anfrage antwortete jedoch mit `401 token_revoked`; für neue Verarbeitung
+ist die angeforderte erneute Anmeldung des Serverkontos erforderlich. Dieser
+Betriebszustand ist unabhängig von erfolgreichem App-Build und Vertragstests.

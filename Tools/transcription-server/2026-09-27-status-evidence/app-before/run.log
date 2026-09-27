@@ -1,0 +1,7 @@
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 734EA229-2F60-4205-9225-7193D5B00E7E (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/Chris/Developer/instacastplus/Tools/transcription-server/2026-09-27-status-evidence/app-before/queued.png
+Traceback (most recent call last):
+  File "/Users/Chris/Developer/instacastplus/Tools/server_transcription_app_flow_test.py", line 176, in <module>
+    capture(phase)
+AssertionError: Server receipt must be explicitly available to presentation: {'automaticallyScheduled': False, 'chapterOnly': False, 'completedAt': '', 'episodeHash': '9b56ef745f8d25b0f3366da26b5d222f', 'episodeTitle': 'Stadtbibliothek und Lesekreis', 'error': '', 'feedTitle': 'Server flow fixture', 'nextRetryAt': '2026-09-27T20:08:31Z', 'progress': 0, 'requiresExplicitRetryAfterCrash': False, 'retryAttempt': 0, 'serverPhase': 'queued', 'shouldGenerateAnalysis': True, 'status': 1, 'statusDetail': 'Wartet auf Verarbeitung', 'statusName': 'queued', 'statusStartedAt': '', 'usesServerTranscription': True}

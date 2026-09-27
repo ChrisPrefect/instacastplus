@@ -1,0 +1,122 @@
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-wp033jxe/main.m:502:292: warning: capturing 'walk' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  502 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                                                                                                                                                                                                                                                                                    ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-wp033jxe/main.m:502:32: note: block will be retained by the captured object
+  502 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-wp033jxe/main.m:500:3: warning: capturing 'vc' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  500 |  [vc.view layoutIfNeeded];[vc.tableView layoutIfNeeded];
+      |   ^~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-wp033jxe/main.m:499:2: note: block will be retained by the captured object
+  499 |  vc.capture = ^{
+      |  ^~
+2 warnings generated.
+com.iteconomy.instacastplus.server-status-test: 32402
+{
+  "passed": 1,
+  "nextAction": true,
+  "title": true,
+  "historyHidden": true,
+  "activity": false,
+  "confirmed": true,
+  "informative": true,
+  "nodes": [
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id": "",
+      "text": "Noch nicht begonnen"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Kapitel und Zusammenfassung erstellen"
+    },
+    {
+      "id": "",
+      "text": "Noch nicht begonnen"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Transkript erstellen"
+    },
+    {
+      "id": "",
+      "text": "Verarbeitung pausiert"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Audiodatei auf dem Server laden"
+    },
+    {
+      "id": "",
+      "text": "Abgeschlossen"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Auftrag senden"
+    },
+    {
+      "id": "",
+      "text": "Auftrag vom Server angenommen"
+    },
+    {
+      "id": "ICServerAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Auftrag abbrechen"
+    },
+    {
+      "id": "ICServerNextAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Dein Auftrag bleibt gespeichert. Der aktuelle Stand wird automatisch erneut abgerufen.\nNächste Abfrage: 22:18:55"
+    },
+    {
+      "id": "ICServerStatusTitle",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Verarbeitung pausiert"
+    },
+    {
+      "id": "",
+      "text": "Auftrag vom Server angenommen\n\nDein Auftrag ist auf dem Server pausiert und bleibt gespeichert.\n\nLetzte Serveraktivität: 22:18:25"
+    },
+    {
+      "id": "",
+      "text": "So geht es weiter"
+    },
+    {
+      "id": "",
+      "text": "Ablauf"
+    }
+  ],
+  "process": true
+}

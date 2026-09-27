@@ -1,0 +1,217 @@
+{
+  "action": "inspect",
+  "commandID": "5edbdafa-2d99-4bd6-8947-1630860e0a63",
+  "inspection": {
+    "artifacts": {
+      "analysis": {
+        "bytes": 1148,
+        "exists": true,
+        "modifiedAt": "2026-09-27T20:21:41Z",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_analysis.json"
+      },
+      "chapterDebug": {
+        "bytes": 0,
+        "exists": false,
+        "modifiedAt": "",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_chapter_debug.json"
+      },
+      "chapters": {
+        "bytes": 0,
+        "exists": false,
+        "modifiedAt": "",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_chapters.json"
+      },
+      "checkpoint": {
+        "bytes": 0,
+        "exists": false,
+        "modifiedAt": "",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_checkpoint.json"
+      },
+      "episodeLog": {
+        "bytes": 1982,
+        "exists": true,
+        "modifiedAt": "2026-09-27T20:21:41Z",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_log.json"
+      },
+      "music": {
+        "bytes": 0,
+        "exists": false,
+        "modifiedAt": "",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_music.json"
+      },
+      "srt": {
+        "bytes": 2835,
+        "exists": true,
+        "modifiedAt": "2026-09-27T20:21:41Z",
+        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f.srt"
+      }
+    },
+    "chapters": [
+      {
+        "end": 44.31,
+        "isSponsor": false,
+        "start": 0,
+        "title": "Besuch in der Stadtbibliothek"
+      },
+      {
+        "end": 71.69,
+        "isSponsor": true,
+        "start": 44.31,
+        "title": "Sponsor: Beispiel Kaffee"
+      },
+      {
+        "end": 75.05,
+        "isSponsor": false,
+        "start": 71.69,
+        "title": "Besuch in der Stadtbibliothek"
+      },
+      {
+        "end": 114.836,
+        "isSponsor": false,
+        "start": 75.05,
+        "title": "Der neue Lesekreis"
+      }
+    ],
+    "episodeHash": "c2a40c6748efe422c2d4ae90a0dff25f",
+    "log": [
+      {
+        "detailText": "",
+        "message": "Server-Auftrag wird auf diesem Gerät vorbereitet.",
+        "phase": "server",
+        "timestamp": "2026-09-27T20:21:20Z"
+      },
+      {
+        "detailText": "",
+        "message": "Die heruntergeladene Audiodatei wird auf diesem Gerät geprüft.",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:20Z"
+      },
+      {
+        "detailText": "",
+        "message": "Der gespeicherte Auftrag wird an den Server gesendet.",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:20Z"
+      },
+      {
+        "detailText": "",
+        "message": "Die Verbindung zum Server wurde unterbrochen. Der gespeicherte Auftrag wird erneut geprüft. Response lost after admission",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:20Z"
+      },
+      {
+        "detailText": "",
+        "message": "Es wird geprüft, ob der gespeicherte Auftrag beim Server angekommen ist.",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:21Z"
+      },
+      {
+        "detailText": "",
+        "message": "Wartet auf Verarbeitung",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:21Z"
+      },
+      {
+        "detailText": "",
+        "message": "Schritt 1 von 4 · Audio wird geladen",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:23Z"
+      },
+      {
+        "detailText": "",
+        "message": "Schritt 2 von 4 · Transkript wird erstellt",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:25Z"
+      },
+      {
+        "detailText": "",
+        "message": "Dein Auftrag ist auf dem Server gespeichert. Die Verarbeitung wird automatisch fortgesetzt, sobald der Dienst wieder verfügbar ist.",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:31Z"
+      },
+      {
+        "detailText": "",
+        "message": "Schritt 2 von 4 · Transkript wird erstellt",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:33Z"
+      },
+      {
+        "detailText": "",
+        "message": "Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant.",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:34Z"
+      },
+      {
+        "detailText": "",
+        "message": "Schritt 2 von 4 · Transkript wird erstellt",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:36Z"
+      },
+      {
+        "detailText": "",
+        "message": "Schritt 3 von 4 · Transkript wird analysiert",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:37Z"
+      },
+      {
+        "detailText": "",
+        "message": "Schritt 4 von 4 · Ergebnisse werden vorbereitet",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:39Z"
+      },
+      {
+        "detailText": "",
+        "message": "Server-Ergebnis ist bereit.",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:41Z"
+      },
+      {
+        "detailText": "",
+        "message": "Server-Ergebnis wird geprüft und übernommen.",
+        "phase": "status",
+        "timestamp": "2026-09-27T20:21:41Z"
+      },
+      {
+        "detailText": "",
+        "message": "Server-Transkription übernommen",
+        "phase": "server",
+        "timestamp": "2026-09-27T20:21:41Z"
+      }
+    ],
+    "queue": [
+      {
+        "automaticallyScheduled": false,
+        "chapterOnly": false,
+        "completedAt": "2026-09-27T20:21:41Z",
+        "episodeHash": "c2a40c6748efe422c2d4ae90a0dff25f",
+        "episodeTitle": "Stadtbibliothek und Lesekreis",
+        "error": "",
+        "feedTitle": "Server flow fixture",
+        "nextRetryAt": "",
+        "progress": 1,
+        "requiresExplicitRetryAfterCrash": false,
+        "retryAttempt": 0,
+        "serverActivity": "",
+        "serverActivityUpdatedAt": "",
+        "serverAdmissionConfirmed": true,
+        "serverConnectionIssue": false,
+        "serverEstimatedPhaseRemainingSeconds": null,
+        "serverPhase": "importing",
+        "serverPhaseStartedAt": "",
+        "serverQueuePosition": null,
+        "serverWaitingForNetwork": false,
+        "serverWorkCompleted": null,
+        "serverWorkTotal": null,
+        "serverWorkUnit": "",
+        "shouldGenerateAnalysis": true,
+        "status": 6,
+        "statusDetail": "",
+        "statusName": "completed",
+        "statusStartedAt": "",
+        "usesServerTranscription": true
+      }
+    ]
+  },
+  "ok": true,
+  "source": "commandFile",
+  "timestamp": "2026-09-27T20:21:44Z"
+}

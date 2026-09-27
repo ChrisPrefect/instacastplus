@@ -33,7 +33,9 @@ typedef NS_ENUM(NSInteger, ICTranscriptionStatus) { ICTranscriptionStatusNone, I
 @property ICTranscriptionStatus status;
 @property BOOL usesServerTranscription, serverWaitingForNetwork, requiresExplicitRetryAfterCrash, serverConnectionIssue;
 @property NSString *statusDetail, *error, *episodeHash, *serverPhase;
-@property NSDate *nextRetryAt, *serverLastResponseAt;
+@property NSDate *nextRetryAt,*serverLastResponseAt,*serverActivityUpdatedAt,*serverPhaseStartedAt;
+@property NSString *serverActivity,*serverWorkUnit;
+@property NSNumber *serverWorkCompleted,*serverWorkTotal,*serverEstimatedPhaseRemainingSeconds,*serverQueuePosition;
 @end
 @implementation ICTranscriptionQueueItem @end
 @interface TranscriptionQueue:NSObject
@@ -84,7 +86,7 @@ METHODS
 @end
 int main(void) { @autoreleasepool {
  Controller *vc=[Controller new]; ICTranscriptionQueueItem *server=[ICTranscriptionQueueItem new];
- server.usesServerTranscription=YES; server.status=ICTranscriptionStatusTranscribing;
+ server.usesServerTranscription=YES; server.status=ICTranscriptionStatusTranscribing;server.serverPhase=@"transcribing";server.serverActivity=@"running";server.serverActivityUpdatedAt=[NSDate date];
  server.statusDetail=@"Step 2 of 4 · Transcribing audio"; server.nextRetryAt=[NSDate dateWithTimeIntervalSince1970:1900000000];
  TranscriptionQueue.shared.items=@[]; TranscriptionQueue.shared.displayItems=@[server];
  BOOL serverButton=[vc backgroundControlsAvailable];
@@ -95,9 +97,19 @@ int main(void) { @autoreleasepool {
  local.status=ICTranscriptionStatusCompleted;
  BOOL completedButton=[vc backgroundControlsAvailable];
  NSString *next = ICServerTranscriptionNextAction(server);
- BOOL timing=[next containsString:@"Next status check"] && [next containsString:@"does not provide a remaining time"];
- printf("%s\n", [[@{@"serverButton":@(serverButton),@"localButton":@(localButton),@"completedButton":@(completedButton),@"status":text ?: @"",@"honestTiming":@(timing)} description] UTF8String]);
- return (!serverButton && localButton && !completedButton && timing) ? 0 : 1;
+ BOOL timing=[next containsString:@"automatically"] && ![next containsString:@"does not provide a remaining time"] && [text containsString:@"Server is creating the transcript"];
+ server.serverActivityUpdatedAt=[NSDate dateWithTimeIntervalSinceNow:-31];
+ BOOL stale=!ICServerTranscriptionIsActive(server) && ![ICServerTranscriptionTitle(server) isEqual:@"Server is creating the transcript"];
+ server.serverActivityUpdatedAt=[NSDate date];server.serverPhase=@"downloading_audio";server.serverWorkCompleted=@2048;server.serverWorkUnit=@"bytes";
+ BOOL unknownTotal=[ICServerTranscriptionMeasuredProgress(server) containsString:@"downloaded"];
+ server.serverActivity=@"paused";server.serverPhase=@"transcribing";
+ BOOL paused=[ICServerTranscriptionTitle(server) isEqual:@"Processing paused"] && ![ICServerTranscriptionNextAction(server) containsString:@"resume automatically"] && [ICServerTranscriptionNextAction(server) containsString:@"checked again automatically"];
+ server.serverPhase=@"paused";
+ BOOL servicePause=[ICServerTranscriptionNextAction(server) containsString:@"resume automatically"];
+ server.serverActivity=@"queued";server.serverPhase=@"transcribing";
+ BOOL queued=[ICServerTranscriptionNextAction(server) containsString:@"start automatically"] && [ICServerTranscriptionTitle(server) isEqual:@"Waiting on the server"];
+ printf("%s\n", [[@{@"serverButton":@(serverButton),@"localButton":@(localButton),@"completedButton":@(completedButton),@"status":text ?: @"",@"honestTiming":@(timing),@"staleActivityHidden":@(stale),@"bytesWithoutTotal":@(unknownTotal),@"pausedWork":@(paused),@"servicePause":@(servicePause),@"queuedNextStep":@(queued)} description] UTF8String]);
+ return (!serverButton && localButton && !completedButton && timing && stale && unknownTotal && paused && servicePause && queued) ? 0 : 1;
 }}
 '''
 static = ''

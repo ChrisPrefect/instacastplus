@@ -1,0 +1,97 @@
+{
+  "passed": true,
+  "scenario": "happy",
+  "command": [
+    "Tools/server_transcription_app_flow_test.py",
+    "--device",
+    "79C6B540-E8DC-4E2A-8171-25BB70F7E5D1",
+    "--app",
+    "build/ServerStatusDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app",
+    "--scenario",
+    "happy",
+    "--output",
+    "Tools/transcription-server/2026-09-27-status-evidence/app-happy"
+  ],
+  "scope": "Full simulator app, real media download/hash, HTTP, persisted request, all server phases, strict artifact import and status screen; inference replayed from matching real artifacts",
+  "device": "79C6B540-E8DC-4E2A-8171-25BB70F7E5D1",
+  "audio_sha256": "92747209c31b54463fa69e40d7b29b15894a13ff00664e86ca8066112984b6d0",
+  "episodeHash": "f354cc98e7ba69efdb24d44159b7ed80",
+  "posts": [
+    {
+      "episode_url": "http://127.0.0.1:64992/fixture.wav",
+      "wait_seconds": 0,
+      "title": "Stadtbibliothek und Lesekreis",
+      "podcast_url": "http://127.0.0.1:64992/api/fixture.xml",
+      "force": false,
+      "client_request_id": "f3124785-d314-4d18-9b78-1df0909b3106",
+      "client_audio_sha256": "92747209c31b54463fa69e40d7b29b15894a13ff00664e86ca8066112984b6d0",
+      "client_duration_seconds": 115
+    }
+  ],
+  "events": [
+    [
+      "GET",
+      "/fixture.wav"
+    ],
+    [
+      "POST",
+      "/api/v1/episodes"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/f3124785-d314-4d18-9b78-1df0909b3106"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/f3124785-d314-4d18-9b78-1df0909b3106"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/f3124785-d314-4d18-9b78-1df0909b3106"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/f3124785-d314-4d18-9b78-1df0909b3106"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/f3124785-d314-4d18-9b78-1df0909b3106"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/f3124785-d314-4d18-9b78-1df0909b3106"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/f3124785-d314-4d18-9b78-1df0909b3106"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/f3124785-d314-4d18-9b78-1df0909b3106"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/f3124785-d314-4d18-9b78-1df0909b3106"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/f3124785-d314-4d18-9b78-1df0909b3106"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/1"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/2"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/4"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/3"
+    ]
+  ]
+}

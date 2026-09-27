@@ -1,0 +1,76 @@
+{
+  "environment": "macOS-27.0-arm64-arm-64bit",
+  "source_sha256": "26d912f07eab1e291c347ffd891783e2d478a6644be9eec17a113a9f0473688f",
+  "notes": "Actual production ICAudioIdentity, macOS host; locally written synthetic file and existing fixture. Files may be in OS page cache; no device/network/persistence timing. Six sequential samples include task scheduling and file stat/read/hash/stat.",
+  "command": "python3 Tools/transcription-server/2026-09-27-flow-evidence/audio-identity-benchmark.py",
+  "builds": {
+    "-Onone": [
+      {
+        "bytes": 3674826,
+        "input": "fixture.wav",
+        "milliseconds": [
+          2.710958,
+          2.263209,
+          1.871625,
+          2.17875,
+          2.819584,
+          2.2565
+        ],
+        "sha256": "92747209c31b54463fa69e40d7b29b15894a13ff00664e86ca8066112984b6d0",
+        "median_ms": 2.2598545,
+        "min_ms": 1.871625,
+        "max_ms": 2.819584
+      },
+      {
+        "bytes": 200000000,
+        "input": "synthetic-200MB.bin",
+        "milliseconds": [
+          98.753125,
+          110.69375,
+          129.85875,
+          109.281375,
+          96.644458,
+          92.896
+        ],
+        "sha256": "cabe9c34a0e6d8a817c0cf6c1524412ea803c103e526198a290978270dbca26f",
+        "median_ms": 104.01724999999999,
+        "min_ms": 92.896,
+        "max_ms": 129.85875
+      }
+    ],
+    "-O": [
+      {
+        "bytes": 3674826,
+        "input": "fixture.wav",
+        "milliseconds": [
+          2.0565,
+          1.590709,
+          1.53825,
+          1.659041,
+          1.808458,
+          1.605708
+        ],
+        "sha256": "92747209c31b54463fa69e40d7b29b15894a13ff00664e86ca8066112984b6d0",
+        "median_ms": 1.6323745,
+        "min_ms": 1.53825,
+        "max_ms": 2.0565
+      },
+      {
+        "bytes": 200000000,
+        "input": "synthetic-200MB.bin",
+        "milliseconds": [
+          91.741125,
+          157.223417,
+          84.746708,
+          86.664792,
+          108.181208,
+          107.565708
+        ],
+        "sha256": "cabe9c34a0e6d8a817c0cf6c1524412ea803c103e526198a290978270dbca26f",
+        "median_ms": 99.65341649999999,
+        "min_ms": 84.746708,
+        "max_ms": 157.223417
+      }
+    ]
+  }
+}

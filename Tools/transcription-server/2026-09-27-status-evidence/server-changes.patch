@@ -1,0 +1,861 @@
+--- a/app/config.py
++++ b/app/config.py
+@@ -53,7 +53,7 @@
+ MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS = int(os.environ.get("INSTACAST_MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS", "25"))
+ # A full client queue can poll every advertised interval, download four result
+ # artifacts, and reconcile twice per episode within one minute.
+-API_STATUS_POLL_SECONDS = int(os.environ.get("INSTACAST_API_STATUS_POLL_SECONDS", "15"))
++API_STATUS_POLL_SECONDS = int(os.environ.get("INSTACAST_API_STATUS_POLL_SECONDS", "5"))
+ if API_STATUS_POLL_SECONDS <= 0:
+     raise ValueError("INSTACAST_API_STATUS_POLL_SECONDS must be positive")
+ _API_READS_PER_EPISODE_MINUTE = (60 + API_STATUS_POLL_SECONDS - 1) // API_STATUS_POLL_SECONDS + 4 + 2
+--- a/app/db.py
++++ b/app/db.py
+@@ -706,7 +706,7 @@
+ def ensure_state_columns(con: Any) -> None:
+     for table, column in (("episodes","terminal_error"),("episodes","latest_source_url"),
+                           ("jobs","source_url"),("jobs","next_attempt_at"),
+-                          ("jobs","verified_audio_sha256"),("transcription_requests","audio_sha256")):
++                          ("jobs","verified_audio_sha256"),("jobs","work_json"),("transcription_requests","audio_sha256")):
+         ensure_column(con,table,column,"TEXT")
+     con.execute("UPDATE episodes SET latest_source_url=episode_url WHERE latest_source_url IS NULL")
+     con.execute("UPDATE jobs SET source_url=(SELECT episode_url FROM episodes WHERE episodes.id=jobs.episode_id) WHERE job_type='transcribe' AND source_url IS NULL")
+--- a/app/main.py
++++ b/app/main.py
+@@ -191,7 +191,9 @@
+ def episode_envelope(status: dict[str, Any]) -> dict[str, Any]:
+     retry_after = retry_after_seconds_for_status(status.get("status"))
+     service_status = None
+-    if status.get("status") in {"queued", "running"}:
++    # Fresh worker activity is authoritative. Checking another provider while
++    # ASR is running would delay this response and falsely report a pause.
++    if status.get("status") in {"queued", "running"} and (status.get("work") or {}).get("activity") != "running":
+         service_status = transcription_provider_status() or transcription_resource_status()
+         if service_status is None and not any(transcription_worker_status().values()):
+             service_status = {"available": False, "code": "worker_unavailable",
+@@ -739,7 +741,7 @@
+     return {
+         "api_version": "v1",
+         "$schema": "https://json-schema.org/draft/2020-12/schema",
+-        "schema_revision": "2026-09-06.3",
++        "schema_revision": "2026-09-27.1",
+         "base_url": f"{config.PUBLIC_BASE_URL.rstrip('/')}/api/v1",
+         "request_lifecycle_contract": {
+             "identity": "Full SHA-256 client identity plus durable request UUID; request URLs have an immutable SHA-256 fingerprint.",
+@@ -804,7 +806,9 @@
+         },
+         "progress_contract": {
+             "active_progress": "null: no measured overall fraction exists; show the named processing phase, never a percentage or a proportional progress bar",
+-            "active_observability": "updated_at or phase changes within two retry_after_seconds polling intervals while work advances; updated_at is a heartbeat, not a percentage",
++            "active_observability": "work.activity=running requires a live worker claim and recent worker heartbeat; episode.updated_at alone does not prove activity",
++            "measured_work": "work.completed/work.total measures only work.phase, in bytes or fully processed audio_seconds; it is never overall progress",
++            "phase_estimate": "work.estimated_phase_remaining_seconds is estimated from observed throughput of this claim and phase; null without measurements, while paused or recovering; later phases are excluded",
+             "resume": "the same episode id and actual processing phase remain visible after a transient worker interruption; a resumed phase may repeat",
+             "ready": "status=ready, phase=ready, progress=1.0, error=null, and exactly four required artifacts",
+             "failed": "status=failed, phase=failed, progress=null, and a complete error object",
+@@ -1031,6 +1035,21 @@
+                         "minimum": 0,
+                         "maximum": 1,
+                         "multipleOf": 0.001,
++                    },
++                    "work": {
++                        "type": "object",
++                        "required": ["phase", "activity", "updated_at", "phase_started_at", "completed", "total", "unit", "estimated_phase_remaining_seconds", "queue_position"],
++                        "properties": {
++                            "phase": {"type": "string"},
++                            "activity": {"enum": ["queued", "running", "paused", "retrying", "recovering", "complete", "stopped"]},
++                            "updated_at": {"type": ["string", "null"], "format": "date-time"},
++                            "phase_started_at": {"type": ["string", "null"], "format": "date-time"},
++                            "completed": {"type": ["number", "null"], "minimum": 0},
++                            "total": {"type": ["number", "null"], "exclusiveMinimum": 0},
++                            "unit": {"enum": ["bytes", "audio_seconds", None]},
++                            "estimated_phase_remaining_seconds": {"type": ["number", "null"], "minimum": 0},
++                            "queue_position": {"type": ["integer", "null"], "minimum": 1},
++                        },
+                     },
+                     "episode_url": {"type": "string", "pattern": "^https?://"},
+                     "podcast_url": {"type": ["string", "null"], "pattern": "^https?://"},
+@@ -1606,16 +1625,8 @@
+                 return client_request_response(receipt)
+             return episode_json_response(wait_for_episode(reused_episode_id, payload.wait_seconds))
+ 
+-    feed = None
+-    feed_match = None
+-    feed_error = None
+-    if payload.podcast_url:
+-        try:
+-            feed = fetch_feed(payload.podcast_url)
+-            feed_match = find_episode_in_feed(feed, payload.episode_url)
+-        except Exception as exc:
+-            feed_error = str(exc)
+-
++    # A direct episode request already identifies its audio and title. Publisher
++    # metadata is not a prerequisite for durably accepting that request.
+     with queue_admission_transaction() as con:
+         if request_id:
+             current_request = request_record(con, client_hash, request_id)
+@@ -1626,18 +1637,14 @@
+         if payload.podcast_url:
+             podcast_id = ensure_podcast(
+                 con,
+-                (feed or {}).get("feed_url") or payload.podcast_url,
+-                title=(feed or {}).get("title") if feed else payload.podcast_url,
++                payload.podcast_url,
+                 auto_enabled=None,
+             )
+-        title = payload.title or (feed_match or {}).get("title")
+         episode_id = ensure_episode(
+             con,
+             payload.episode_url,
+             podcast_id=podcast_id,
+-            title=title,
+-            guid=(feed_match or {}).get("guid"),
+-            published_at=(feed_match or {}).get("published_at"),
++            title=payload.title,
+             client_duration_seconds=payload.client_duration_seconds,
+             client_audio_bytes=payload.client_audio_bytes,
+             client_audio_etag=payload.client_audio_etag,
+@@ -1700,14 +1707,6 @@
+         )
+ 
+     status = wait_for_episode(episode_id, payload.wait_seconds)
+-    if feed_error:
+-        status.setdefault("warnings", []).append(
+-            {
+-                "code": "podcast_feed_unreadable",
+-                "severity": "warning",
+-                "message": "Podcast-Feed konnte nicht gelesen werden.",
+-            }
+-        )
+     if request_id:
+         with connect() as con:
+             receipt = dict(request_record(con, client_hash, request_id))
+--- a/app/security.py
++++ b/app/security.py
+@@ -215,9 +215,11 @@
+     cutoff = now - max(window_seconds * 4, 3600)
+     blocked = False
+     with connect() as con:
++        # Finish expired-window cleanup before acquiring the counter lock. Keeping
++        # its InnoDB gap locks until INSERT can deadlock simultaneous first reads.
++        con.execute("DELETE FROM rate_limits WHERE window_start < ?", (cutoff,))
+         con.execute("BEGIN IMMEDIATE")
+         try:
+-            con.execute("DELETE FROM rate_limits WHERE window_start < ?", (cutoff,))
+             # Upsert first obtains the row's write lock even on the first concurrent
+             # request. No check-then-insert race or stale count can exceed the limit.
+             insert = "INSERT INTO rate_limits (bucket,window_start,count,updated_at) VALUES (?,?,0,?)"
+--- a/app/service.py
++++ b/app/service.py
+@@ -12,6 +12,7 @@
+ import requests
+ from fastapi import HTTPException
+ from contextlib import contextmanager, nullcontext
++from datetime import datetime, timezone
+ from functools import lru_cache
+ from pathlib import Path
+ from typing import Any, Iterator
+@@ -131,8 +132,9 @@
+ _provider_status_cache: dict[str, Any] = {}
+ 
+ 
+-def provider_unavailable_status(message: str) -> dict[str, Any]:
+-    return {"available": False, "code": "provider_unavailable", "message": message, "retry_after_seconds": 300}
++def provider_unavailable_status(reason_code: str) -> dict[str, Any]:
++    return {"available": False, "code": "provider_unavailable", "reason_code": reason_code,
++            "message": "Die Server-Transkription ist momentan nicht verfügbar.", "retry_after_seconds": 300}
+ 
+ 
+ def invalidate_transcription_provider_status() -> None:
+@@ -156,7 +158,7 @@
+ def transcription_provider_runtime_status(settings: dict[str, Any]) -> dict[str, Any] | None:
+     block = loads(get_setting("transcription_provider_block", "{}"), {})
+     if block.get("configuration") == provider_configuration_fingerprint(settings) and block.get("until",0) > time.time():
+-        return provider_unavailable_status(block["message"])
++        return provider_unavailable_status("provider_runtime_failure")
+     return None
+ 
+ 
+@@ -177,12 +179,7 @@
+                 provider_readiness(model=settings["kimi_model"], catalog_path=settings["codex_catalog_path"])
+                 status = None
+             except CodexProviderError as exc:
+-                messages = {
+-                    "authentication": "Die Server-Verarbeitung wartet auf die OpenAI-Anmeldung des Betreibers.",
+-                    "quota": "Die Server-Verarbeitung pausiert, bis wieder OpenAI-Inklusivvolumen verfügbar ist.",
+-                    "configuration": "Die OpenAI-Konfiguration des Servers muss vom Betreiber geprüft werden.",
+-                }
+-                status = provider_unavailable_status(messages.get(exc.code, "Die Verfügbarkeit von OpenAI konnte nicht bestätigt werden."))
++                status = provider_unavailable_status("provider_" + exc.code)
+                 # This is a status-read interval, not permission to retry inference.
+                 # Clients must still see cancellations/configuration changes before a weekly quota reset.
+                 status["retry_after_seconds"] = min(300, max(30, int(getattr(exc, "retry_after_seconds", None) or 300)))
+@@ -190,11 +187,11 @@
+             return status
+     from .settings import api_budget_block
+     if budget_block := api_budget_block(settings):
+-        return budget_block
++        return {**budget_block, **provider_unavailable_status("provider_budget")}
+     if provider in {"", "disabled"} or not settings["kimi_api_key"]:
+-        return provider_unavailable_status("Die Server-Verarbeitung wartet auf die Konfiguration des AI-Dienstes.")
++        return provider_unavailable_status("provider_configuration")
+     if ai_monthly_spend() >= float(settings["monthly_limit_usd"]):
+-        return provider_unavailable_status("Die Server-Verarbeitung pausiert, weil das AI-Monatsbudget ausgeschöpft ist.")
++        return provider_unavailable_status("provider_budget")
+     if provider != "deepseek":
+         return None
+     base_url = str(settings["kimi_base_url"]).rstrip("/")
+@@ -213,11 +210,11 @@
+                 if payload.get("is_available") is True:
+                     status = None
+                 elif payload.get("is_available") is False:
+-                    status = provider_unavailable_status("Die Server-Verarbeitung pausiert, weil das DeepSeek-Guthaben aufgebraucht ist. Der Serverbetreiber muss das Guthaben aufladen.")
++                    status = provider_unavailable_status("provider_quota")
+                 else:
+-                    status = provider_unavailable_status("Die Verfügbarkeit des AI-Dienstes konnte nicht bestätigt werden.")
++                    status = provider_unavailable_status("provider_unreachable")
+         except (requests.RequestException, HTTPException, ValueError, AttributeError):
+-            status = provider_unavailable_status("Die Verfügbarkeit des AI-Dienstes konnte nicht bestätigt werden.")
++            status = provider_unavailable_status("provider_unreachable")
+         _provider_status_cache.update(key=key, expires=time.monotonic() + 30, status=status)
+         return status
+ 
+@@ -905,6 +902,58 @@
+ def public_job(job: dict[str, Any]) -> dict[str, Any]:
+     result = dict(job)
+     result["error"] = job_error(job)
++    return result
++
++
++def episode_work(con: Any, episode_id: int, phase: str, status: str) -> dict[str, Any]:
++    """Publish claim-fenced work observations, never weighted pipeline progress."""
++    job = con.execute("SELECT * FROM jobs WHERE episode_id=? AND job_type='transcribe' ORDER BY id DESC LIMIT 1",
++                      (episode_id,)).fetchone()
++    result = {"phase": phase, "activity": "stopped", "updated_at": None, "phase_started_at": None,
++              "completed": None, "total": None, "unit": None,
++              "estimated_phase_remaining_seconds": None, "queue_position": None}
++    if status == "ready":
++        result["activity"] = "complete"
++        return result
++    if not job:
++        return result
++    work = loads(job["work_json"], {})
++    same_claim = work.get("claim_token") == job["claim_token"] and job["claim_token"] is not None
++    if same_claim:
++        result["updated_at"] = work.get("updated_at")
++    now = datetime.now(timezone.utc)
++    def seconds_since(value):
++        try:
++            return (now - datetime.fromisoformat(value)).total_seconds()
++        except (ValueError, TypeError):
++            return None
++    age = seconds_since(result["updated_at"])
++    lease_age = seconds_since(job["lease_until"])
++    if status in {"failed", "canceled"} or job["status"] in {"failed", "canceled"}:
++        return result
++    if job["status"] == "running":
++        result["activity"] = "running" if age is not None and 0 <= age <= 30 and lease_age is not None and lease_age < 0 else "recovering"
++    elif job["status"] == "paused":
++        result["activity"] = "paused"
++    elif job["status"] == "queued":
++        retry_age = seconds_since(job["next_attempt_at"])
++        result["activity"] = "retrying" if retry_age is not None and retry_age < 0 else "queued"
++        if result["activity"] == "queued":
++            ahead = con.execute("""SELECT COUNT(*) AS count FROM jobs WHERE job_type='transcribe' AND status='queued'
++                AND (next_attempt_at IS NULL OR next_attempt_at<=?)
++                AND (priority<? OR (priority=? AND created_at<?) OR (priority=? AND created_at=? AND id<?))""",
++                (now_iso(), job["priority"], job["priority"], job["created_at"],
++                 job["priority"], job["created_at"], job["id"])).fetchone()["count"]
++            result["queue_position"] = int(ahead) + 1
++    if same_claim and phase_for_status(work.get("phase")) == phase:
++        result["phase_started_at"] = work.get("phase_started_at")
++        measurement = work.get("measurement") or {}
++        unit = measurement.get("unit")
++        if (phase, unit) in {("downloading_audio", "bytes"), ("transcribing", "audio_seconds")}:
++            result.update({key: measurement.get(key) for key in ("completed", "total", "unit")})
++            measured_age = seconds_since(measurement.get("observed_at"))
++            if result["activity"] == "running" and measured_age is not None and 0 <= measured_age <= 30:
++                result["estimated_phase_remaining_seconds"] = measurement.get("estimated_phase_remaining_seconds")
+     return result
+ 
+ 
+@@ -979,6 +1028,7 @@
+             "status": public_episode_status,
+             "phase": phase_for_status(effective_status),
+             "progress": progress,
++            "work": episode_work(con, episode_id, phase_for_status(effective_status), public_episode_status),
+             "title": episode["title"],
+             "episode_url": episode["episode_url"],
+             "podcast_url": episode["podcast_feed_url"],
+--- a/app/worker.py
++++ b/app/worker.py
+@@ -232,7 +232,7 @@
+             """
+             SELECT * FROM jobs
+             WHERE status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+-            ORDER BY priority ASC, created_at ASC
++            ORDER BY priority ASC, created_at ASC, id ASC
+             LIMIT 25
+             """, (now_iso(),)
+         ).fetchall()
+@@ -270,6 +270,10 @@
+                     """,
+                     (now, row["episode_id"]),
+                 )
++            phase_row = con.execute("SELECT status FROM episodes WHERE id=?", (row["episode_id"],)).fetchone()
++            work = {"claim_token": claim_token, "phase": phase_row["status"] if phase_row else None,
++                    "phase_started_at": now, "updated_at": now}
++            con.execute("UPDATE jobs SET work_json=? WHERE id=?", (dumps(work), row["id"]))
+             claimed = dict(row)
+             claimed["attempts"] = int(row["attempts"]) + 1
+             claimed["previous_claim_token"] = row["checkpoint_claim_token"]
+@@ -299,10 +303,15 @@
+ def touch_job(job_id: int) -> None:
+     check_worker_resources()
+     with tx() as con:
+-        assert_job_claim(con)
++        job = assert_job_claim(con)
++        if job["id"] != job_id:
++            raise JobClaimLost("Heartbeat does not belong to the active claim.")
++        timestamp = now_iso()
++        work = loads(job["work_json"], {})
++        work["updated_at"] = timestamp
+         con.execute(
+-            "UPDATE jobs SET lease_until=?, updated_at=? WHERE id=? AND status='running'",
+-            (future_iso(config.JOB_LEASE_SECONDS), now_iso(), job_id),
++            "UPDATE jobs SET lease_until=?, updated_at=?, work_json=? WHERE id=? AND status='running'",
++            (future_iso(config.JOB_LEASE_SECONDS), timestamp, dumps(work), job_id),
+         )
+ 
+ 
+@@ -404,9 +413,10 @@
+     return status
+ 
+ 
+-def set_episode_progress(episode_id: int, status: str, progress: float | None) -> None:
++def set_episode_progress(episode_id: int, status: str, progress: float | None,
++                         *, measurement: dict[str, Any] | None = None) -> None:
+     with tx() as con:
+-        assert_job_claim(con, episode_id)
++        job = assert_job_claim(con, episode_id)
+         row = con.execute(
+             "SELECT status, processing_progress FROM episodes WHERE id=?",
+             (episode_id,),
+@@ -415,9 +425,37 @@
+         current_progress = float_value(row["processing_progress"]) if row else None
+         if canonical_progress is not None and current_progress is not None:
+             canonical_progress = max(current_progress, canonical_progress)
++        timestamp = now_iso()
++        work = loads(job["work_json"], {})
++        if work.get("claim_token") != job["claim_token"] or work.get("phase") != status:
++            work = {"claim_token": job["claim_token"], "phase": status, "phase_started_at": timestamp}
++        work["updated_at"] = timestamp
++        if measurement is not None:
++            completed, total, unit = (measurement.get(key) for key in ("completed", "total", "unit"))
++            valid = (isinstance(completed, (int, float)) and not isinstance(completed, bool)
++                     and math.isfinite(completed) and completed >= 0 and unit in {"bytes", "audio_seconds"}
++                     and (total is None or (isinstance(total, (int, float)) and not isinstance(total, bool)
++                          and math.isfinite(total) and total > 0 and completed <= total)))
++            previous = work.get("measurement") or {}
++            current = {"completed": completed, "total": total, "unit": unit, "observed_at": timestamp} if valid else None
++            if current:
++                same_series = (previous.get("unit") == unit and previous.get("total") == total
++                               and completed >= previous.get("completed", completed))
++                if same_series:
++                    current["baseline_completed"] = previous.get("baseline_completed", previous["completed"])
++                    current["baseline_at"] = previous.get("baseline_at", previous["observed_at"])
++                    elapsed = (datetime.fromisoformat(timestamp) - datetime.fromisoformat(current["baseline_at"])).total_seconds()
++                    advanced = completed - current["baseline_completed"]
++                    if total is not None and elapsed >= 5 and advanced > 0:
++                        current["estimated_phase_remaining_seconds"] = round((total-completed) * elapsed / advanced, 1)
++                else:
++                    current["baseline_completed"] = completed
++                    current["baseline_at"] = timestamp
++            work["measurement"] = current
++        con.execute("UPDATE jobs SET work_json=? WHERE id=?", (dumps(work), job["id"]))
+         con.execute(
+             "UPDATE episodes SET status=?, processing_progress=?, updated_at=? WHERE id=?",
+-            (status, canonical_progress, now_iso(), episode_id),
++            (status, canonical_progress, timestamp, episode_id),
+         )
+ 
+ 
+@@ -500,15 +538,18 @@
+                         touch_job(heartbeat_job_id)
+                     if episode_id is not None:
+                         progress = heartbeat_progress
++                        measurement = None
+                         if progress_path and progress_path.is_file():
+                             try:
+                                 state = json.loads(progress_path.read_text(encoding="utf-8"))
+                                 observed_progress = transcription_progress(state)
++                                measurement = {"completed": state.get("completed_audio_seconds"),
++                                               "total": state.get("total_audio_seconds"), "unit": "audio_seconds"}
+                                 if observed_progress is not None:
+                                     progress = observed_progress
+                             except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                                 progress = None
+-                        set_episode_progress(episode_id, heartbeat_status, progress)
++                        set_episode_progress(episode_id, heartbeat_status, progress, measurement=measurement)
+                     if monitor_resources and resource_state and time.monotonic() >= next_resource_sample:
+                         try:
+                             resource_state = record_command_resource_sample(proc.pid, resource_state)
+@@ -655,7 +696,8 @@
+                         touch_job(heartbeat_job_id)
+                     tmp.replace(target)
+                     if episode_id is not None:
+-                        set_episode_progress(episode_id,"downloading",0.09)
++                        set_episode_progress(episode_id,"downloading",0.09,
++                            measurement={"completed": message[1]["audio_bytes"], "total": message[1]["audio_bytes"], "unit": "bytes"})
+                     return target, message[1]
+                 if message[0] == "oserror":
+                     raise OSError(message[1],message[2])
+@@ -667,7 +709,8 @@
+                     touch_job(heartbeat_job_id)
+                 if episode_id is not None:
+                     progress = 0.03 + (0.06*min(1.0,bytes_written/expected_bytes) if expected_bytes else 0)
+-                    set_episode_progress(episode_id,"downloading",progress)
++                    set_episode_progress(episode_id,"downloading",progress,
++                        measurement={"completed": bytes_written, "total": expected_bytes, "unit": "bytes"})
+                 last_heartbeat = now
+     finally:
+         if child.is_alive():
+--- a/tools/admission_latency_regression.py
++++ b/tools/admission_latency_regression.py
+@@ -0,0 +1,80 @@
++#!/usr/bin/env python3
++"""Real API admission + durable DB identity, controlled publisher/provider boundaries."""
++import concurrent.futures
++import json
++from pathlib import Path
++import sys
++import threading
++import time
++import unittest
++from unittest.mock import patch
++
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++from queue_admission_regression import AdmissionTests
++from app import main
++from app.db import connect
++from fastapi.testclient import TestClient
++
++
++class AdmissionLatencyTests(AdmissionTests):
++    def test_live_worker_progress_is_not_hidden_by_unrelated_provider_outage(self):
++        observed = {'status':'running', 'phase':'transcribing', 'work':{'activity':'running'}}
++        with patch.object(main, 'transcription_provider_status', return_value={
++                'available':False, 'code':'provider_unavailable', 'retry_after_seconds':300}) as provider:
++            envelope = main.episode_envelope(observed)
++        self.assertNotIn('service_status', envelope,
++                         'Actual ASR work was falsely presented as paused by an unrelated text-provider check')
++        provider.assert_not_called()
++
++    def test_schema_describes_measured_phase_work(self):
++        schema = main.api_schema(1)
++        work = schema['schemas']['Episode']['properties'].get('work')
++        self.assertIsNotNone(work, 'Public schema must expose measured phase work')
++        self.assertIn('estimated_phase_remaining_seconds', work['properties'])
++        self.assertIn('recovering', work['properties']['activity']['enum'])
++
++    def test_episode_admission_does_not_wait_for_publisher_feed(self):
++        entered, release = threading.Event(), threading.Event()
++        def blocked_feed(url):
++            entered.set()
++            release.wait(3)
++            return {'feed_url': url, 'title': 'Publisher', 'episodes': []}
++        main.app.dependency_overrides[main.require_api_token] = lambda: 1
++        self.addCleanup(main.app.dependency_overrides.clear)
++        request_id = 'cbbd954f-2a4a-4f3a-a882-e93d5a4a2172'
++        body = dict(episode_url='https://example.org/audio.mp3',
++                    podcast_url='https://example.org/feed.xml', title='Already in the app',
++                    client_audio_sha256='a'*64, client_duration_seconds=120,
++                    wait_seconds=0, client_request_id=request_id, force=False)
++        with patch.object(main, 'fetch_feed', side_effect=blocked_feed), \
++             patch.object(main, 'transcription_resource_status', return_value=None), \
++             TestClient(main.app) as client, \
++             concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
++            started = time.monotonic()
++            future = pool.submit(client.post, '/api/v1/episodes', json=body,
++                                 headers={'x-client': 'admission-latency-test'})
++            try:
++                response = future.result(timeout=1)
++            except concurrent.futures.TimeoutError:
++                self.fail('Episode admission waited for publisher feed instead of confirming the saved job')
++            finally:
++                release.set()
++            elapsed = time.monotonic() - started
++            self.assertEqual(202, response.status_code, response.text)
++            result = response.json()
++            self.assertEqual('active', result['client_request']['state'])
++            self.assertEqual(request_id, result['client_request']['id'])
++            self.assertFalse(entered.is_set(), 'A direct episode request does not require a feed download')
++            second = client.post('/api/v1/episodes', json=body, headers={'x-client':'admission-latency-test'})
++            self.assertEqual(result['client_request'], second.json()['client_request'])
++            with connect() as con:
++                self.assertEqual(1, con.execute('SELECT COUNT(*) AS n FROM jobs').fetchone()['n'])
++                row = con.execute('SELECT title, podcast_id FROM episodes').fetchone()
++                self.assertEqual(body['title'], row['title'])
++                self.assertIsNotNone(row['podcast_id'])
++            print(json.dumps({'test':'admission_without_feed', 'seconds':elapsed,
++                              'receipt':result['client_request'], 'job_count':1}))
++
++
++if __name__ == '__main__':
++    unittest.main()
+--- a/tools/api_contract_v3_regression.py
++++ b/tools/api_contract_v3_regression.py
+@@ -26,7 +26,7 @@
+ 
+ def test_schema_has_one_public_contract() -> None:
+     schema = api_schema(1)
+-    if schema["schema_revision"] != "2026-09-06.2":
++    if schema["schema_revision"] != "2026-09-27.1":
+         fail(f"wrong schema revision: {schema['schema_revision']}")
+     if schema["base_url"] != "https://transcript.instacast.ch/api/v1":
+         fail(f"wrong API base URL: {schema['base_url']}")
+--- a/tools/queue_admission_mysql_regression.py
++++ b/tools/queue_admission_mysql_regression.py
+@@ -29,6 +29,7 @@
+     parser.add_argument('--edge-cases', action='store_true')
+     parser.add_argument('--systematic', action='store_true')
+     parser.add_argument('--audio-admission', action='store_true')
++    parser.add_argument('--work-status', action='store_true')
+     parser.add_argument('--test', help='Run one isolated test method')
+     parser.add_argument('--admin-config', default='/etc/webmin/mysql/config')
+     args = parser.parse_args()
+@@ -60,6 +61,9 @@
+         if args.audio_admission:
+             from audio_admission_regression import AudioAdmissionTests
+             base = AudioAdmissionTests
++        if args.work_status:
++            from work_status_regression import WorkStatusTests
++            base = WorkStatusTests
+         class MySQLAdmissionTests(base):
+             def setUp(self):
+                 super().setUp()
+--- a/tools/rate_limit_regression.py
++++ b/tools/rate_limit_regression.py
+@@ -64,6 +64,9 @@
+                 class Connection:
+                     def execute(self,sql,params=()):
+                         cursor=con.execute(sql,params)
++                        if sql.strip().startswith('DELETE FROM rate_limits'):
++                            try:barrier.wait(timeout=1)
++                            except threading.BrokenBarrierError:pass
+                         if sql.strip().startswith('SELECT count FROM rate_limits'):
+                             class Cursor:
+                                 def fetchone(self):
+@@ -77,7 +80,7 @@
+         def attempt(_):
+             try:security.rate_limit('parallel-test',1,60);return 'accepted'
+             except HTTPException as exc:return 'limited' if exc.status_code==429 else str(exc.status_code)
+-            except Exception as exc:return type(exc).__name__
++            except Exception as exc:return type(exc).__name__ + ':' + str(exc.args[0] if exc.args else '')
+         with patch.object(security,'connect',connected),concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+             results=list(pool.map(attempt,[0,1]))
+         self.assertEqual(['accepted','limited'],sorted(results))
+--- a/tools/server_reliability_regression.py
++++ b/tools/server_reliability_regression.py
+@@ -152,7 +152,7 @@
+     def test_overlapping_post_rechecks_bound_receipt_before_refusal_or_reenqueue(self):
+         rid='11111111-1111-4111-8111-111111111111'
+         url='https://example.org/replay.mp3'
+-        def completed_replay(feed_url):
++        def completed_replay():
+             with service.queue_admission_transaction() as con:
+                 episode=service.ensure_episode(con,url,title='already accepted')
+                 service.enqueue_job(con,'transcribe',episode_id=episode)
+@@ -160,10 +160,21 @@
+                 con.execute("UPDATE episodes SET status='failed' WHERE id=?",(episode,))
+                 service.store_client_request(con,hash_token('client-a'),rid,episode,'active',worker.hashlib.sha256(url.encode()).hexdigest())
+             self.workers.return_value={'worker':False}
+-            return {'feed_url':feed_url,'title':'test','episodes':[]}
++        original_transaction = main.queue_admission_transaction
++        transaction_count = 0
++        @contextmanager
++        def overlapping_transaction():
++            nonlocal transaction_count
++            transaction_count += 1
++            # The replay commits after the first receipt lookup, before the
++            # second admission transaction. No publisher feed is needed.
++            if transaction_count == 2:
++                completed_replay()
++            with original_transaction() as con:
++                yield con
+         payload=main.EpisodeRequest(episode_url=url,podcast_url='https://example.org/feed.xml',
+             title='test',client_audio_sha256="a"*64, client_duration_seconds=0,wait_seconds=0,client_request_id=rid,force=False)
+-        with patch.object(main,'fetch_feed',side_effect=completed_replay):
++        with patch.object(main,'queue_admission_transaction',side_effect=overlapping_transaction):
+             response=main.submit_episode(payload,self.request(),1)
+         self.assertEqual('failed',json.loads(response.body)['episode']['status'])
+         self.assertEqual(rid,json.loads(response.body)['client_request']['id'])
+--- a/tools/transcribe_podcast_parallel.py
++++ b/tools/transcribe_podcast_parallel.py
+@@ -403,6 +403,11 @@
+             {
+                 "completed_chunks": len(completed_indices),
+                 "total_chunks": len(chunks),
++                # The first ASR pass may still need VAD recovery. Only completed
++                # chunks prove final audio coverage; logical duration excludes overlap.
++                "completed_audio_seconds": sum(float(chunk["duration"]) for chunk in chunks
++                                               if int(chunk["index"]) in completed_indices),
++                "total_audio_seconds": total_duration,
+                 "progress": completed_duration / total_duration if total_duration else 0.0,
+             },
+             ensure_ascii=False,
+--- a/tools/work_status_regression.py
++++ b/tools/work_status_regression.py
+@@ -0,0 +1,252 @@
++#!/usr/bin/env python3
++"""HTTP/queue/worker measurement contract on disposable state, without inference."""
++import json
++import math
++import os
++from pathlib import Path
++import sys
++import threading
++import time
++import unittest
++from datetime import datetime, timedelta, timezone
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
++from unittest.mock import patch
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++from queue_admission_regression import AdmissionTests
++from app import config, main, service, worker
++from app.db import tx, now_iso, init_db
++from fastapi.testclient import TestClient
++import transcribe_podcast_parallel as parallel
++
++
++class WorkStatusTests(unittest.TestCase):
++    seed = AdmissionTests.seed
++
++    def setUp(self):
++        AdmissionTests.setUp(self)
++        self.contexts.enter_context(patch.object(main, 'transcription_resource_status', return_value=None))
++        main.app.dependency_overrides[main.require_api_token] = lambda: 1
++        self.addCleanup(main.app.dependency_overrides.clear)
++        self.client = TestClient(main.app)
++        self.contexts.enter_context(patch.object(worker, 'transcription_provider_status', return_value=None))
++        self.contexts.enter_context(patch.object(worker, 'transcribe_block_reason', return_value=None))
++        self.contexts.enter_context(patch.object(worker, 'transcription_resource_status', return_value=None))
++
++    def claim(self):
++        self.seed(1)
++        return worker.claim_job('progress-proof')
++
++    def response(self, episode):
++        response = self.client.get(f'/api/v1/episodes/{episode}', headers={'x-client':'client-a'})
++        self.assertEqual(response.status_code, 200, response.text)
++        result = response.json()['episode']
++        self.assertIn('work', result, 'No observable worker activity/measurement in accepted HTTP response')
++        if evidence := os.environ.get('WORK_STATUS_EVIDENCE'):
++            with Path(evidence).open('a') as output:
++                output.write(json.dumps({'test':self.id(),'episode':result})+'\n')
++        return result
++
++    def measured(self, job, completed, total, unit='audio_seconds', phase='transcribing'):
++        with worker.job_claim(job):
++            worker.set_episode_progress(job['episode_id'], phase, None,
++                measurement={'completed':completed, 'total':total, 'unit':unit})
++
++    def test_http_queue_acceptance_claim_and_phase(self):
++        self.seed(2)
++        result = self.response(2)
++        self.assertEqual('queued', result['work']['activity'])
++        self.assertEqual(2, result['work']['queue_position'])
++        self.assertIsNone(result['work']['updated_at'])
++        job = worker.claim_job('progress-proof')
++        result = self.response(job['episode_id'])
++        self.assertEqual('running', result['work']['activity'])
++        with worker.job_claim(job):
++            worker.set_episode_status(job['episode_id'], 'postprocessing')
++            worker.touch_job(job['id'])
++        result = self.response(job['episode_id'])
++        self.assertEqual('analyzing', result['work']['phase'])
++        self.assertEqual(result['phase'], result['work']['phase'])
++        self.assertIsNone(result['progress'])
++        self.assertIsNone(result['work']['total'])
++
++    def test_current_phase_throughput_and_phase_reset(self):
++        job = self.claim()
++        now = datetime.now(timezone.utc)
++        with patch.object(worker, 'now_iso', return_value=(now-timedelta(seconds=20)).isoformat()):
++            self.measured(job, 100, 600)
++        self.assertIsNone(self.response(job['episode_id'])['work']['estimated_phase_remaining_seconds'])
++        with patch.object(worker, 'now_iso', return_value=(now-timedelta(seconds=10)).isoformat()):
++            self.measured(job, 200, 600)
++        work = self.response(job['episode_id'])['work']
++        self.assertEqual((200,600,'audio_seconds'),(work['completed'],work['total'],work['unit']))
++        self.assertEqual(40, work['estimated_phase_remaining_seconds'])
++        with worker.job_claim(job):
++            worker.set_episode_status(job['episode_id'], 'postprocessing')
++        work = self.response(job['episode_id'])['work']
++        self.assertIsNone(work['total'])
++        self.assertIsNone(work['estimated_phase_remaining_seconds'])
++
++    def test_stale_activity_is_not_refreshed_by_episode_write(self):
++        job = self.claim()
++        old = (datetime.now(timezone.utc)-timedelta(seconds=40)).isoformat()
++        with patch.object(worker, 'now_iso', return_value=old):
++            self.measured(job, 100, 600)
++        with tx() as con:
++            con.execute('UPDATE jobs SET updated_at=? WHERE id=?',(old,job['id']))
++            con.execute('UPDATE episodes SET updated_at=? WHERE id=?',(now_iso(),job['episode_id']))
++        work = self.response(job['episode_id'])['work']
++        self.assertEqual('recovering',work['activity'])
++        self.assertEqual(old,work['updated_at'])
++        self.assertIsNone(work['estimated_phase_remaining_seconds'])
++
++    def test_retry_and_pause_are_not_running(self):
++        job = self.claim()
++        for state, expected in [('paused','paused'),('queued','retrying'),('canceled','stopped'),('failed','stopped')]:
++            with tx() as con:
++                con.execute('UPDATE jobs SET status=?,next_attempt_at=? WHERE id=?',
++                            (state,worker.future_iso(60),job['id']))
++            work = self.response(job['episode_id'])['work']
++            self.assertEqual(expected,work['activity'])
++            self.assertIsNone(work['estimated_phase_remaining_seconds'])
++
++    def test_new_claim_rejects_old_measurements(self):
++        job = self.claim()
++        self.measured(job, 200, 600)
++        with tx() as con:
++            con.execute("UPDATE jobs SET status='queued' WHERE id=?",(job['id'],))
++        next_job = worker.claim_job('successor')
++        self.assertEqual(job['id'],next_job['id'])
++        self.assertNotEqual(job['claim_token'],next_job['claim_token'])
++        work = self.response(job['episode_id'])['work']
++        self.assertIsNone(work['completed'])
++        with self.assertRaises(worker.JobClaimLost):
++            self.measured(job, 300, 600)
++        self.measured(next_job, 200, 600)
++        self.assertIsNone(self.response(job['episode_id'])['work']['estimated_phase_remaining_seconds'])
++
++    def test_invalid_counts_cannot_be_published(self):
++        job = self.claim()
++        for completed,total in [(math.nan,100),(-1,100),(101,100),(10,0),(True,100),(10,math.inf)]:
++            with self.subTest(completed=completed,total=total):
++                self.measured(job,completed,total)
++                work = self.response(job['episode_id'])['work']
++                self.assertIsNone(work['completed'])
++                self.assertIsNone(work['estimated_phase_remaining_seconds'])
++
++    def test_real_download_child_publishes_counts(self):
++        job = self.claim()
++        payload = b'a' * (2*1024*1024+71)
++        class Source(BaseHTTPRequestHandler):
++            def do_GET(self):
++                self.send_response(200);self.send_header('Content-Length',str(len(payload)));self.end_headers()
++                self.wfile.write(payload)
++            def log_message(self,*args): pass
++        source=ThreadingHTTPServer(('127.0.0.1',0),Source)
++        thread=threading.Thread(target=source.serve_forever,daemon=True);thread.start()
++        self.addCleanup(source.server_close);self.addCleanup(source.shutdown)
++        # Only outbound address validation is replaced for the loopback test source.
++        with worker.job_claim(job), patch.object(worker,'guarded_get',side_effect=lambda url,**kw:worker.requests.get(url,stream=True,timeout=5)):
++            path,_=worker.download_audio(f'http://127.0.0.1:{source.server_port}/audio',Path(self.temp.name)/'download.wav',
++                                        episode_id=job['episode_id'],heartbeat_job_id=job['id'])
++        self.assertEqual(payload,path.read_bytes())
++        work=self.response(job['episode_id'])['work']
++        self.assertEqual(('bytes',len(payload),len(payload)),(work['unit'],work['completed'],work['total']))
++
++    def test_healthy_http_poll_interval_and_capacity_budget(self):
++        job=self.claim()
++        response=self.client.get(f'/api/v1/episodes/{job["episode_id"]}',headers={'x-client':'client-a'})
++        interval=response.json()['retry_after_seconds']
++        self.assertGreater(interval,0)
++        self.assertLessEqual(interval,5,'Healthy work must be observable without a 15-second UI lag')
++        schema=self.client.get('/api/v1/schema').json()
++        reads=math.ceil(60/interval)+6
++        rates=schema['rate_limit_contract']['read_requests_per_minute']
++        self.assertGreaterEqual(rates['client'],25*reads)
++        self.assertGreaterEqual(rates['ip'],250*reads)
++        self.assertGreaterEqual(rates['token'],rates['ip'])
++        with tx() as con:
++            receipt=dict(con.execute('SELECT * FROM transcription_requests WHERE episode_id=?',(job['episode_id'],)).fetchone())
++        accepted=main.client_request_response(receipt)
++        self.assertLessEqual(int(accepted.headers['Retry-After']),5)
++        paused={'available':False,'code':'provider_unavailable','message':'unavailable','retry_after_seconds':300}
++        with tx() as con:
++            con.execute("UPDATE jobs SET status='paused' WHERE id=?",(job['id'],))
++        with patch.object(main,'transcription_provider_status',return_value=paused):
++            response=self.client.get(f'/api/v1/episodes/{job["episode_id"]}',headers={'x-client':'client-a'})
++        self.assertEqual(300,response.json()['retry_after_seconds'])
++
++    def test_subprocess_supervisor_reads_real_asr_progress_file(self):
++        job = self.claim()
++        root=Path(self.temp.name)
++        progress=root/'progress.json'
++        code="import json,time;from pathlib import Path;Path("+repr(str(progress))+").write_text(json.dumps({'completed_audio_seconds':60,'total_audio_seconds':100,'progress':0.7}));time.sleep(10.5)"
++        with worker.job_claim(job):
++            worker.set_episode_status(job['episode_id'],'transcribing')
++            worker.run_command([sys.executable,'-c',code],root/'worker.log',cwd=root,
++                               heartbeat_job_id=job['id'],episode_id=job['episode_id'],progress_path=progress)
++        work=self.response(job['episode_id'])['work']
++        self.assertEqual((60,100,'audio_seconds'),(work['completed'],work['total'],work['unit']))
++        self.assertEqual('running',work['activity'])
++
++    def test_additive_migration_keeps_existing_job(self):
++        self.seed(1)
++        with tx() as con:
++            before=dict(con.execute('SELECT * FROM jobs').fetchone())
++            con.execute('ALTER TABLE jobs DROP COLUMN work_json')
++        init_db()
++        with tx() as con:
++            after=dict(con.execute('SELECT * FROM jobs').fetchone())
++        self.assertIsNone(after['work_json'])
++        self.assertEqual({key:value for key,value in before.items() if key!='work_json'},
++                         {key:value for key,value in after.items() if key!='work_json'})
++        job=worker.claim_job('after-migration')
++        self.measured(job,100,200,'bytes','downloading')
++        self.assertEqual(100,self.response(job['episode_id'])['work']['completed'])
++
++    def test_provider_authentication_is_product_message_in_http(self):
++        from app.codex_provider import CodexProviderError
++        self.seed(1)
++        settings = {'provider':'openai_codex','kimi_model':'test-model','codex_catalog_path':'fixture'}
++        with patch.object(service, 'get_ai_settings', return_value=settings), \
++             patch('app.codex_provider.provider_readiness', side_effect=CodexProviderError('authentication','fixture login required')), \
++             patch.object(main, 'transcription_provider_status', side_effect=service.transcription_provider_status):
++            service.invalidate_transcription_provider_status()
++            response = self.client.get('/api/v1/episodes/1',headers={'x-client':'client-a'}).json()
++        status=response['service_status']
++        self.assertEqual('provider_unavailable', status['code'])
++        self.assertEqual('provider_authentication', status.get('reason_code'))
++        self.assertEqual('Die Server-Transkription ist momentan nicht verfügbar.', status['message'])
++
++    def test_budget_configuration_is_not_a_customer_action(self):
++        settings = {'provider':'deepseek','kimi_model':'fixture','kimi_api_key':'fixture','kimi_base_url':'https://invalid.test',
++                    'codex_catalog_path':'fixture','monthly_limit_usd':1}
++        block={'available':False,'code':'provider_unavailable','message':'Increase the operator budget', 'retry_after_seconds':300}
++        with patch.object(service,'get_ai_settings',return_value=settings), \
++             patch('app.settings.api_budget_block', return_value=block):
++            status = service.transcription_provider_status()
++        self.assertEqual('provider_budget',status.get('reason_code'))
++        self.assertEqual('Die Server-Transkription ist momentan nicht verfügbar.',status['message'])
++
++    def test_runtime_provider_diagnostics_stay_private(self):
++        settings = {'provider':'openai_codex','kimi_model':'test-model','codex_catalog_path':'fixture'}
++        service.block_transcription_provider(settings, 'Internal fixture credential invalid; contact operator')
++        status = service.transcription_provider_runtime_status(settings)
++        self.assertEqual('Die Server-Transkription ist momentan nicht verfügbar.', status['message'])
++        self.assertEqual('provider_runtime_failure', status.get('reason_code'))
++        self.assertIn('credential',service.get_setting('transcription_provider_block',''))
++
++    def test_asr_counts_only_finished_chunks_without_context(self):
++        root=Path(self.temp.name)
++        chunks=[{'index':0,'duration':60,'progress_path':root/'first.json'},
++                {'index':1,'duration':40,'progress_path':root/'second.json'}]
++        (root/'first.json').write_text('{"progress":1}')
++        (root/'second.json').write_text('{"progress":0.9}')
++        output=root/'progress.json'
++        parallel.write_progress(output,chunks,{0})
++        state=json.loads(output.read_text())
++        self.assertEqual(60,state.get('completed_audio_seconds'),'In-flight first-pass segments are not final ASR completion')
++        self.assertEqual(100,state['total_audio_seconds'])
++
++
++if __name__=='__main__':
++    unittest.main(defaultTest='WorkStatusTests', verbosity=2)

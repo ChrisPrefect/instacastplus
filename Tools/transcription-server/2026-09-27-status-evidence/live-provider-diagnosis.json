@@ -1,0 +1,15 @@
+{
+  "date": "2026-09-27",
+  "production_jobs": {"queued": 0, "running": 0},
+  "api_service_active": true,
+  "worker_service_active": true,
+  "health_http_status": 503,
+  "health_error_code": "provider_unavailable",
+  "codex_login_status": "Logged in using ChatGPT",
+  "actual_account_rate_limits_http_status": 401,
+  "actual_account_rate_limits_error_code": "token_revoked",
+  "regular_account_refresh_attempted": true,
+  "rate_limits_after_refresh_http_status": 401,
+  "requires_reauthentication": true,
+  "production_test_jobs_created": false
+}

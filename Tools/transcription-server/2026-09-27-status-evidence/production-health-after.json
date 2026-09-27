@@ -1,0 +1,1 @@
+{"ok":false,"queued_jobs":0,"running_jobs":0,"episodes":110,"transcription_workers":{"transcript-instacast-worker.service":true,"transcript-instacast-worker-2.service":false},"service_status":{"available":false,"code":"provider_unavailable","reason_code":"provider_authentication","message":"Die Server-Transkription ist momentan nicht verfügbar.","retry_after_seconds":300}}

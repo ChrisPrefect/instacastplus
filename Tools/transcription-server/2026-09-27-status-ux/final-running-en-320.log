@@ -1,0 +1,126 @@
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-_s3k0blj/main.m:502:292: warning: capturing 'walk' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  502 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                                                                                                                                                                                                                                                                                    ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-_s3k0blj/main.m:502:32: note: block will be retained by the captured object
+  502 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-_s3k0blj/main.m:500:3: warning: capturing 'vc' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  500 |  [vc.view layoutIfNeeded];[vc.tableView layoutIfNeeded];
+      |   ^~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-_s3k0blj/main.m:499:2: note: block will be retained by the captured object
+  499 |  vc.capture = ^{
+      |  ^~
+2 warnings generated.
+com.iteconomy.instacastplus.server-status-test: 32495
+{
+  "passed": 1,
+  "nextAction": true,
+  "title": true,
+  "historyHidden": true,
+  "activity": true,
+  "confirmed": true,
+  "informative": true,
+  "nodes": [
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Create chapters and summary"
+    },
+    {
+      "id": "",
+      "text": "Not started"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Create transcript"
+    },
+    {
+      "id": "",
+      "text": "Server is creating the transcript"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Download audio on the server"
+    },
+    {
+      "id": "",
+      "text": "Completed"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Send request"
+    },
+    {
+      "id": "",
+      "text": "Request accepted by the server"
+    },
+    {
+      "id": "ICServerAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Cancel request"
+    },
+    {
+      "id": "ICServerNextAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "You can close the app. Processing continues on the server; the app retrieves the finished result automatically when connected."
+    },
+    {
+      "id": "ICServerMeasuredProgress",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Audio transcribed: 5:00 of 20:00"
+    },
+    {
+      "id": "",
+      "text": "About 6 min remaining for this step"
+    },
+    {
+      "id": "ICServerStatusTitle",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Server is creating the transcript"
+    },
+    {
+      "id": "",
+      "text": "Request accepted by the server\n\nLast server activity: 22:18:28"
+    },
+    {
+      "id": "ICServerActivity",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "What happens next"
+    },
+    {
+      "id": "",
+      "text": "Process"
+    }
+  ],
+  "process": true
+}

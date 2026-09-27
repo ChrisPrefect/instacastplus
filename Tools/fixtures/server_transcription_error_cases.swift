@@ -26,7 +26,7 @@
   let data=Data(#"{"api_version":"v1","episode":{"id":42,"status":"running","phase":"transcribing","progress":0.2,"warnings":[],"artifacts":[],"error":{"code":"resources_unavailable","message":"RAW_DISK_PATH","retryable":true}},"retry_after_seconds":60,"service_status":{"available":false,"code":"resources_unavailable"}}"#.utf8)
   await paused.apply(try JSONDecoder().decode(ICServerEpisodeEnvelope.self,from:data),to:item,requestID:id)
   expect(item.status == .transcribing && item.nextRetryAt != nil,"Resource pause must preserve accepted work and poll")
-  expect(item.statusDetail?.contains("server resources") == true,"Resource pause needs a localized actionable explanation")
+  expect(item.statusDetail?.contains("saved on the server") == true && item.statusDetail?.contains("continue automatically") == true,"Resource pause must explain retained request and automatic continuation")
   paused.retryWakeTask?.cancel()
   if !failures.isEmpty { for failure in failures { FileHandle.standardError.write(Data(("FAIL: "+failure+"\n").utf8)) }; throw NSError(domain:"ErrorContract",code:1) }
   print("Server typed error/lifecycle matrix passed")

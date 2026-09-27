@@ -1,0 +1,32 @@
+[
+  {
+    "test": "queue_admission_regression.py",
+    "returncode": 0,
+    "elapsed": 6.26
+  },
+  {
+    "test": "server_reliability_regression.py",
+    "returncode": 1,
+    "elapsed": 29.35
+  },
+  {
+    "test": "progress_presentation_regression.py",
+    "returncode": 0,
+    "elapsed": 1.27
+  },
+  {
+    "test": "pipeline_resume_regression.py",
+    "returncode": 0,
+    "elapsed": 0.51
+  },
+  {
+    "test": "worker_restart_process_regression.py",
+    "returncode": 0,
+    "elapsed": 12.42
+  },
+  {
+    "test": "worker_edge_cases_regression.py",
+    "returncode": 0,
+    "elapsed": 7.46
+  }
+]

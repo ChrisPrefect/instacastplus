@@ -77,7 +77,6 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
 @property (nonatomic, strong, readwrite) NSError* databasePreparationError;
 @property (nonatomic, strong) NSMutableArray<NSDictionary*>* pendingBackgroundURLSessionEvents;
 @property (nonatomic, strong) NSMutableArray<NSDictionary*>* pendingApplicationOpenURLs;
-@property (nonatomic, strong) NSDictionary* pendingDatabaseLaunchOptions;
 @property (nonatomic) BOOL databaseStartupDidBegin;
 @property (nonatomic, strong) NSMutableArray<BGTask*>* pendingTranscriptionBackgroundTasks;
 @property (nonatomic, strong) NSMapTable<BGTask*, id>* activeTranscriptionTaskExpirationHandlers;
@@ -836,7 +835,6 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     self.pendingNotificationInteractions = [NSMutableArray array];
     self.handledNotificationResponseIdentifiers = [NSMutableSet set];
     self.pendingDatabaseSystemCallbacksBackgroundTask = UIBackgroundTaskInvalid;
-    self.pendingDatabaseLaunchOptions = [launchOptions copy] ?: @{};
     self.databaseStartupDidBegin = NO;
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(_protectedDataDidBecomeAvailable:)
@@ -888,18 +886,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
 
     [self _registerTranscriptionBackgroundTasks];
 
-    if (!application.protectedDataAvailable) {
-        self.databaseStartupState = ICDatabaseStartupStatePreparing;
-        UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
-        ICLocalizeViewText(migrationViewController.view);
-        self.window.rootViewController = migrationViewController;
-        [[ICDiagnosticLogger shared] logEvent:@"database"
-                                      message:@"Datenbankstart wartet auf geschützte Daten"
-                                     metadata:nil];
-    }
-    else {
-        [self _beginDatabaseStartupWithLaunchOptions:self.pendingDatabaseLaunchOptions];
-    }
+    [self _beginDatabaseStartupWithLaunchOptions:launchOptions];
 
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     center.delegate = self;
@@ -1139,9 +1126,6 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
 
 - (void)_protectedDataDidBecomeAvailable:(NSNotification *)notification
 {
-    if (!self.databaseStartupDidBegin && self.pendingDatabaseLaunchOptions) {
-        [self _beginDatabaseStartupWithLaunchOptions:self.pendingDatabaseLaunchOptions];
-    }
     if (self.mainViewController) {
         [InstacastBackupImporter resumePendingBookmarkImportIfNeeded];
         [InstacastBackupImporter retryPendingDeferredRestoreIfNeeded];
@@ -1168,11 +1152,13 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
 
 - (void)_beginDatabaseStartupWithLaunchOptions:(NSDictionary *)launchOptions
 {
-    if (self.databaseStartupDidBegin || !App.protectedDataAvailable) {
+    // protectedDataAvailable describes Complete-protected files, not the store's
+    // default protection (available after first unlock). CarPlay must be able to
+    // cold-start while locked; let the actual store access report any failure.
+    if (self.databaseStartupDidBegin) {
         return;
     }
     self.databaseStartupDidBegin = YES;
-    self.pendingDatabaseLaunchOptions = nil;
 
     if ([DatabaseManager dataStoreNeedsMigration]) {
         self.databaseStartupState = ICDatabaseStartupStatePreparing;

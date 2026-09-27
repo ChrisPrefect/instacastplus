@@ -1,0 +1,42 @@
+{
+  "files_verified": 13,
+  "schema_http_status": 200,
+  "schema_revision": "2026-09-27.1",
+  "ready_episode_http_status": 200,
+  "ready_episode_work": {
+    "phase": "ready",
+    "activity": "complete",
+    "updated_at": null,
+    "phase_started_at": null,
+    "completed": null,
+    "total": null,
+    "unit": null,
+    "estimated_phase_remaining_seconds": null,
+    "queue_position": null
+  },
+  "poll_seconds": 5,
+  "client_read_budget": 450,
+  "ip_read_budget": 4500,
+  "migration_column": {
+    "Field": "work_json",
+    "Type": "text",
+    "Null": "YES",
+    "Key": "",
+    "Default": null,
+    "Extra": ""
+  },
+  "jobs": [
+    {
+      "status": "canceled",
+      "count": 78
+    },
+    {
+      "status": "done",
+      "count": 2340
+    },
+    {
+      "status": "failed",
+      "count": 1
+    }
+  ]
+}

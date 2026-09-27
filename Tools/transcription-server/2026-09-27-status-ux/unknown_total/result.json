@@ -1,0 +1,120 @@
+{
+  "passed" : 1,
+  "nextAction" : true,
+  "title" : true,
+  "historyHidden" : true,
+  "activity" : true,
+  "confirmed" : true,
+  "informative" : true,
+  "nodes" : [
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Kapitel und Zusammenfassung erstellen"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Transkript erstellen"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Audiodatei auf dem Server laden"
+    },
+    {
+      "id" : "",
+      "text" : "Server lädt die Audiodatei"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag senden"
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vom Server angenommen"
+    },
+    {
+      "id" : "ICServerAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag abbrechen"
+    },
+    {
+      "id" : "ICServerNextAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Du kannst die App schließen. Der Server verarbeitet den Auftrag weiter. Die App lädt das fertige Ergebnis automatisch, sobald sie verbunden ist."
+    },
+    {
+      "id" : "ICServerMeasuredProgress",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Audio geladen: 2 KB"
+    },
+    {
+      "id" : "ICServerStatusTitle",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Server lädt die Audiodatei"
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vom Server angenommen\n\nLetzte Serveraktivität: 22:13:05"
+    },
+    {
+      "id" : "ICServerActivity",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "So geht es weiter"
+    },
+    {
+      "id" : "",
+      "text" : "Ablauf"
+    }
+  ],
+  "process" : true
+}

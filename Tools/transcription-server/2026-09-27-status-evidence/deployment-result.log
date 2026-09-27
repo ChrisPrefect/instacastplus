@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/tmp/instacast-status-deploy-20260927/deploy-server.py", line 43, in <module>
+    assert dump.returncode == 0, 'Database backup failed; no source changed'
+AssertionError: Database backup failed; no source changed

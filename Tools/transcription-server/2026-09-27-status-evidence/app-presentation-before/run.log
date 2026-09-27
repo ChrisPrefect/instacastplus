@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/Users/Chris/Developer/instacastplus/Tools/server_transcription_app_flow_test.py", line 164, in <module>
+    assert started.get('statusScreenPresented') is True, f'The real status view must be presented, including when onboarding is visible: {started}'
+AssertionError: The real status view must be presented, including when onboarding is visible: {'action': 'serverFlowStart', 'commandID': '2b2fda3c-1eb2-47a7-9b04-4f8598365904', 'ok': True, 'source': 'commandFile', 'timestamp': '2026-09-27T20:17:46Z'}

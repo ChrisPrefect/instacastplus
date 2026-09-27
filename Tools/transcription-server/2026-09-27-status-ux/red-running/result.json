@@ -1,0 +1,92 @@
+{
+  "passed" : 0,
+  "nextAction" : true,
+  "title" : true,
+  "historyHidden" : true,
+  "activity" : false,
+  "confirmed" : false,
+  "informative" : false,
+  "nodes" : [
+    {
+      "id" : "",
+      "text" : "Diagnoseverlauf"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auf dem Server verarbeiten"
+    },
+    {
+      "id" : "",
+      "text" : "Transkript wird erstellt"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vorbereiten und senden"
+    },
+    {
+      "id" : "",
+      "text" : "Abgeschlossen"
+    },
+    {
+      "id" : "ICServerAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag abbrechen"
+    },
+    {
+      "id" : "ICServerNextAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Nächste Statusabfrage in dieser App: 22:06:25\nDer Server meldet keine geschätzte Restdauer.\nDu kannst diese Ansicht verlassen. Der Server arbeitet unabhängig weiter. Diese App lädt das Ergebnis, sobald sie ausgeführt werden kann."
+    },
+    {
+      "id" : "ICServerStatusTitle",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Transkript wird erstellt"
+    },
+    {
+      "id" : "",
+      "text" : "Letzte Serverantwort: 27.09.26, 22:05:55"
+    },
+    {
+      "id" : "",
+      "text" : "So geht es weiter"
+    },
+    {
+      "id" : "",
+      "text" : "Ablauf"
+    },
+    {
+      "id" : "",
+      "text" : ""
+    }
+  ],
+  "process" : true
+}

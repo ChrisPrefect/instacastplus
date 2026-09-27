@@ -1,0 +1,108 @@
+{
+  "passed" : 1,
+  "nextAction" : true,
+  "title" : true,
+  "historyHidden" : true,
+  "activity" : false,
+  "confirmed" : true,
+  "informative" : true,
+  "nodes" : [
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Kapitel und Zusammenfassung erstellen"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Transkript erstellen"
+    },
+    {
+      "id" : "",
+      "text" : "Serveraktivität wird geprüft"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Audiodatei auf dem Server laden"
+    },
+    {
+      "id" : "",
+      "text" : "Abgeschlossen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag senden"
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vom Server angenommen"
+    },
+    {
+      "id" : "ICServerAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag abbrechen"
+    },
+    {
+      "id" : "ICServerNextAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Dein Auftrag bleibt gespeichert. Der aktuelle Stand wird automatisch erneut abgerufen.\nNächste Abfrage: 22:13:30"
+    },
+    {
+      "id" : "ICServerStatusTitle",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Serveraktivität wird geprüft"
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vom Server angenommen\n\nDie weitere Verarbeitung wurde vom Server noch nicht bestätigt.\n\nLetzte Serveraktivität: 22:13:00"
+    },
+    {
+      "id" : "",
+      "text" : "So geht es weiter"
+    },
+    {
+      "id" : "",
+      "text" : "Ablauf"
+    }
+  ],
+  "process" : true
+}

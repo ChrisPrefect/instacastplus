@@ -1,0 +1,22 @@
+2026-09-27 22:07:50.592 run[25337:6039715] [ServerTranscription] Queue persistence failed: The file couldn’t be saved because there isn’t enough space.
+2026-09-27 22:07:50.599 run[25337:6039715] [ServerTranscription] Queue persistence failed: The file couldn’t be saved because there isn’t enough space.
+2026-09-27 22:07:50.600 run[25337:6039715] [ServerTranscription] Queue persistence failed: The file couldn’t be saved because there isn’t enough space.
+Measured server audio work must reach the UI model
+Measured phase estimate must reach the UI without becoming overall ETA
+Measured work must survive an app restart
+Invalid work phase=downloading_audio must stop unsupported status claims while preserving the saved request
+Invalid work completed=-1.0 must stop unsupported status claims while preserving the saved request
+Invalid work completed=601.0 must stop unsupported status claims while preserving the saved request
+Invalid work total=0.0 must stop unsupported status claims while preserving the saved request
+Invalid work unit=percent must stop unsupported status claims while preserving the saved request
+Invalid work unit=bytes must stop unsupported status claims while preserving the saved request
+Invalid work estimated_phase_remaining_seconds=-1.0 must stop unsupported status claims while preserving the saved request
+Invalid work updated_at=not-a-date must stop unsupported status claims while preserving the saved request
+Invalid work activity=unknown must stop unsupported status claims while preserving the saved request
+run/main.swift:1932: Fatal error: Admission contract failures: 12
+Traceback (most recent call last):
+  File "/Users/Chris/Developer/instacastplus/Tools/server_transcription_admission_runtime_test.py", line 65, in <module>
+    subprocess.run([str(executable)], check=True, timeout=30)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-cancellation-test-dx0fq2hk/run']' died with <Signals.SIGTRAP: 5>.

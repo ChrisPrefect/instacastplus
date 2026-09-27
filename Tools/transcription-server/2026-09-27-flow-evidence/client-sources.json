@@ -1,0 +1,8 @@
+{
+  "Classes/ServerTranscriptionManager.swift": "c1ea031f9cd5004b985c34d15ce8959d5f8903c0e2705bd082687b9c726d261c",
+  "Classes/TranscriptionQueue.swift": "b979c61d6f603eacf3d8d30a8a588d90f8ec425564abc6bce45dfc5dc26ba33d",
+  "Tools/server_transcription_admission_runtime_test.py": "4ed5bd963476ac1c5026664a4acfc2255fb6d431912a7ac6d2b1464ce12d5bc7",
+  "Tools/fixtures/server_transcription_admission_cases.swift": "db90551e7e59257caf4f4d5c1ceab71941f13787d054bc4c6fad8c3e0e2fac10",
+  "Tools/fixtures/server_transcription_error_cases.swift": "90827c6b740ace38727f224fb154fb4276c543ae34cff497f436abc28fb30f29",
+  "Tools/fixtures/server_transcription_cancellation_harness.swift": "cf38d908e6156d3ad525fe550adacf5e2daef2c3918270e0aada9ed8150e6084"
+}

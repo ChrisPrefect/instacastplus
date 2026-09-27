@@ -165,6 +165,15 @@ private final class ICMetadataParserSendableBox: @unchecked Sendable {
     @objc var serverPhase: String?
     @objc var serverLastResponseAt: Date?
     @objc var serverConnectionIssue = false
+    var serverWork: ICServerTranscriptionWork?
+    @objc var serverActivity: String? { serverWork?.activity }
+    @objc var serverActivityUpdatedAt: Date? { serverWork?.activityUpdatedAt }
+    @objc var serverPhaseStartedAt: Date? { serverWork?.startedAt }
+    @objc var serverWorkCompleted: NSNumber? { serverWork?.completed.map(NSNumber.init(value:)) }
+    @objc var serverWorkTotal: NSNumber? { serverWork?.total.map(NSNumber.init(value:)) }
+    @objc var serverWorkUnit: String? { serverWork?.unit }
+    @objc var serverEstimatedPhaseRemainingSeconds: NSNumber? { serverWork?.estimatedPhaseRemainingSeconds.map(NSNumber.init(value:)) }
+    @objc var serverQueuePosition: NSNumber? { serverWork?.queuePosition.map(NSNumber.init(value:)) }
 
     @objc init(episodeHash: String, episodeTitle: String, feedTitle: String,
                audioURL: URL?, language: String?) {
@@ -1486,6 +1495,17 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             [
                 "episodeHash": item.episodeHash,
                 "serverPhase": item.serverPhase ?? "",
+                "serverAdmissionConfirmed": item.usesServerTranscription && ServerTranscriptionManager.shared.hasConfirmedAdmission(forEpisodeHash: item.episodeHash),
+                "serverActivity": item.serverActivity ?? "",
+                "serverConnectionIssue": item.serverConnectionIssue,
+                "serverWaitingForNetwork": item.serverWaitingForNetwork,
+                "serverActivityUpdatedAt": item.serverActivityUpdatedAt.map(Self.debugTimestampString) ?? "",
+                "serverPhaseStartedAt": item.serverPhaseStartedAt.map(Self.debugTimestampString) ?? "",
+                "serverWorkCompleted": item.serverWorkCompleted as Any? ?? NSNull(),
+                "serverWorkTotal": item.serverWorkTotal as Any? ?? NSNull(),
+                "serverWorkUnit": item.serverWorkUnit ?? "",
+                "serverEstimatedPhaseRemainingSeconds": item.serverEstimatedPhaseRemainingSeconds as Any? ?? NSNull(),
+                "serverQueuePosition": item.serverQueuePosition as Any? ?? NSNull(),
                 "usesServerTranscription": item.usesServerTranscription,
                 "episodeTitle": item.episodeTitle,
                 "feedTitle": item.feedTitle,

@@ -1,0 +1,130 @@
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-7nrdt24v/main.m:495:292: warning: capturing 'walk' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  495 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                                                                                                                                                                                                                                                                                    ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-7nrdt24v/main.m:495:32: note: block will be retained by the captured object
+  495 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-7nrdt24v/main.m:493:3: warning: capturing 'vc' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  493 |  [vc.view layoutIfNeeded];[vc.tableView layoutIfNeeded];
+      |   ^~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-7nrdt24v/main.m:492:2: note: block will be retained by the captured object
+  492 |  vc.capture = ^{
+      |  ^~
+2 warnings generated.
+com.iteconomy.instacastplus.server-status-test: 30209
+{
+  "passed": 0,
+  "nextAction": true,
+  "title": true,
+  "historyHidden": true,
+  "activity": false,
+  "confirmed": true,
+  "informative": false,
+  "nodes": [
+    {
+      "id": "",
+      "text": "Diagnoseverlauf"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id": "",
+      "text": "Noch nicht begonnen"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Kapitel und Zusammenfassung erstellen"
+    },
+    {
+      "id": "",
+      "text": "Noch nicht begonnen"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Transkript erstellen"
+    },
+    {
+      "id": "",
+      "text": "Noch nicht begonnen"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Audiodatei auf dem Server laden"
+    },
+    {
+      "id": "",
+      "text": "Transkription gestoppt"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Auftrag senden"
+    },
+    {
+      "id": "",
+      "text": "Auftrag vom Server angenommen"
+    },
+    {
+      "id": "ICServerAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Erneut versuchen"
+    },
+    {
+      "id": "ICServerNextAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Du kannst diese Transkription erneut versuchen."
+    },
+    {
+      "id": "ICServerStatusTitle",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Transkription gestoppt"
+    },
+    {
+      "id": "",
+      "text": "Auftrag vom Server angenommen\n\nDas Server-Ergebnis ist unvollständig oder enthält doppelte Artefakte.\n\nLetzte Serveraktivität: 22:13:52"
+    },
+    {
+      "id": "",
+      "text": "So geht es weiter"
+    },
+    {
+      "id": "",
+      "text": "Ablauf"
+    }
+  ],
+  "process": true
+}
+Traceback (most recent call last):
+  File "/Users/Chris/Developer/instacastplus/Tools/server_transcription_status_screen_runtime_test.py", line 156, in <module>
+    assert data['passed'], 'Status needs a distinct current state, next action, process and collapsed diagnostics'
+AssertionError: Status needs a distinct current state, next action, process and collapsed diagnostics

@@ -1,0 +1,28 @@
+/home/instacast/domains/transcript.instacast.ch/.venv/lib/python3.10/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_provider_authentication_is_product_message_in_http (__main__.WorkStatusTests) ... FAIL
+test_runtime_provider_diagnostics_stay_private (__main__.WorkStatusTests) ... FAIL
+
+======================================================================
+FAIL: test_provider_authentication_is_product_message_in_http (__main__.WorkStatusTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 162, in test_provider_authentication_is_product_message_in_http
+    self.assertEqual('provider_authentication', status.get('reason_code'))
+AssertionError: 'provider_authentication' != None
+
+======================================================================
+FAIL: test_runtime_provider_diagnostics_stay_private (__main__.WorkStatusTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/work_status_regression.py", line 169, in test_runtime_provider_diagnostics_stay_private
+    self.assertEqual('Die Server-Transkription ist momentan nicht verfügbar.', status['message'])
+AssertionError: 'Die Server-Transkription ist momentan nicht verfügbar.' != 'Internal fixture credential invalid; contact operator'
+- Die Server-Transkription ist momentan nicht verfügbar.
++ Internal fixture credential invalid; contact operator
+
+
+----------------------------------------------------------------------
+Ran 2 tests in 1.052s
+
+FAILED (failures=2)

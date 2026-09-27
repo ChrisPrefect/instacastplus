@@ -14,7 +14,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--device', default='675CC86D-C1EA-41D7-A244-0318E0EE1121')
 parser.add_argument('--output', type=Path, required=True)
 parser.add_argument('--locale', default='de', choices=['de', 'en'])
-parser.add_argument('--scenario', default='running', choices=['offline', 'sending', 'running', 'retrying', 'failed', 'import', 'completed'])
+parser.add_argument('--scenario', default='running', choices=['offline', 'sending', 'running', 'retrying', 'failed', 'import', 'completed', 'queued', 'paused', 'recovering', 'stale', 'unknown_total', 'offline_accepted', 'canceled', 'admin_paused', 'queued_retry'])
 parser.add_argument('--width', type=int, default=393)
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
@@ -33,7 +33,9 @@ typedef NS_ENUM(NSInteger,ICTranscriptionStatus) { ICTranscriptionStatusNone, IC
 @property ICTranscriptionStatus status;
 @property BOOL usesServerTranscription,serverWaitingForNetwork,requiresExplicitRetryAfterCrash,serverConnectionIssue;
 @property NSString *episodeHash,*episodeTitle,*feedTitle,*statusDetail,*error,*serverPhase;
-@property NSDate *nextRetryAt,*serverLastResponseAt;
+@property NSDate *nextRetryAt,*serverLastResponseAt,*serverActivityUpdatedAt,*serverPhaseStartedAt;
+@property NSString *serverActivity,*serverWorkUnit;
+@property NSNumber *serverWorkCompleted,*serverWorkTotal,*serverEstimatedPhaseRemainingSeconds,*serverQueuePosition;
 @end
 @implementation ICTranscriptionQueueItem @end
 @interface ServerTranscriptionManager:NSObject
@@ -76,14 +78,24 @@ CONTROLLER
 @implementation Scene
 - (void)scene:(UIScene*)scene willConnectToSession:(UISceneSession*)session options:(UISceneConnectionOptions*)options {
  ICTranscriptionQueueItem *item=[ICTranscriptionQueueItem new];item.usesServerTranscription=YES;item.episodeHash=@"fixture";item.episodeTitle=@"Another World (SF 26)";
- item.status=ICTranscriptionStatusTranscribing;item.serverPhase=@"transcribing";
+ item.status=ICTranscriptionStatusTranscribing;item.serverPhase=@"transcribing";item.serverActivity=@"running";item.serverActivityUpdatedAt=[NSDate date];item.serverPhaseStartedAt=[NSDate dateWithTimeIntervalSinceNow:-120];
  item.statusDetail=NSLocalizedString(@"Step 2 of 4 · Transcribing audio",nil);
  item.serverLastResponseAt=[NSDate date];item.nextRetryAt=[NSDate dateWithTimeIntervalSinceNow:30];
  NSString *scenario=@"SCENARIO";
- if([scenario isEqual:@"offline"]) {item.serverWaitingForNetwork=YES;item.status=ICTranscriptionStatusQueued;item.serverPhase=nil;item.serverLastResponseAt=nil;item.statusDetail=NSLocalizedString(@"Saved on this device. Waiting for internet; the request will be sent automatically when the connection returns.",nil);}
- if([scenario isEqual:@"sending"]) {item.serverPhase=@"sending";item.serverLastResponseAt=nil;item.nextRetryAt=nil;item.statusDetail=NSLocalizedString(@"Sending the saved request to the server.",nil);}
+ if([scenario isEqual:@"offline"]) {item.serverWaitingForNetwork=YES;item.status=ICTranscriptionStatusQueued;item.serverPhase=nil;item.serverLastResponseAt=nil;item.serverActivityUpdatedAt=nil;item.serverActivity=nil;item.statusDetail=NSLocalizedString(@"Saved on this device. Waiting for internet; the request will be sent automatically when the connection returns.",nil);}
+ if([scenario isEqual:@"sending"]) {item.serverPhase=@"sending";item.serverLastResponseAt=nil;item.serverActivityUpdatedAt=nil;item.serverActivity=nil;item.nextRetryAt=nil;item.statusDetail=NSLocalizedString(@"Sending the saved request to the server.",nil);}
+ if([scenario isEqual:@"offline_accepted"]) {item.serverWaitingForNetwork=YES;item.statusDetail=NSLocalizedString(@"Offline. The server may continue processing. Its status will update when the connection returns.",nil);}
+ if([scenario isEqual:@"stale"]) {item.serverActivityUpdatedAt=[NSDate dateWithTimeIntervalSinceNow:-31];}
+ if([scenario isEqual:@"unknown_total"]) {item.serverPhase=@"downloading_audio";item.serverWorkCompleted=@2048;item.serverWorkUnit=@"bytes";}
+ if([scenario isEqual:@"canceled"]) {item.status=ICTranscriptionStatusCanceled;item.nextRetryAt=nil;}
  if([scenario isEqual:@"retrying"]) {item.serverConnectionIssue=YES;item.statusDetail=NSLocalizedString(@"Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant.",nil);}
  if([scenario isEqual:@"failed"]||[scenario isEqual:@"import"]) {item.status=ICTranscriptionStatusFailed;item.nextRetryAt=nil;item.serverPhase=[scenario isEqual:@"import"]?@"importing":@"failed";item.error=NSLocalizedString(@"Das Server-Ergebnis ist unvollständig oder enthält doppelte Artefakte.",nil);}
+ if([scenario isEqual:@"queued_retry"]) {item.serverActivity=@"queued";item.serverQueuePosition=@3;}
+ if([scenario isEqual:@"admin_paused"]) {item.serverActivity=@"paused";}
+ if([scenario isEqual:@"queued"]) {item.serverPhase=@"queued";item.serverActivity=@"queued";item.serverQueuePosition=@3;}
+ if([scenario isEqual:@"paused"]) {item.serverPhase=@"paused";item.serverActivity=@"paused";item.statusDetail=NSLocalizedString(@"Your request is saved on the server. Processing will continue automatically when the service is available again.",nil);}
+ if([scenario isEqual:@"recovering"]) {item.serverActivity=@"recovering";}
+ if([scenario isEqual:@"running"]) {item.serverWorkCompleted=@300;item.serverWorkTotal=@1200;item.serverWorkUnit=@"audio_seconds";item.serverEstimatedPhaseRemainingSeconds=@360;}
  if([scenario isEqual:@"completed"]) {item.status=ICTranscriptionStatusCompleted;item.nextRetryAt=nil;}
  ServerTranscriptionManager.shared.items=@[item];
  self.window=[[UIWindow alloc] initWithWindowScene:(UIWindowScene*)scene];CGRect frame=self.window.frame;frame.size.width=TEST_WIDTH;self.window.frame=frame;
@@ -95,11 +107,21 @@ CONTROLLER
  NSMutableArray *nodes=[NSMutableArray array];
  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
  BOOL title=NO,next=NO,process=NO,historyHidden=YES;
+ BOOL activity=NO;for(UITableViewCell *cell in vc.tableView.visibleCells)if([cell.accessoryView isKindOfClass:UIActivityIndicatorView.class])activity|=((UIActivityIndicatorView*)cell.accessoryView).isAnimating;
+ NSMutableArray *allText=[NSMutableArray array];for(NSDictionary *node in nodes)if([node[@"text"] length])[allText addObject:node[@"text"]];
+ NSString *visibleText=[allText componentsJoinedByString:@"\n"];
+ BOOL confirmed=[visibleText containsString:NSLocalizedString(@"Request accepted by the server",nil)];
+ BOOL expectedConfirmed=![@[@"offline",@"sending"] containsObject:scenario];
+ BOOL expectedActivity=[@[@"running",@"sending",@"unknown_total"] containsObject:scenario];
+ BOOL informative=confirmed==expectedConfirmed && activity==expectedActivity && ![visibleText containsString:@"does not provide a remaining time"] && ![visibleText containsString:@"keine geschätzte Restdauer"] && ![visibleText.lowercaseString containsString:@"betreiber"] && ![visibleText.lowercaseString containsString:@"operator"] && ![visibleText.lowercaseString containsString:@"artefakt"] && ![visibleText.lowercaseString containsString:@"artifact"];
+ if([scenario isEqual:@"stale"])informative=informative && [visibleText containsString:NSLocalizedString(@"Checking server activity",nil)];
+ if([scenario isEqual:@"unknown_total"])informative=informative && [visibleText containsString:[NSString stringWithFormat:NSLocalizedString(@"Audio downloaded: %@",nil),[NSByteCountFormatter stringFromByteCount:2048 countStyle:NSByteCountFormatterCountStyleFile]]];
+ if([scenario isEqual:@"running"])informative=informative && [visibleText containsString:NSLocalizedString(@"Server is creating the transcript",nil)] && [visibleText containsString:@"5:00"] && [visibleText containsString:@"20:00"];
  for(NSDictionary *node in nodes){title|=[node[@"id"] isEqual:@"ICServerStatusTitle"];next|=[node[@"id"] isEqual:@"ICServerNextAction"];process|=[node[@"id"] isEqual:@"ICServerProcess"];if([node[@"text"] containsString:@"Previous diagnostic event"])historyHidden=NO;}
  NSURL *dir=[NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
  UIImage *image=[[[UIGraphicsImageRenderer alloc] initWithBounds:self.window.bounds] imageWithActions:^(UIGraphicsImageRendererContext *ctx){[self.window drawViewHierarchyInRect:self.window.bounds afterScreenUpdates:YES];}];
  [UIImagePNGRepresentation(image) writeToURL:[dir URLByAppendingPathComponent:@"screen.png"] atomically:YES];
- [[NSJSONSerialization dataWithJSONObject:@{@"passed":@(title&&next&&process&&historyHidden),@"title":@(title),@"nextAction":@(next),@"process":@(process),@"historyHidden":@(historyHidden),@"nodes":nodes} options:NSJSONWritingPrettyPrinted error:nil] writeToURL:[dir URLByAppendingPathComponent:@"result.json"] atomically:YES];
+ [[NSJSONSerialization dataWithJSONObject:@{@"passed":@(title&&next&&process&&historyHidden&&informative),@"title":@(title),@"nextAction":@(next),@"process":@(process),@"historyHidden":@(historyHidden),@"nodes":nodes,@"activity":@(activity),@"confirmed":@(confirmed),@"informative":@(informative)} options:NSJSONWritingPrettyPrinted error:nil] writeToURL:[dir URLByAppendingPathComponent:@"result.json"] atomically:YES];
  };
 }
 @end

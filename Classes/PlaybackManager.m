@@ -2243,6 +2243,12 @@ didReceiveResponse:(NSURLResponse *)response
         // also handle special case, where we don't have a duration
         self.initialPlaybackTime = (self.playingEpisode.position < self.playingEpisode.duration - 5 || self.playingEpisode.duration < 1) ? self.playingEpisode.position : 0;
 
+        // Older skip completions left a temporary position behind the saved end.
+        if (self.playingEpisode.consumed && self.playingEpisode.duration > 0 &&
+            self.playingEpisode.position >= self.playingEpisode.duration) {
+            [self _removeTemporarySavePosition];
+        }
+
         // Check for temporary saved position first (user's last playback position)
         NSString* key = self.playingEpisode.objectHash;
         NSDictionary* playbackPositions = [USER_DEFAULTS objectForKey:kDefaultTemporaryPlaybackPositions];
@@ -2522,7 +2528,6 @@ didReceiveResponse:(NSURLResponse *)response
                     double skipTriggerTime = dur - skipEndPeriod;
 
                     if (currentTime >= skipTriggerTime && currentTime < dur) {
-                        AudioSession *session = [AudioSession sharedAudioSession];
                         [weakSelf _logPlaybackAutoSkipEvent:@"Auto-Skip-Ende ausgelöst"
                                                     episode:episode
                                                 currentTime:currentTime
@@ -2534,41 +2539,8 @@ didReceiveResponse:(NSURLResponse *)response
                                                        @"globalSkipEndPeriod": @(periodGeneralEnd),
                                                    }];
 
-                        self->_changingPosition = YES;
-                        if (!episode.consumed) {
-                            [USER_DEFAULTS setInteger:[USER_DEFAULTS integerForKey:@"TotalEpisodesPlayedCount"] + 1 forKey:@"TotalEpisodesPlayedCount"];
-                        }
-                        episode.consumed = YES;
-                        episode.position = 0;
-
-                        [DMANAGER setEpisode:episode position:dur];
-                        self->_changingPosition = NO;
-                        [DMANAGER save];
-                        // Remove consumed episode from Up Next playlist
-                        [session eraseEpisodesFromUpNext:@[episode]];
-                        BOOL waitingForSharedTransition = [sharePlayCoordinator hasActiveSession] && ![sharePlayCoordinator canAdvanceAutomatically];
-                        CDEpisode *nextEpisode = waitingForSharedTransition ? nil : [session nextPlayableEpisode];
-                        [weakSelf _logPlaybackAutoSkipEvent:@"Auto-Skip-Ende abgeschlossen"
-                                                    episode:episode
-                                                currentTime:currentTime
-                                                   duration:dur
-                                                   metadata:@{
-                                                       @"skipEndPeriod": @(skipEndPeriod),
-                                                       @"skipTriggerTime": @(skipTriggerTime),
-                                                       @"feedSkipEndPeriod": @(periodFeedEnd),
-                                                       @"globalSkipEndPeriod": @(periodGeneralEnd),
-                                                       @"nextEpisodeHash": nextEpisode.objectHash ?: @"",
-                                                       @"waitingForSharePlayOwner": @(waitingForSharedTransition),
-                                                   }];
-                        if (waitingForSharedTransition) {
-                            return;
-                        } else if (nextEpisode) {
-                            weakSelf.inTransitionToNextTrack = YES;
-                            [session playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
-                        } else {
-                            [sharePlayCoordinator publishPlaybackFinishedForEpisodeIdentifier:episode.objectHash];
-                            [weakSelf closeAndSaveCurrentPosition:NO];
-                        }
+                        [weakSelf _finishEpisodeDueToSkip:episode];
+                        return;
                     }
                 }
             }
@@ -2803,57 +2775,30 @@ didReceiveResponse:(NSURLResponse *)response
 }
 
 - (void)_finishEpisodeDueToSkip:(CDEpisode *)episode {
-    self.isAutoSkipping = YES;
+    if (self.isAutoSkipping) return;
     AVPlayerItem *item = self.player.currentItem;
     CMTime duration = item.asset.duration;
-    NSTimeInterval durationSeconds = 0;
-    if (CMTIME_IS_VALID(duration) && !CMTIME_IS_INDEFINITE(duration)) {
-        durationSeconds = CMTimeGetSeconds(duration);
-        if (durationSeconds < 0) {
-            durationSeconds = 0;
-        }
-    }
-    AudioSession *session = [AudioSession sharedAudioSession];
-    NSInteger dur = (NSInteger)durationSeconds;
-    NSTimeInterval currentTime = [self time];
-    [self _logPlaybackAutoSkipEvent:@"Kapitel-Skip-Episodenabschluss gestartet"
-                            episode:episode
-                        currentTime:currentTime
-                           duration:durationSeconds
-                           metadata:nil];
-    _changingPosition = YES;
-    if (!episode.consumed) {
-        [USER_DEFAULTS setInteger:[USER_DEFAULTS integerForKey:@"TotalEpisodesPlayedCount"] + 1 forKey:@"TotalEpisodesPlayedCount"];
-    }
-    episode.consumed = YES;
-    episode.position = 0;
-    [DMANAGER setEpisode:episode position:(double)dur];
-    _changingPosition = NO;
-    [DMANAGER save];
-    // Remove consumed episode from Up Next playlist
-    [session eraseEpisodesFromUpNext:@[episode]];
-    ICSharePlayCoordinator* sharePlayCoordinator = [ICSharePlayCoordinator sharedCoordinator];
-    BOOL waitingForSharedTransition = [sharePlayCoordinator hasActiveSession] && ![sharePlayCoordinator canAdvanceAutomatically];
-    CDEpisode *nextEpisode = waitingForSharedTransition ? nil : [session nextPlayableEpisode];
-    [self _logPlaybackAutoSkipEvent:@"Kapitel-Skip-Episodenabschluss gespeichert"
-                            episode:episode
-                        currentTime:currentTime
-                           duration:durationSeconds
-                           metadata:@{
-                               @"savedPosition": @(dur),
-                               @"nextEpisodeHash": nextEpisode.objectHash ?: @"",
-                               @"waitingForSharePlayOwner": @(waitingForSharedTransition),
-                           }];
-    self.isAutoSkipping = NO;
-    if (waitingForSharedTransition) {
+    if (!CMTIME_IS_NUMERIC(duration) || CMTimeCompare(duration, kCMTimeZero) <= 0) {
         return;
-    } else if (nextEpisode) {
-        self.inTransitionToNextTrack = YES;
-        [session playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
-    } else {
-        [sharePlayCoordinator publishPlaybackFinishedForEpisodeIdentifier:episode.objectHash];
-        [self closeAndSaveCurrentPosition:NO];
     }
+    self.isAutoSkipping = YES;
+    [self _logPlaybackAutoSkipEvent:@"Skip springt zum Episodenende"
+                            episode:episode
+                        currentTime:self.time
+                           duration:CMTimeGetSeconds(duration)
+                           metadata:nil];
+
+    // Let AVPlayer's real end notification perform the normal episode completion.
+    __weak PlaybackManager* weakSelf = self;
+    [self.player seekToTime:duration toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL finished) {
+        if (!finished) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (weakSelf.player.currentItem == item) {
+                    weakSelf.isAutoSkipping = NO;
+                }
+            });
+        }
+    }];
 }
 
 
@@ -2884,6 +2829,7 @@ didReceiveResponse:(NSURLResponse *)response
         _changingPosition = NO;
 
         [self _removeTemporarySavePosition];
+        [DMANAGER save];
         [[NSNotificationCenter defaultCenter] postNotificationName:PlaybackManagerEpisodeDidFinishNotification object:self];
 
         // Remove consumed episode from Up Next playlist
@@ -3512,6 +3458,50 @@ didReceiveResponse:(NSURLResponse *)response
     return target;
 }
 
+- (void)_rememberChapterPositionBeforeSkippingToTime:(NSTimeInterval)time
+{
+    NSMutableArray<NSNumber*>* chapterTimes = [NSMutableArray arrayWithCapacity:self.chapters.count];
+    NSUInteger index = NSNotFound;
+    for (ICMetadataChapter* chapter in self.chapters) {
+        NSTimeInterval start = CMTimeGetSeconds(chapter.start);
+        if (start <= time) index = chapterTimes.count;
+        [chapterTimes addObject:@(start)];
+    }
+    if (index != NSNotFound) {
+        // Record the manual departure; skip controls keep their boundary target.
+        [self timeForChapterSelectionAtIndex:index chapterTimes:chapterTimes episode:self.playingEpisode];
+    }
+}
+
+- (void)_clearResumedChapterPosition
+{
+    NSString* episodeHash = self.playingEpisode.objectHash;
+    NSTimeInterval duration = self.duration;
+    if (episodeHash.length == 0 || duration <= 0) return;
+    NSDictionary* allPositions = [USER_DEFAULTS dictionaryForKey:PlayerChapterPlaybackPositions];
+    NSDictionary* saved = allPositions[episodeHash];
+    NSDictionary* positions = saved[@"positions"];
+    if (positions.count == 0) return;
+
+    NSArray<NSNumber*>* chapterTimes = saved[@"chapterTimes"];
+    NSUInteger index = NSNotFound;
+    double position = self.position;
+    for (NSUInteger i = 0; i < chapterTimes.count; i++) {
+        if (position >= chapterTimes[i].doubleValue / duration) index = i;
+        else break;
+    }
+    NSString* key = [@(index) stringValue];
+    if (!positions[key]) return;
+
+    // A remembered interruption is used up once playback enters that chapter,
+    // including natural entry and automatic skips. Only a new manual departure saves again.
+    NSMutableDictionary* remaining = [positions mutableCopy];
+    [remaining removeObjectForKey:key];
+    NSMutableDictionary* updated = [allPositions mutableCopy];
+    updated[episodeHash] = @{@"chapterTimes": chapterTimes, @"positions": remaining};
+    [USER_DEFAULTS setObject:updated forKey:PlayerChapterPlaybackPositions];
+}
+
 - (NSTimeInterval) _scrubbTime
 {
 	NSTimeInterval t = [[NSDate date] timeIntervalSinceDate:self.controlStartDate];
@@ -3599,6 +3589,7 @@ didReceiveResponse:(NSURLResponse *)response
     CDFeed* feed = self.playingEpisode.feed;
     NSTimeInterval chapterTarget = [self _forwardSkipTargetNearChapterEndFromTime:self.time];
     if (chapterTarget >= 0) {
+        [self _rememberChapterPositionBeforeSkippingToTime:chapterTarget];
         [self seekToTime:[self _adjustTimeAfterSkipZone:chapterTarget]];
         return;
     }
@@ -3738,7 +3729,7 @@ didReceiveResponse:(NSURLResponse *)response
     {
         ICMetadataChapter* nextChapter = [self.chapters objectAtIndex:self.currentChapter+1];
         NSTimeInterval time = (NSTimeInterval)CMTimeGetSeconds(nextChapter.start);
-        
+        [self _rememberChapterPositionBeforeSkippingToTime:time];
         [self seekToTime:time tolerance:NO];
     }
 }
@@ -3750,7 +3741,7 @@ didReceiveResponse:(NSURLResponse *)response
     {
         ICMetadataChapter* previousChapter = [self.chapters objectAtIndex:self.currentChapter-1];
         NSTimeInterval time = (NSTimeInterval)CMTimeGetSeconds(previousChapter.start);
-
+        [self _rememberChapterPositionBeforeSkippingToTime:time];
         [self seekToTime:time tolerance:NO];
     }
 }
@@ -3900,6 +3891,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) _findAndSetCurrentChapter:(NSTimeInterval)time
 {
+    [self _clearResumedChapterPosition];
     if (self.seekingChapter) {
         NSUInteger idx = [self.chapters indexOfObject:self.seekingChapter];
         if (idx != NSNotFound) {

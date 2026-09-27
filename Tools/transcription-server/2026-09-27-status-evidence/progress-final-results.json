@@ -1,0 +1,48 @@
+[
+  {
+    "command": [
+      "tools/work_status_regression.py"
+    ],
+    "returncode": 0,
+    "elapsed": 16.06
+  },
+  {
+    "command": [
+      "tools/rate_limit_regression.py"
+    ],
+    "returncode": 0,
+    "elapsed": 2.66
+  },
+  {
+    "command": [
+      "tools/queue_admission_mysql_regression.py",
+      "--rates"
+    ],
+    "returncode": 1,
+    "elapsed": 8.37
+  },
+  {
+    "command": [
+      "tools/queue_admission_mysql_regression.py",
+      "--work-status",
+      "--test",
+      "test_healthy_http_poll_interval_and_capacity_budget"
+    ],
+    "returncode": 0,
+    "elapsed": 1.97
+  },
+  {
+    "command": [
+      "tools/provider_polling_regression.py"
+    ],
+    "returncode": 0,
+    "elapsed": 0.25
+  },
+  {
+    "command": [
+      "tools/server_capacity_policy_regression.py"
+    ],
+    "returncode": 0,
+    "elapsed": 0.04
+  }
+]

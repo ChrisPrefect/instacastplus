@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-09-27T20:27:51.491789+00:00",
+  "source_sha256": {
+    "Classes/ServerTranscriptionManager.swift": "c1ea031f9cd5004b985c34d15ce8959d5f8903c0e2705bd082687b9c726d261c",
+    "Classes/TranscriptionQueue.swift": "b979c61d6f603eacf3d8d30a8a588d90f8ec425564abc6bce45dfc5dc26ba33d",
+    "Classes/TranscriptionQueueViewController.m": "cdb11fb92f1b2a26874be374944c89292c0e4ce9fa170a16ffb33f9544280961",
+    "Classes/ICTranscriptionDebugAutomation.swift": "4cd0eafb7e19d23e4032a9d34473af83e8d67e3f4366b61d8c0d612b6ba9703e",
+    "Resources/de.lproj/Localizable.strings": "c69adf4008478a516ea7a560eb909bee50899a8f37d5c86be1247b41e2fc5b57",
+    "Resources/en.lproj/Localizable.strings": "61206a7941db620d8a689b13dcc68eebbb32970c6e58a74ade135130204d9d80"
+  },
+  "build_succeeded": true,
+  "app_recovery_passed": true,
+  "fresh_ai_processing_verified": false,
+  "reason": "Server OpenAI token revoked; reauthentication requested",
+  "physical_device_verified": false
+}

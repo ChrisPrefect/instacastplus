@@ -9,6 +9,7 @@ class ICTranscriptionQueueItem: NSObject {
  var error: String?; var statusDetail: String?; var statusStartedAt: Date?; var completedAt: Date?; var nextRetryAt: Date?
  var serverWaitingForNetwork = false
  var serverPhase: String?; var serverLastResponseAt: Date?; var serverConnectionIssue = false
+ var serverWork: ICServerTranscriptionWork?
  var usesServerTranscription = true; var automaticallyScheduled = false; var shouldGenerateAnalysis = true
  init(episodeHash: String, episodeTitle: String, feedTitle: String, audioURL: URL?, language: String?) {
   self.episodeHash=episodeHash; self.episodeTitle=episodeTitle; self.feedTitle=feedTitle

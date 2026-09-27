@@ -1,0 +1,1 @@
+{"deployed": true, "backup": "/home/instacast/domains/transcript.instacast.ch/var/backups/status-flow-20260927-verified", "files_verified": 13, "migration": "jobs.work_json TEXT nullable", "job_states_unchanged": true}

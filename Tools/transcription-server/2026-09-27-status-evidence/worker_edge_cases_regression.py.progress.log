@@ -1,0 +1,70 @@
+{"chunk": 0, "start": 0, "seconds": 0, "segments": 0}
+{
+  "asr_provenance": {
+    "audio_sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+    "model": "small",
+    "compute_type": "int8",
+    "beam_size": 5.0,
+    "best_of": 1.0,
+    "batched": true,
+    "batch_size": 4.0,
+    "vad": true,
+    "word_timestamps": false,
+    "language": "auto",
+    "initial_prompt": null,
+    "hotwords": null,
+    "chunk_seconds": 600.0,
+    "chunk_overlap_seconds": 60.0,
+    "min_chunk_seconds": 5.0,
+    "boundary_search_seconds": 60.0,
+    "silence_noise_db": -35.0,
+    "silence_min_seconds": 0.3,
+    "preferred_silence_seconds": 0.8,
+    "silence_boundaries": false,
+    "implementation": {
+      "transcribe_podcast_parallel.py": "5ee6ea4eec3e0d936b3701df9c9df4a6dc65e3077f024cc0a3e6c84ea85f1118",
+      "transcribe_podcast.py": "af1edb26f7e3c53a13ef6be451bc98a9436874bf7468fd787b7793abdbe83589",
+      "caption_contract.py": "72105cc0a1175fd6ed160d5ab5bc3beb6e0eeff3eb5669b1c9c2c978d2288c63"
+    }
+  },
+  "audio": "/tmp/tmp3iybnand/source.mp3",
+  "transcription_pipeline_revision": "2026-08-04.1",
+  "model": "small",
+  "language": "auto",
+  "threads_per_worker": 4,
+  "workers": 4,
+  "beam_size": 5,
+  "best_of": 1,
+  "compute_type": "int8",
+  "batched": true,
+  "batch_size": 4,
+  "vad": true,
+  "initial_prompt": null,
+  "hotwords": null,
+  "word_timestamps": false,
+  "chunk_seconds": 600,
+  "chunk_overlap_seconds": 60,
+  "boundary_search_seconds": 60,
+  "preferred_silence_seconds": 0.8,
+  "detected_silence_interval_count": 0,
+  "chunk_boundaries": [
+    0.0,
+    10
+  ],
+  "chunk_count": 1,
+  "audio_duration_seconds": 10,
+  "total_seconds": 0.0009699361398816109,
+  "chunks": [
+    {
+      "index": 0,
+      "start": 0,
+      "duration": 10,
+      "total_seconds": 0
+    }
+  ]
+}
+...................
+----------------------------------------------------------------------
+Ran 19 tests in 7.142s
+
+OK

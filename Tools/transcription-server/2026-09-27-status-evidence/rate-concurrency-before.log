@@ -1,0 +1,21 @@
+F
+======================================================================
+FAIL: test_concurrent_first_requests_count_atomically (__main__.main.<locals>.MySQLAdmissionTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-status-20260927-progress/tools/rate_limit_regression.py", line 86, in test_concurrent_first_requests_count_atomically
+    self.assertEqual(['accepted','limited'],sorted(results))
+AssertionError: Lists differ: ['accepted', 'limited'] != ['OperationalError:1213', 'accepted']
+
+First differing element 0:
+'accepted'
+'OperationalError:1213'
+
+- ['accepted', 'limited']
++ ['OperationalError:1213', 'accepted']
+
+----------------------------------------------------------------------
+Ran 1 test in 2.545s
+
+FAILED (failures=1)
+Disposable MariaDB test database removed.

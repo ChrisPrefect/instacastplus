@@ -1,0 +1,33 @@
+[
+  {
+    "command": [
+      "tools/queue_admission_mysql_regression.py",
+      "--work-status"
+    ],
+    "returncode": 0,
+    "elapsed": 34.21
+  },
+  {
+    "command": [
+      "tools/audio_admission_regression.py"
+    ],
+    "returncode": 0,
+    "elapsed": 3.26
+  },
+  {
+    "command": [
+      "tools/queue_admission_mysql_regression.py",
+      "--audio-admission"
+    ],
+    "returncode": 0,
+    "elapsed": 15.66
+  },
+  {
+    "command": [
+      "tools/queue_admission_mysql_regression.py",
+      "--reliability"
+    ],
+    "returncode": 0,
+    "elapsed": 89.27
+  }
+]

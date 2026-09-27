@@ -16,6 +16,53 @@
    expect(item.statusDetail?.contains("Step \(index+1) of 4") == true,"Each phase must name its actual processing step")
    manager.retryWakeTask?.cancel()
   }
+  // Real measured work must survive decoding, UI accessors, persistence and phase changes.
+  let measured=Harness(server:FakeServer(),file:dir.appendingPathComponent("measured-work.json"))
+  let measuredItem=measured.add(accepted:true)
+  let currentWork:[String:Any] = ["phase":"transcribing", "activity":"running", "updated_at":"2026-09-27T14:00:10+00:00", "phase_started_at":"2026-09-27T14:00:00+00:00", "completed":120.0, "total":600.0, "unit":"audio_seconds", "estimated_phase_remaining_seconds":75.0]
+  func envelope(work:[String:Any]?, phase:String="transcribing") throws -> ICServerEpisodeEnvelope {
+   var episode:[String:Any] = ["id":42,"status":"running","phase":phase,"warnings":[],"artifacts":[]]
+   if let work { episode["work"]=work }
+   return try JSONDecoder().decode(ICServerEpisodeEnvelope.self,from:JSONSerialization.data(withJSONObject:["api_version":"v1","episode":episode,"retry_after_seconds":30]))
+  }
+  await measured.apply(try envelope(work:currentWork),to:measuredItem,requestID:nil)
+  func number(_ item:ICTranscriptionQueueItem,_ key:String)->Double? {
+   guard item.responds(to:NSSelectorFromString(key)) else { return nil }
+   return (item.value(forKey:key) as? NSNumber)?.doubleValue
+  }
+  expect(number(measuredItem,"serverWorkCompleted") == 120 && number(measuredItem,"serverWorkTotal") == 600,"Measured server audio work must reach the UI model")
+  expect(number(measuredItem,"serverEstimatedPhaseRemainingSeconds") == 75,"Measured phase estimate must reach the UI without becoming overall ETA")
+  expect(measuredItem.progress == 0,"Measured phase progress must not invent an overall fraction")
+  measured.persistQueue();await measured.durable();measured.retryWakeTask?.cancel()
+  let measuredRestored=Harness(server:FakeServer(),file:measured.queueFileURL);measuredRestored.loadPersistedQueue()
+  expect(number(measuredRestored.items[0],"serverWorkCompleted") == 120,"Measured work must survive an app restart")
+  measured.postQueueChange();let previousPublished=measured.publishedQueueState
+  var advancedWork=currentWork;advancedWork["completed"]=150.0
+  await measured.apply(try envelope(work:advancedWork),to:measuredItem,requestID:nil);measured.postQueueChange()
+  expect(previousPublished != measured.publishedQueueState,"New measured progress must publish a visible queue change")
+  await measured.apply(try envelope(work:["phase":"analyzing","activity":"running"],phase:"analyzing"),to:measuredItem,requestID:nil)
+  expect(number(measuredItem,"serverWorkCompleted") == nil && number(measuredItem,"serverEstimatedPhaseRemainingSeconds") == nil,"Previous phase progress and ETA must disappear at the phase transition")
+  for (key,value) in [("phase","downloading_audio" as Any),("completed",-1.0),("completed",601.0),("total",0.0),("unit","percent"),("unit","bytes"),("estimated_phase_remaining_seconds",-1.0),("updated_at","not-a-date"),("activity","unknown")] {
+   var invalid=currentWork;invalid[key]=value
+   let manager=Harness(server:FakeServer(),file:dir.appendingPathComponent("invalid-work-\(UUID().uuidString).json"))
+   let item=manager.add(accepted:true)
+   await manager.apply(try envelope(work:invalid),to:item,requestID:nil)
+   expect(item.requiresExplicitRetryAfterCrash && item.status == .failed,"Invalid work \(key)=\(value) must stop unsupported status claims while preserving the saved request")
+   expect(number(item,"serverWorkCompleted") == nil,"Invalid work must not reach a progress bar")
+   expect(manager.admissionByItem[ObjectIdentifier(item)] == .accepted,"Invalid observability must never erase confirmed admission")
+   manager.retryWakeTask?.cancel()
+  }
+  var unknownSize=currentWork;unknownSize["phase"]="downloading_audio";unknownSize["unit"]="bytes";unknownSize["total"]=nil;unknownSize["estimated_phase_remaining_seconds"]=nil
+  await measured.apply(try envelope(work:unknownSize,phase:"downloading_audio"),to:measuredItem,requestID:nil)
+  expect(number(measuredItem,"serverWorkCompleted") == 120 && number(measuredItem,"serverWorkTotal") == nil,"A download with unknown size must retain measured bytes without inventing a total")
+  var pausedWork=currentWork;pausedWork["activity"]="paused";pausedWork["estimated_phase_remaining_seconds"]=nil
+  let pausedEnvelope=try JSONDecoder().decode(ICServerEpisodeEnvelope.self,from:JSONSerialization.data(withJSONObject:["api_version":"v1","episode":["id":42,"status":"running","phase":"transcribing","warnings":[],"artifacts":[],"work":pausedWork],"service_status":["available":false,"code":"provider_unavailable"],"retry_after_seconds":30]))
+  await measured.apply(pausedEnvelope,to:measuredItem,requestID:nil)
+  expect(measuredItem.responds(to:NSSelectorFromString("serverActivity")) && measuredItem.value(forKey:"serverActivity") as? String == "paused","An accepted service pause must expose paused activity, never an old running claim")
+  await measured.apply(try envelope(work:currentWork),to:measuredItem,requestID:nil)
+  measured.fail(measuredItem,message:"fixture failure")
+  expect(number(measuredItem,"serverWorkCompleted") == nil,"A terminal failure must clear active phase progress")
+  measured.retryWakeTask?.cancel();measuredRestored.retryWakeTask?.cancel()
   let unknown=Harness(server:FakeServer(),file:dir.appendingPathComponent("unknown-phase.json"))
   let unknownItem=unknown.add(accepted:true)
   let unknownEnvelope=try JSONDecoder().decode(ICServerEpisodeEnvelope.self,from:Data(#"{"api_version":"v1","episode":{"id":42,"status":"running","phase":"new-unknown-phase","warnings":[],"artifacts":[]},"retry_after_seconds":30}"#.utf8))
@@ -40,6 +87,7 @@
    expect(item.nextRetryAt == nil,"Definite \(code) refusal must not auto-POST")
    expect(item.error?.isEmpty == false,"Definite \(code) refusal needs a visible reason")
    expect(server.registrations.isEmpty,"Refused request must have no server job")
+   expect(!(item.error ?? "").lowercased().contains("operator"),"A service refusal must not send users to an infrastructure operator")
    manager.retryWakeTask?.cancel()
   }
   let diskServer=FakeServer();let diskFile=dir.appendingPathComponent("disk-failure.json")
@@ -138,7 +186,9 @@
   paused.start();await paused.durable()
   expect(pausedItem.status == .transcribing && pausedItem.progress==0.4 && paused.serverIDByItem[ObjectIdentifier(pausedItem)]==42,"Accepted provider outage must preserve job ownership/progress")
   expect((pausedItem.nextRetryAt?.timeIntervalSinceNow ?? 0)>290,"Accepted provider outage must respect server retry hint")
-  expect(pausedItem.statusDetail?.contains("paused") == true,"Accepted provider outage needs a clear paused reason")
+  expect(pausedItem.statusDetail?.contains("saved on the server") == true,"Accepted provider outage must confirm the request remains saved")
+  expect(pausedItem.statusDetail?.contains("continue automatically") == true,"Accepted provider outage must tell the user processing continues automatically")
+  expect(!(pausedItem.statusDetail ?? "").lowercased().contains("operator"),"Accepted service outage must not ask users to contact an infrastructure operator")
   paused.retryWakeTask?.cancel()
   let oldServer=FakeServer();oldServer.online=false
   let old=Harness(server:oldServer,file:dir.appendingPathComponent("long-offline.json"));let oldItem=old.add(accepted:true);oldItem.statusStartedAt=Date(timeIntervalSinceNow:-86400*7);old.start();await old.durable()
