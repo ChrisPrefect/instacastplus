@@ -23,6 +23,9 @@
 @interface ListEpisodesTableViewController ()
 @property (nonatomic) NSInteger episodesLoadGeneration;
 @property (nonatomic, strong) NSMutableArray<CDEpisode*>* loadedEpisodes;
+@property (nonatomic, strong) NSMutableArray<CDEpisode*>* reloadedEpisodes;
+@property (nonatomic) NSUInteger reloadedPageOffset;
+@property (nonatomic) BOOL episodeReloadPending;
 @property (nonatomic, strong) NSMutableSet<NSManagedObjectID*>* pendingSelectedEpisodeObjectIDs;
 @property (nonatomic) NSUInteger nextPageOffset;
 @property (nonatomic) BOOL loadingPage;
@@ -212,33 +215,7 @@
     if ([self _deferEpisodeReloadDuringInteraction]) {
         return;
     }
-    // Never reload out from under a running scroll — updateEpisodes empties the table, so
-    // the offset would be clamped away mid-gesture. Retry once the scrolling has settled.
-    if (self.tableView.dragging || self.tableView.decelerating) {
-        [self coalescedPerformSelector:@selector(_reloadListAfterCountChange) afterDelay:1.0];
-        return;
-    }
-
-    // updateEpisodes discards every loaded page and resets paging to 0. On a list the user
-    // has scrolled into, that collapses contentSize and UIKit clamps contentOffset to the
-    // top — the list jumps back to its beginning on its own, just because the episode count
-    // changed (a feed refresh, a finished episode, an applied iCloud state). Persist the
-    // current offset and re-arm the restore so the existing paging loop walks back to it.
-    BOOL preservesScrollPosition = (self.tableView.window != nil && self.nextPageOffset > EPISODE_PAGE_SIZE);
-    if (preservesScrollPosition) {
-        [self _storeScrollPosition];
-        _didRestoreScrollPosition = NO;
-        [[ICDiagnosticLogger shared] logEvent:@"list-scroll"
-                                      message:@"Listen-Neuaufbau nach Zähleränderung – Scrollposition gesichert"
-                                     metadata:@{
-                                         @"list": self.list.name ?: @"",
-                                         @"loadedEpisodes": @(self.loadedEpisodes.count),
-                                         @"contentOffsetY": @(self.tableView.contentOffset.y),
-                                     }];
-    }
-
     [self updateEpisodes];
-    [self reloadDataAndPreserveSelection];
 
     [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
@@ -415,21 +392,27 @@
 
 - (void) _loadNextPage
 {
-    if (self.loadingPage || self.reachedListEnd || self.pageError) {
+    BOOL replacingEpisodes = (self.reloadedEpisodes != nil);
+    if (self.loadingPage || self.episodeReloadPending || (!replacingEpisodes && self.reachedListEnd) || self.pageError) {
         return;
     }
 
     self.loadingPage = YES;
-    [self _updatePageFooter];
+    if (!replacingEpisodes) {
+        [self _updatePageFooter];
+    }
 
     NSInteger generation = self.episodesLoadGeneration;
-    NSUInteger offset = self.nextPageOffset;
+    NSUInteger offset = replacingEpisodes ? self.reloadedPageOffset : self.nextPageOffset;
     NSManagedObjectID* listID = self.list.objectID;
 
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    dispatch_async(dispatch_get_global_queue(replacingEpisodes ? QOS_CLASS_UTILITY : QOS_CLASS_USER_INITIATED, 0), ^{
         __block NSArray<NSManagedObjectID*>* episodeIDs = nil;
         __block NSError* pageError = nil;
-        NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
+        NSManagedObjectContext* context = replacingEpisodes ? [DMANAGER newExportBackgroundContext] : [DMANAGER newBackgroundContext];
+        if (!context) {
+            pageError = [NSError errorWithDomain:NSCocoaErrorDomain code:NSPersistentStoreOpenError userInfo:nil];
+        }
         [context performBlockAndWait:^{
             CDList* list = (CDList*)[context existingObjectWithID:listID error:&pageError];
             if (!list || pageError) {
@@ -446,6 +429,12 @@
 
         dispatch_async(dispatch_get_main_queue(), ^{
             if (generation != self.episodesLoadGeneration) {
+                return;
+            }
+
+            // The user may have started another gesture while the page was fetched.
+            if (replacingEpisodes && ([self _deferEpisodeReloadDuringInteraction] || self.tableView.dragging || self.tableView.decelerating)) {
+                [self updateEpisodes];
                 return;
             }
 
@@ -466,7 +455,41 @@
                 }
             }
 
-            [self.loadedEpisodes addObjectsFromArray:pageEpisodes];
+            NSIndexPath* anchorPath = nil;
+            CGFloat anchorDistance = 0;
+            if (replacingEpisodes) {
+                [self.reloadedEpisodes addObjectsFromArray:pageEpisodes];
+                self.reloadedPageOffset = offset + episodeIDs.count;
+                NSUInteger requiredCount = oldCount;
+                CGFloat visibleTop = self.tableView.contentOffset.y + self.tableView.adjustedContentInset.top;
+                for (NSIndexPath* path in self.tableView.indexPathsForVisibleRows) {
+                    if (path.section != 0 || path.row >= oldCount) continue;
+                    CGRect rect = [self.tableView rectForRowAtIndexPath:path];
+                    if (CGRectGetMaxY(rect) <= visibleTop) continue;
+                    NSUInteger index = [self.reloadedEpisodes indexOfObject:self.loadedEpisodes[path.row]];
+                    if (index != NSNotFound) {
+                        anchorPath = [NSIndexPath indexPathForRow:index inSection:0];
+                        anchorDistance = CGRectGetMinY(rect) - self.tableView.contentOffset.y;
+                        requiredCount += index > path.row ? index - path.row : 0;
+                        break;
+                    }
+                }
+                // Keep the visible snapshot until its replacement also covers the
+                // user's current position and the previously loaded rows below it.
+                if (episodeIDs.count == EPISODE_PAGE_SIZE && (!anchorPath || self.reloadedEpisodes.count < requiredCount)) {
+                    [self _loadNextPage];
+                    return;
+                }
+                [self _captureSelectedEpisodeObjectIDsForReload];
+                self.loadedEpisodes = self.reloadedEpisodes;
+                self.reloadedEpisodes = nil;
+                pageEpisodes = self.loadedEpisodes;
+                oldCount = 0;
+                _didRestoreScrollPosition = YES;
+            }
+            else {
+                [self.loadedEpisodes addObjectsFromArray:pageEpisodes];
+            }
             self.episodes = self.loadedEpisodes;
             self.nextPageOffset = offset + episodeIDs.count;
             self.reachedListEnd = episodeIDs.count < EPISODE_PAGE_SIZE;
@@ -474,7 +497,23 @@
                 self.reachedListEnd = YES;
             }
 
-            if (oldCount == 0) {
+            if (replacingEpisodes) {
+                [UIView performWithoutAnimation:^{
+                    [self reloadDataAndPreserveSelection];
+                    [self _updatePageFooter];
+                    [self.tableView layoutIfNeeded];
+                    if (anchorPath) {
+                        [self.tableView scrollToRowAtIndexPath:anchorPath atScrollPosition:UITableViewScrollPositionTop animated:NO];
+                        [self.tableView layoutIfNeeded];
+                        CGFloat targetY = CGRectGetMinY([self.tableView rectForRowAtIndexPath:anchorPath]) - anchorDistance;
+                        CGFloat minY = -self.tableView.adjustedContentInset.top;
+                        CGFloat maxY = MAX(minY, self.tableView.contentSize.height - CGRectGetHeight(self.tableView.bounds) + self.tableView.adjustedContentInset.bottom);
+                        self.tableView.contentOffset = CGPointMake(self.tableView.contentOffset.x, MIN(MAX(targetY, minY), maxY));
+                    }
+                }];
+                [self _storeScrollPosition];
+            }
+            else if (oldCount == 0) {
                 [self reloadDataAndPreserveSelection];
             }
             else if (pageEpisodes.count > 0) {
@@ -486,7 +525,7 @@
             }
             [self _restorePendingEpisodeSelectionFromPage:pageEpisodes startingAtRow:oldCount];
 
-            [self _updatePageFooter];
+            if (!replacingEpisodes) [self _updatePageFooter];
             [self _updateToolbarItemsAnimated:NO];
             [self _updateToolbarLabels];
             [self _restoreScrollPositionIfNeeded];
@@ -521,10 +560,12 @@
             self.playedEpisodeCount = playedEpisodeCount;
             self.playedDownloadedEpisodeCount = playedDownloadedEpisodeCount;
             self.statisticsLoaded = YES;
-            if (self.nextPageOffset >= totalEpisodeCount) {
+            if (!self.reloadedEpisodes && self.nextPageOffset >= totalEpisodeCount) {
                 self.reachedListEnd = YES;
             }
-            [self _updatePageFooter];
+            if (!self.reloadedEpisodes) {
+                [self _updatePageFooter];
+            }
             [self _updateToolbarLabels];
             [self _updateToolbarItemsAnimated:NO];
         });
@@ -533,15 +574,28 @@
 
 - (void) updateEpisodes
 {
-    [self _captureSelectedEpisodeObjectIDsForReload];
     self.episodesLoadGeneration++;
+    self.loadingPage = NO;
+    self.reloadedEpisodes = nil;
+    self.episodeReloadPending = YES;
+    if ([self _deferEpisodeReloadDuringInteraction] || self.tableView.dragging || self.tableView.decelerating) {
+        return;
+    }
+    self.episodeReloadPending = NO;
+    self.pageError = nil;
+    self.statisticsLoaded = NO;
+    if (self.tableView.window && self.loadedEpisodes.count > 0 && _didRestoreScrollPosition) {
+        self.reloadedEpisodes = [[NSMutableArray alloc] init];
+        self.reloadedPageOffset = 0;
+        [self _loadNextPage];
+        return;
+    }
+
+    [self _captureSelectedEpisodeObjectIDsForReload];
     self.loadedEpisodes = [[NSMutableArray alloc] init];
     self.episodes = self.loadedEpisodes;
     self.nextPageOffset = 0;
-    self.loadingPage = NO;
     self.reachedListEnd = NO;
-    self.pageError = nil;
-    self.statisticsLoaded = NO;
     self.totalEpisodeCount = 0;
     self.totalPlaybackTime = 0;
     self.playedEpisodeCount = 0;
@@ -677,6 +731,17 @@
             self.playedDownloadedEpisodeCount--;
         }
     }
+    if (self.reloadedEpisodes) {
+        // A local row action changes the query while its replacement is in flight.
+        // Invalidate it now; restart after the caller has saved and removed the row.
+        self.episodesLoadGeneration++;
+        self.reloadedEpisodes = nil;
+        self.loadingPage = NO;
+        self.episodeReloadPending = YES;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (self.episodeReloadPending) [self updateEpisodes];
+        });
+    }
     return YES;
 }
 
@@ -714,7 +779,7 @@
 
 - (void) _restoreScrollPositionIfNeeded
 {
-    if (_didRestoreScrollPosition) {
+    if (_didRestoreScrollPosition || self.reloadedEpisodes || self.episodeReloadPending) {
         return;
     }
 
@@ -820,12 +885,14 @@
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
 {
     if (!decelerate) {
+        if (self.episodeReloadPending) [self updateEpisodes];
         ICScheduleStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView, 0.5);
     }
 }
 
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
 {
+    if (self.episodeReloadPending) [self updateEpisodes];
     ICScheduleStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView, 0.5);
 }
 
