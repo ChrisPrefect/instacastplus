@@ -14,7 +14,9 @@ typedef NS_ENUM(NSUInteger, MarqueeType) {
     /** Continuously scrolls left (with a pause at the original position if animationDelay is set). */
     MLContinuous,
     /** Continuously scrolls right (with a pause at the original position if animationDelay is set) */
-    MLContinuousReverse
+    MLContinuousReverse,
+    /** Scrolls left, holds the end for one second, then jumps home and repeats. */
+    MLLeftReset
 };
 
 

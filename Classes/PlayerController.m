@@ -13,6 +13,7 @@
 #import "PlayerController.h"
 #import "PlaybackViewController.h"
 #import "PlayerView.h"
+#import "MarqueeLabel2.h"
 
 #import "ICProgressSlider.h"
 #import "UIViewController+ShowNotes.h"
@@ -50,6 +51,7 @@ enum {
 @property (nonatomic, strong) UIBarButtonItem* bookmarksBarButtonItem;
 @property (nonatomic, strong) UIBarButtonItem* upNextBarButtonItem;
 @property (nonatomic, strong) UILabel* feedTitleLabel;
+@property (nonatomic, strong) MarqueeLabel2* episodeTitleLabel;
 @property (nonatomic, strong) UILabel* sleepTimerLbl;
 @property (nonatomic, assign) NSInteger currentChapterImage;
 
@@ -250,27 +252,20 @@ enum {
 	}
 }
 
-- (NSString*)_navigationTitleForEpisode:(CDEpisode*)episode
-{
-    if (!episode) {
-        return nil;
-    }
-
-    NSString* podcastTitle = episode.feed.title;
-    if (podcastTitle.length > 0) {
-        return podcastTitle;
-    }
-
-    return [episode cleanTitleUsingFeedTitle:nil];
-}
-
 - (void)_updateNavigationTitleForEpisode:(CDEpisode*)episode
 {
     if (!self.feedTitleLabel) {
         return;
     }
 
-    self.feedTitleLabel.text = [self _navigationTitleForEpisode:episode];
+    self.feedTitleLabel.text = episode.feed.title;
+    self.episodeTitleLabel.text = [episode cleanTitleUsingFeedTitle:episode.feed.title];
+    self.titleView.accessibilityLabel = [@[self.feedTitleLabel.text ?: @"", self.episodeTitleLabel.text ?: @""] componentsJoinedByString:@", "];
+}
+
+- (void)_updateTitleMotion
+{
+    self.episodeTitleLabel.labelize = UIAccessibilityIsReduceMotionEnabled() || UIAccessibilityIsVoiceOverRunning();
 }
 
 - (void) _resetStateMachine
@@ -504,6 +499,8 @@ enum {
                                              selector:@selector(_updateAppearance)
                                                  name:ICAppearanceManagerDidUpdateAppearanceNotification
                                                object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_updateTitleMotion) name:UIAccessibilityReduceMotionStatusDidChangeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_updateTitleMotion) name:UIAccessibilityVoiceOverStatusDidChangeNotification object:nil];
 
     PlaybackManager* pman = [PlaybackManager playbackManager];
 
@@ -679,6 +676,8 @@ enum {
 
     self.view.backgroundColor = ICBackgroundColor;
     self.feedTitleLabel.textColor = ICTextColor;
+    self.episodeTitleLabel.textColor = ICMutedTextColor;
+    [self _updateTitleMotion];
 
     if (_dismissing) {
         return;
@@ -716,27 +715,34 @@ enum {
         titleView.autoresizingMask = (UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight);
         titleView.opaque = NO;
         titleView.backgroundColor = [UIColor clearColor];
-        titleView.autoresizingMask = (UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight);
-
-        
-        CDFeed* feed = episode.feed;
-        NSString* feedTitle = feed.title;
-        
         CGRect tb = titleView.bounds;
-        UILabel* feedTitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(tb), CGRectGetHeight(tb)-2)];
-        feedTitleLabel.autoresizingMask = (UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight);
-        feedTitleLabel.text = feedTitle;
+        UILabel* feedTitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(tb), 22)];
+        feedTitleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
         feedTitleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(18.0f)];
         feedTitleLabel.opaque = NO;
         feedTitleLabel.backgroundColor = [UIColor clearColor];
-        feedTitleLabel.numberOfLines = 2;
+        feedTitleLabel.numberOfLines = 1;
         feedTitleLabel.textAlignment = NSTextAlignmentCenter;
-        feedTitleLabel.adjustsFontSizeToFitWidth = YES;
-        feedTitleLabel.minimumScaleFactor = 0.7;
+        feedTitleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
         [titleView addSubview:feedTitleLabel];
         self.feedTitleLabel = feedTitleLabel;
+
+        MarqueeLabel2* episodeTitleLabel = [[MarqueeLabel2 alloc] initWithFrame:CGRectMake(0, 22, CGRectGetWidth(tb), 20)];
+        episodeTitleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        episodeTitleLabel.font = [UIFont systemFontOfSize:ICFontSize(16.0f)];
+        episodeTitleLabel.textAlignment = NSTextAlignmentCenter;
+        episodeTitleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+        episodeTitleLabel.marqueeType = MLLeftReset;
+        episodeTitleLabel.rate = 24.0;
+        episodeTitleLabel.animationDelay = 2.0;
+        episodeTitleLabel.holdScrolling = YES;
+        [titleView addSubview:episodeTitleLabel];
+        self.episodeTitleLabel = episodeTitleLabel;
+        [self _updateTitleMotion];
         
         titleView.userInteractionEnabled = YES;
+        titleView.isAccessibilityElement = YES;
+        titleView.accessibilityTraits = UIAccessibilityTraitButton;
         UITapGestureRecognizer* titleTapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(titleViewTapped:)];
         [titleView addGestureRecognizer:titleTapRecognizer];
         
@@ -748,6 +754,7 @@ enum {
     
     // can change, that's why it needs to go here
     self.feedTitleLabel.textColor = ICTextColor;
+    self.episodeTitleLabel.textColor = ICMutedTextColor;
     
     [self _setObserving:YES];
     [self _updateArtworkImage];
@@ -770,6 +777,10 @@ enum {
     [super viewDidAppear:animated];
 
     _viewDidAppear = YES;
+    [self.episodeTitleLabel setNeedsLayout];
+    [self.episodeTitleLabel layoutIfNeeded];
+    self.episodeTitleLabel.holdScrolling = NO;
+    [self.episodeTitleLabel restartLabel];
     [self.controller updateTimeWhenLoading];
     [self _stateMachine];
     if (self.infoViewController) {
@@ -782,6 +793,7 @@ enum {
 {
     self.view.backgroundColor = ICBackgroundColor;
     self.feedTitleLabel.textColor = ICTextColor;
+    self.episodeTitleLabel.textColor = ICMutedTextColor;
 
     if (self.image) {
         [self _updateDynamicTintColorWithImage:self.image];
@@ -791,6 +803,8 @@ enum {
 - (void) viewWillDisappear:(BOOL)animated
 {
     [super viewWillDisappear:animated];
+    self.episodeTitleLabel.holdScrolling = YES;
+    [self.episodeTitleLabel resetLabel];
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
 }
 

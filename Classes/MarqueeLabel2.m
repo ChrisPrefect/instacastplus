@@ -423,6 +423,7 @@ CGPoint MLOffsetCGPoint(CGPoint point, CGFloat offset);
         }
         
         case MLLeftRight:
+        case MLLeftReset:
         {
             self.homeLabelFrame = CGRectIntegral(CGRectMake(0.0f, 0.0f, expectedLabelSize.width, expectedLabelSize.height));
             self.awayLabelFrame = CGRectIntegral(CGRectOffset(self.homeLabelFrame, -expectedLabelSize.width + (self.bounds.size.width - self.fadeLength), 0.0));
@@ -497,6 +498,9 @@ CGPoint MLOffsetCGPoint(CGPoint point, CGFloat offset);
 
 - (void)beginScrollWithDelay:(BOOL)delay {
     switch (self.marqueeType) {
+        case MLLeftReset:
+            [self scrollLeftAndResetWithDelay:(delay ? self.animationDelay : 0.0)];
+            break;
         case MLContinuous:
         case MLContinuousReverse:
             [self scrollContinuousWithInterval:self.animationDuration after:(delay ? self.animationDelay : 0.0)];
@@ -505,6 +509,27 @@ CGPoint MLOffsetCGPoint(CGPoint point, CGFloat offset);
             [self scrollAwayWithInterval:self.animationDuration];
             break;
     }
+}
+
+- (void)scrollLeftAndResetWithDelay:(NSTimeInterval)delay {
+    if (!self.window || App.applicationState != UIApplicationStateActive ||
+        !self.labelShouldScroll || self.holdScrolling) {
+        return;
+    }
+
+    // A repeating Core Animation cycle keeps the speed independent of title length
+    // and jumps home without a reverse animation or a main-thread timer.
+    NSTimeInterval duration = delay + self.animationDuration + 1.0;
+    CAKeyframeAnimation* animation = [CAKeyframeAnimation animationWithKeyPath:@"position"];
+    animation.values = @[[NSValue valueWithCGPoint:self.homeLabelFrame.origin],
+                         [NSValue valueWithCGPoint:self.homeLabelFrame.origin],
+                         [NSValue valueWithCGPoint:self.awayLabelFrame.origin],
+                         [NSValue valueWithCGPoint:self.awayLabelFrame.origin]];
+    animation.keyTimes = @[@0, @(delay / duration), @((delay + self.animationDuration) / duration), @1];
+    animation.duration = duration;
+    animation.repeatCount = HUGE_VALF;
+    animation.calculationMode = kCAAnimationLinear;
+    [self.subLabel.layer addAnimation:animation forKey:@"position"];
 }
 
 - (void)returnLabelToOriginImmediately {
