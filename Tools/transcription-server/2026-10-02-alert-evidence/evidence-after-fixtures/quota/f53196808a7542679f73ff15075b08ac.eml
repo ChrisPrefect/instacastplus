@@ -1,0 +1,17 @@
+To: info@instacast.ch
+From: Instacast Transcript <noreply@transcript.instacast.ch>
+Subject: Instacast Transcript Alert: provider_quota
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Das KI-Kontingent ist ausgesch=C3=B6pft oder konnte nicht best=C3=A4tigt werd=
+en. Bitte Kontingent und R=C3=BCcksetzzeit des Serverkontos pr=C3=BCfen.
+Fehlercode: provider_quota
+Neue Transkriptionsauftr=C3=A4ge werden abgewiesen; wartende Auftr=C3=A4ge bl=
+eiben erhalten.
+
+Host: hetzner.iteconomy.ch
+Zeit UTC: 2026-10-02T11:04:08+00:00
+Admin: https://transcript.instacast.ch/admin
+Health: https://transcript.instacast.ch/health

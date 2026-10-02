@@ -281,6 +281,15 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     return NO;
 }
 
+- (CGFloat)tableView:(UITableView *)tableView estimatedHeightForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    CDEpisode* episode = self.episodes[indexPath.row];
+    NSNumber* height = [EpisodesTableViewCell cachedHeightWithObjectValue:episode tableSize:tableView.bounds.size imageSize:CGSizeZero embedded:NO editing:self.editing];
+    // Reloading must retain measured geometry instead of replacing it with an
+    // estimate. Unmeasured rows still avoid synchronous text layout.
+    return height ? height.doubleValue : [super tableView:tableView estimatedHeightForRowAtIndexPath:indexPath];
+}
+
 - (void) _updateFetchControllerWithEpisodeObjectHashes:(NSSet*)episodeObjectHashes
 {
     BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
@@ -701,6 +710,8 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
         [self reloadDataWithFilter:YES];
     }
 
+    [self reloadDataAndPreserveSelection];
+
     // Sync refresh control state
     dispatch_async(dispatch_get_main_queue(), ^{
         if ([SubscriptionManager sharedSubscriptionManager].refreshing && !self.refreshControl.refreshing) {
@@ -715,7 +726,10 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self _updateToolbarItemsAnimated:NO];
-    [self reloadDataAndPreserveSelection];
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
     [self _restoreScrollPositionIfNeeded];
 }
 
@@ -735,7 +749,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
 
     if (isScrolled)
     {
-        [self _restoreScrollPositionIfNeeded];
+        [self.view setNeedsLayout];
     }
 }
 
@@ -750,7 +764,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     self.tableView.tableHeaderView = ([self.searchTerm length] == 0) ? self.tableHeaderView : nil;
     self.headerButtonStack.frame = CGRectMake(0, 98, CGRectGetWidth(self.tableHeaderView.frame), 40);
 
-    [self _restoreScrollPositionIfNeeded];
+    [self.view setNeedsLayout];
 }
 
 
@@ -768,11 +782,11 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
 
 - (void) _restoreScrollPositionIfNeeded
 {
-    if (_didRestoreScrollPosition) {
+    if (_didRestoreScrollPosition || !self.tableView.window) {
         return;
     }
     _didRestoreScrollPosition = YES;
-    ICRestoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
+    ICRestoreScrollPositionForScrollViewImmediately([self _scrollPersistenceKey], self.tableView);
 }
 
 - (void) _storeScrollPosition

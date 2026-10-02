@@ -1,0 +1,41 @@
+#!/home/instacast/domains/transcript.instacast.ch/.venv/bin/python
+
+import json, os, sys
+from pathlib import Path
+from uuid import uuid4
+root = Path(__file__).resolve().parents[1]
+case = root.name
+name = Path(sys.argv[0]).name
+with (root / "external-calls.jsonl").open("a") as log:
+    log.write(json.dumps({"command": name, "args": sys.argv[1:]}) + "\n")
+if name == "systemctl":
+    active = case != "worker" and "worker-2" not in " ".join(sys.argv)
+    print("ActiveState=" + ("active" if active else "inactive"))
+    print("SubState=" + ("running" if active else "dead"))
+    print("MainPID=" + ("123" if active else "0"))
+elif name == "codex":
+    if "--version" in sys.argv:
+        print("codex-cli " + ("0.0.0" if case == "configuration" else "0.154.0"))
+    elif "login" in sys.argv:
+        unavailable = case in {"authentication", "disabled", "mail_retry", "resource_only"}
+        print("Not logged in" if unavailable else "Logged in using ChatGPT")
+        sys.exit(1 if unavailable else 0)
+    else:
+        for line in sys.stdin:
+            request = json.loads(line)
+            if "id" not in request:
+                continue
+            result = {} if request["method"] == "initialize" else {
+                "rateLimitsByLimitId": {"codex": {"primary": {
+                    "usedPercent": 100 if case == "quota" else 5,
+                    "resetsAt": 1999999999,
+                }}}
+            }
+            print(json.dumps({"id": request["id"], "result": result}), flush=True)
+elif name == "sendmail":
+    mail = sys.stdin.buffer.read()
+    failed = root / "first-send-failed"
+    if case == "mail_retry" and not failed.exists():
+        failed.touch()
+        sys.exit(75)
+    (root / (uuid4().hex + ".eml")).write_bytes(mail)

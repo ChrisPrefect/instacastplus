@@ -1,0 +1,8 @@
+{
+  "case": "quota",
+  "sample_count": 3,
+  "emails": 1,
+  "expected_key": "provider_quota",
+  "status": "passed",
+  "evidence_directory": "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/evidence-after-fixtures/quota"
+}

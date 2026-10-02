@@ -278,11 +278,11 @@
 
 - (void) _restoreScrollPositionIfNeeded
 {
-    if (_didRestoreScrollPosition) {
+    if (_didRestoreScrollPosition || !self.tableView.window) {
         return;
     }
     _didRestoreScrollPosition = YES;
-    ICRestoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
+    ICRestoreScrollPositionForScrollViewImmediately([self _scrollPersistenceKey], self.tableView);
 }
 
 - (void) _storeScrollPosition
@@ -518,6 +518,7 @@
     }
     
 
+    self.needsFullReload = NO;
     [self reloadDataAndTable:YES];
     
     // Dispatch to avoid "offscreen beginRefreshing" warning
@@ -562,6 +563,7 @@
 // iOS 26: Restore system toolbar for the next VC (e.g. FeedEpisodesTableViewController)
 // and hide floating buttons. Each VC manages its own toolbar/buttons in viewWillAppear.
 - (void)viewWillDisappear:(BOOL)animated {
+    [self _storeScrollPosition];
     if (@available(iOS 26.0, *)) {
         self.navigationController.toolbarHidden = NO;
         self.floatingAddButton.hidden = YES;
@@ -573,20 +575,11 @@
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self _updateToolbarItemsAnimated:NO];
-    [self _restoreScrollPositionIfNeeded];
-
-    if (self.needsFullReload) {
-        self.needsFullReload = NO;
-        [self.fetchController performFetch:nil];
-        [self.tableView reloadData];
-        [self _updateToolbarLabels];
-    }
-
 }
 
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    [self _storeScrollPosition];
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    [self _restoreScrollPositionIfNeeded];
 }
 
 - (void) reloadDataAndTable:(BOOL)reloadTable

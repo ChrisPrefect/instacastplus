@@ -1,0 +1,10 @@
+{
+  "app/alerts.py": {
+    "before": "20ab68bd580db93af7b534a76538a53242436d7ce7dc664c50fde6cd3e909012",
+    "after": "03807f12393e9786c71bce0b16f0a7c9fd693fdcf325d50275385c45a9ad6d7f"
+  },
+  "tools/transcription_alert_process_test.py": {
+    "before": null,
+    "after": "9704b8350b9bf1126e3dd3468784f05ef7df8293754ba5d34d99ab421f360978"
+  }
+}

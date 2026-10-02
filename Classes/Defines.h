@@ -247,6 +247,7 @@ FOUNDATION_EXPORT void ICApplySyncedListScrollPositions(NSDictionary<NSString*, 
 FOUNDATION_EXPORT void ICStoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView);
 FOUNDATION_EXPORT void ICScheduleStoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView, NSTimeInterval delay);
 FOUNDATION_EXPORT void ICRestoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView);
+FOUNDATION_EXPORT void ICRestoreScrollPositionForScrollViewImmediately(NSString* key, UIScrollView* scrollView);
 #endif
 
 // Smart Home MQTT

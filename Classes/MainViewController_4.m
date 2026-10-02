@@ -1115,12 +1115,8 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         return;
     }
 
-    if (self.presentedViewController)
-    {
-        [self clearViewControllerPresentationQueue];
-        [self dismissViewControllerAnimated:NO completion:NULL];
-    }
-
+    // Prepare the destination while the player still covers it. Its caller owns
+    // dismissal, so the old list is never revealed during that transition.
     [USER_DEFAULTS removeObjectForKey:kDefaultEpisodesSelectedEpisodeUID];
     [USER_DEFAULTS removeObjectForKey:kUIPersistenceSubscriptionsSelectedFeedUID];
 
@@ -1133,7 +1129,11 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     navController.view.tintColor = ICTintColor;
     navController.viewControllers = @[ controller, episodesController ];
     self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
-    navController.toolbarHidden = NO;
+    if (@available(iOS 26.0, *)) {
+        navController.toolbarHidden = YES;
+    } else {
+        navController.toolbarHidden = NO;
+    }
 
     self.sidebarController.selectedItemTag = kMainSidebarItemSubscriptions;
     [self setSidebarShown:NO animated:animated];

@@ -434,10 +434,10 @@
     return [self proposedHeightWithObjectValue:objectValue tableSize:tableSize imageSize:imageSize embedded:embedded editing:editing upNextStyle:upNextStyle summaryOverride:nil];
 }
 
-+ (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle summaryOverride:(NSString*)summaryOverride
++ (NSString*) _heightCacheKeyForObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle summaryOverride:(NSString*)summaryOverride
 {
     CDEpisode* episode = (CDEpisode*)objectValue;
-    NSString* cacheKey = [NSString stringWithFormat:@"%@-%.0f-%.0f-%d-%d-%d-%@",
+    return [NSString stringWithFormat:@"%@-%.0f-%.0f-%d-%d-%d-%@",
                           episode.objectHash ?: episode.guid ?: episode.title ?: @"",
                           tableSize.width,
                           imageSize.width,
@@ -445,12 +445,30 @@
                           editing,
                           upNextStyle,
                           summaryOverride ?: @""];
+}
+
++ (NSCache*) _heightCache
+{
     static NSCache* heightCache = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         heightCache = [[NSCache alloc] init];
         heightCache.countLimit = 1000;
     });
+    return heightCache;
+}
+
++ (NSNumber*) cachedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing
+{
+    NSString* key = [self _heightCacheKeyForObjectValue:objectValue tableSize:tableSize imageSize:imageSize embedded:embedded editing:editing upNextStyle:NO summaryOverride:nil];
+    return [[self _heightCache] objectForKey:key];
+}
+
++ (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle summaryOverride:(NSString*)summaryOverride
+{
+    CDEpisode* episode = (CDEpisode*)objectValue;
+    NSString* cacheKey = [self _heightCacheKeyForObjectValue:objectValue tableSize:tableSize imageSize:imageSize embedded:embedded editing:editing upNextStyle:upNextStyle summaryOverride:summaryOverride];
+    NSCache* heightCache = [self _heightCache];
 
     NSNumber* cachedHeight = [heightCache objectForKey:cacheKey];
     if (cachedHeight) {

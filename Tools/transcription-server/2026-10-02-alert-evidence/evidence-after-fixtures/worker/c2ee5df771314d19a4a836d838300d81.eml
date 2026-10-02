@@ -1,0 +1,16 @@
+To: info@instacast.ch
+From: Instacast Transcript <noreply@transcript.instacast.ch>
+Subject: Instacast Transcript Alert: worker_unavailable
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Kein Transkriptions-Worker l=C3=A4uft. Neue Auftr=C3=A4ge werden abgewiesen; =
+vorhandene Auftr=C3=A4ge k=C3=B6nnen nicht verarbeitet werden.
+Bitte die Worker-Dienste pr=C3=BCfen: transcript-instacast-worker.service, tr=
+anscript-instacast-worker-2.service
+
+Host: hetzner.iteconomy.ch
+Zeit UTC: 2026-10-02T11:04:19+00:00
+Admin: https://transcript.instacast.ch/admin
+Health: https://transcript.instacast.ch/health

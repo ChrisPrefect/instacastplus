@@ -356,33 +356,39 @@ void ICScheduleStoreScrollPositionForScrollView(NSString* key, UIScrollView* scr
     _updateScrollPositionWithDelay(key, offsetY, delay);
 }
 
+static void _restoreScrollPositionForScrollView(NSNumber* storedOffset, UIScrollView* scrollView)
+{
+    if (!storedOffset || !scrollView.window) {
+        return;
+    }
+
+    [scrollView layoutIfNeeded];
+    CGFloat offsetY = storedOffset.doubleValue;
+
+    // Legacy/stale absolute offset 0 causes clipped top content when top inset is > 0.
+    UIEdgeInsets insets = _effectiveInsetsForScrollView(scrollView);
+    CGFloat minOffset = -insets.top;
+    if (fabs(offsetY) < 0.5f && minOffset < -0.5f) {
+        offsetY = minOffset;
+    }
+
+    offsetY = _clampedOffsetYForScrollView(scrollView, offsetY);
+    [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, offsetY) animated:NO];
+}
+
+void ICRestoreScrollPositionForScrollViewImmediately(NSString* key, UIScrollView* scrollView)
+{
+    _restoreScrollPositionForScrollView(ICListScrollPositionForKey(key), scrollView);
+}
+
 void ICRestoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView)
 {
-    if (!scrollView) {
-        return;
-    }
     NSNumber* storedOffset = ICListScrollPositionForKey(key);
-    if (!storedOffset) {
+    if (!scrollView || !storedOffset) {
         return;
     }
-
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!scrollView.window) {
-            return;
-        }
-
-        [scrollView layoutIfNeeded];
-        CGFloat offsetY = storedOffset.doubleValue;
-
-        // Legacy/stale absolute offset 0 causes clipped top content when top inset is > 0.
-        UIEdgeInsets insets = _effectiveInsetsForScrollView(scrollView);
-        CGFloat minOffset = -insets.top;
-        if (fabs(offsetY) < 0.5f && minOffset < -0.5f) {
-            offsetY = minOffset;
-        }
-
-        offsetY = _clampedOffsetYForScrollView(scrollView, offsetY);
-        [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, offsetY) animated:NO];
+        _restoreScrollPositionForScrollView(storedOffset, scrollView);
     });
 }
 #endif

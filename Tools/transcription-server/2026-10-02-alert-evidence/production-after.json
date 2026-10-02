@@ -1,0 +1,47 @@
+{
+  "monitor_properties": "MainPID=661502\nNRestarts=0\nActiveState=active\nSubState=running\nActiveEnterTimestamp=Fri 2026-10-02 11:07:29 UTC\n",
+  "monitor_enabled": "enabled",
+  "sha256": {
+    "app/alerts.py": "03807f12393e9786c71bce0b16f0a7c9fd693fdcf325d50275385c45a9ad6d7f",
+    "tools/transcription_alert_process_test.py": "9704b8350b9bf1126e3dd3468784f05ef7df8293754ba5d34d99ab421f360978"
+  },
+  "monitor_data": {
+    "settings": {
+      "enabled": true,
+      "email": "info@instacast.ch",
+      "cooldown_seconds": 3600,
+      "ai_remaining_ratio": 0.1
+    },
+    "last_mail_error": "",
+    "last_resource_sample": {
+      "latest": "2026-10-02T11:09:31+00:00"
+    },
+    "last_failed_job_mail": "2026-10-02T11:08:30+00:00",
+    "job_counts": [
+      {
+        "status": "canceled",
+        "count": 78
+      },
+      {
+        "status": "done",
+        "count": 2340
+      },
+      {
+        "status": "failed",
+        "count": 1
+      }
+    ]
+  },
+  "health_http_status": 200,
+  "health": {
+    "ok": true,
+    "queued_jobs": 0,
+    "running_jobs": 0,
+    "episodes": 110,
+    "transcription_workers": {
+      "transcript-instacast-worker.service": true,
+      "transcript-instacast-worker-2.service": false
+    },
+    "service_status": null
+  }
+}

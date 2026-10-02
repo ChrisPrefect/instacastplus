@@ -1,0 +1,15 @@
+{
+  "trigger": "Existing failed transcription job detected by restored monitor",
+  "queue_ids": [
+    "005DF168BBC8"
+  ],
+  "log_lines": [
+    "Oct  2 11:08:31 hetzner postfix/pickup[629577]: 005DF168BBC8: uid=1126 from=<instacast>",
+    "Oct  2 11:08:31 hetzner postfix/cleanup[661965]: 005DF168BBC8: message-id=<20261002110831.005DF168BBC8@hetzner.iteconomy.ch>",
+    "Oct  2 11:08:32 hetzner opendkim[3243433]: 005DF168BBC8: DKIM-Signature field added (s=202307, d=transcript.instacast.ch)",
+    "Oct  2 11:08:32 hetzner postfix/qmgr[1028808]: 005DF168BBC8: from=<instacast@hetzner.iteconomy.ch>, size=685, nrcpt=1 (queue active)",
+    "Oct  2 11:08:32 hetzner postfix/local[661974]: 005DF168BBC8: to=<\"info@instacast.ch\"@hetzner.iteconomy.ch>, orig_to=<info@instacast.ch>, relay=local, delay=1.4, delays=1.1/0/0/0.26, dsn=2.0.0, status=sent (delivered to command: /usr/bin/procmail-wrapper -o -a $DOMAIN -d $LOGNAME)",
+    "Oct  2 11:08:32 hetzner postfix/qmgr[1028808]: 005DF168BBC8: removed"
+  ],
+  "delivered": true
+}

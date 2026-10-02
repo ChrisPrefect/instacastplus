@@ -1,0 +1,237 @@
+--- a/app/alerts.py
++++ b/app/alerts.py
+@@ -10,6 +10,7 @@
+ 
+ from . import config
+ from .db import connect, now_iso
++from .service import transcription_provider_status, transcription_worker_status
+ from .settings import ai_monthly_spend, get_ai_settings, get_alert_settings, get_setting, set_setting
+ 
+ 
+@@ -128,6 +129,33 @@
+         )
+     if resource_only:
+         return alerts
++
++    workers = transcription_worker_status()
++    if not any(workers.values()):
++        alerts.append((
++            "worker_unavailable",
++            "Kein Transkriptions-Worker läuft. Neue Aufträge werden abgewiesen; "
++            "vorhandene Aufträge können nicht verarbeitet werden.\n"
++            "Bitte die Worker-Dienste prüfen: " + ", ".join(workers),
++        ))
++    provider_status = transcription_provider_status()
++    if provider_status is not None:
++        reason = provider_status.get("reason_code") or provider_status["code"]
++        instructions = {
++            "provider_authentication": "Die Anmeldung beim KI-Anbieter fehlt oder wurde abgelehnt. "
++                "Bitte das KI-Konto im Dienstkonto instacast auf dem Server erneut anmelden.",
++            "provider_quota": "Das KI-Kontingent ist ausgeschöpft oder konnte nicht bestätigt werden. "
++                "Bitte Kontingent und Rücksetzzeit des Serverkontos prüfen.",
++            "provider_configuration": "Die KI-Konfiguration ist ungültig. "
++                "Bitte CLI-Version, Modell und Modellkatalog auf dem Server prüfen.",
++            "provider_budget": "Das konfigurierte KI-Budget reicht nicht aus. Bitte das Serverbudget prüfen.",
++            "provider_runtime_failure": "Der KI-Anbieter hat die Verarbeitung abgelehnt. "
++                "Bitte die Anbieter- und Auftragsdiagnose im Adminbereich prüfen.",
++        }
++        message = instructions.get(reason, provider_status["message"])
++        alerts.append((reason, f"{message}\nFehlercode: {reason}\n"
++            "Neue Transkriptionsaufträge werden abgewiesen; wartende Aufträge bleiben erhalten."))
++
+     if stats["queued"] >= config.MAX_QUEUED_TRANSCRIBE_JOBS:
+         alerts.append(
+             (
+--- /dev/null
++++ b/tools/transcription_alert_process_test.py
+@@ -0,0 +1,190 @@
++#!/usr/bin/env python3
++"""Run real monitor cycles with isolated DB and external-process fixtures."""
++import argparse
++from datetime import datetime, timezone
++from email import policy
++from email.parser import BytesParser
++import json
++import os
++from pathlib import Path
++import sqlite3
++import subprocess
++import sys
++import time
++
++ROOT = Path(__file__).resolve().parents[1]
++CASES = {
++    "authentication": ("provider_authentication", "Anmeldung"),
++    "quota": ("provider_quota", "Kontingent"),
++    "configuration": ("provider_configuration", "Konfiguration"),
++    "runtime": ("provider_runtime_failure", "Anbieter"),
++    "worker": ("worker_unavailable", "Worker"),
++    "failed_job": ("jobs_failed", "fehlgeschlagen"),
++    "healthy": (None, None),
++    "disabled": (None, None),
++    "mail_retry": ("provider_authentication", "Anmeldung"),
++    "resource_only": (None, None),
++}
++
++FIXTURE = r'''
++import json, os, sys
++from pathlib import Path
++from uuid import uuid4
++root = Path(__file__).resolve().parents[1]
++case = root.name
++name = Path(sys.argv[0]).name
++with (root / "external-calls.jsonl").open("a") as log:
++    log.write(json.dumps({"command": name, "args": sys.argv[1:]}) + "\n")
++if name == "systemctl":
++    active = case != "worker" and "worker-2" not in " ".join(sys.argv)
++    print("ActiveState=" + ("active" if active else "inactive"))
++    print("SubState=" + ("running" if active else "dead"))
++    print("MainPID=" + ("123" if active else "0"))
++elif name == "codex":
++    if "--version" in sys.argv:
++        print("codex-cli " + ("0.0.0" if case == "configuration" else "0.154.0"))
++    elif "login" in sys.argv:
++        unavailable = case in {"authentication", "disabled", "mail_retry", "resource_only"}
++        print("Not logged in" if unavailable else "Logged in using ChatGPT")
++        sys.exit(1 if unavailable else 0)
++    else:
++        for line in sys.stdin:
++            request = json.loads(line)
++            if "id" not in request:
++                continue
++            result = {} if request["method"] == "initialize" else {
++                "rateLimitsByLimitId": {"codex": {"primary": {
++                    "usedPercent": 100 if case == "quota" else 5,
++                    "resetsAt": 1999999999,
++                }}}
++            }
++            print(json.dumps({"id": request["id"], "result": result}), flush=True)
++elif name == "sendmail":
++    mail = sys.stdin.buffer.read()
++    failed = root / "first-send-failed"
++    if case == "mail_retry" and not failed.exists():
++        failed.touch()
++        sys.exit(75)
++    (root / (uuid4().hex + ".eml")).write_bytes(mail)
++'''
++
++BOOTSTRAP = r'''
++import json, os, time
++from pathlib import Path
++from app import config
++root = Path(os.environ["ALERT_TEST_CASE"])
++config.VAR_DIR = root / "var"
++from app import alerts, monitor
++from app.db import init_db, connect, now_iso
++from app.settings import set_settings, get_ai_settings
++from app.service import provider_configuration_fingerprint
++init_db()
++set_settings({"ai_provider": "openai_codex", "kimi_model": "fixture-model",
++    "alert_email": "info@instacast.ch", "alert_cooldown_seconds": "3600",
++    "alert_enabled": "0" if root.name == "disabled" else "1", "ai_monthly_limit_usd": "0"})
++(config.VAR_DIR / "codex-models.json").write_text(json.dumps({"models": [
++    {"slug": "fixture-model", "apply_patch_tool_type": None, "input_modalities": ["text"]}]}))
++if root.name == "runtime":
++    set_settings({"transcription_provider_block": json.dumps({
++        "configuration": provider_configuration_fingerprint(get_ai_settings()),
++        "until": time.time() + 600, "message": "Provider rejected processing"})})
++if root.name == "failed_job":
++    with connect() as con:
++        con.execute("INSERT INTO jobs(job_type,status,error,created_at,updated_at) VALUES (?,?,?,?,?)",
++            ("transcribe", "failed", "Audio download failed", now_iso(), now_iso()))
++alerts.SENDMAIL = root / "bin" / "sendmail"
++if root.name == "resource_only":
++    alerts.send_operational_alerts(cpu_total_percent=0, load_1m=0,
++        mem_available_gib=100, resource_only=True)
++else:
++    monitor.main()
++'''
++
++
++def run_case(base: Path, case: str) -> dict:
++    root = base / case
++    root.mkdir()
++    binary = root / "bin"
++    binary.mkdir()
++    for command in ("codex", "systemctl", "sendmail"):
++        path = binary / command
++        path.write_text("#!" + sys.executable + "\n" + FIXTURE)
++        path.chmod(0o700)
++    env = {k: v for k, v in os.environ.items() if not k.startswith("INSTACAST_")}
++    env.update({"ALERT_TEST_CASE": str(root), "PATH": str(binary) + os.pathsep + env["PATH"],
++        "INSTACAST_DB_BACKEND": "sqlite", "INSTACAST_TRANSCRIPT_DB": str(root / "test.sqlite3"),
++        "INSTACAST_TRANSCRIPT_STORAGE": str(root / "storage"), "INSTACAST_MONITOR_SAMPLE_SECONDS": "1",
++        "INSTACAST_MIN_FREE_DISK_GIB": "0", "INSTACAST_WHISPER_LANGUAGE": "auto"})
++    args = [sys.executable, "-c", BOOTSTRAP]
++    (root / "input.json").write_text(json.dumps({"case": case, "expected": CASES[case],
++        "cwd": str(ROOT), "command": args, "sample_seconds": 1}, indent=2))
++    count = 0
++    with (root / "monitor.log").open("wb") as log:
++        process = subprocess.Popen(args, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
++        try:
++            deadline = time.monotonic() + 20
++            if case == "resource_only":
++                assert process.wait(timeout=20) == 0
++            else:
++                while time.monotonic() < deadline:
++                    assert process.poll() is None, "monitor exited: " + (root / "monitor.log").read_text()
++                    if (root / "test.sqlite3").exists():
++                        with sqlite3.connect(root / "test.sqlite3") as con:
++                            try:
++                                count = con.execute("SELECT COUNT(*) FROM resource_samples").fetchone()[0]
++                            except sqlite3.OperationalError:
++                                pass
++                    if count >= 3:
++                        break
++                    time.sleep(0.1)
++                assert count >= 3, "monitor did not complete three sample intervals"
++        finally:
++            if process.poll() is None:
++                process.terminate()
++            process.wait(timeout=5)
++    mails = [BytesParser(policy=policy.default).parsebytes(p.read_bytes()) for p in sorted(root.glob("*.eml"))]
++    expected_key, expected_word = CASES[case]
++    assert len(mails) == (1 if expected_key else 0), f"{case}: expected {expected_key}, received {len(mails)} mails"
++    if expected_key:
++        message = mails[0]
++        assert message["To"] == "info@instacast.ch"
++        assert message["Subject"] == "Instacast Transcript Alert: " + expected_key, str(message["Subject"])
++        body = message.get_content()
++        assert expected_word in body, body
++        assert "Health: https://transcript.instacast.ch/health" in body
++        with sqlite3.connect(root / "test.sqlite3") as con:
++            assert con.execute("SELECT value FROM app_config WHERE key=?", ("alert_last:" + expected_key,)).fetchone()
++    if case == "mail_retry":
++        assert (root / "first-send-failed").exists()
++        calls = [json.loads(line) for line in (root / "external-calls.jsonl").read_text().splitlines()]
++        assert len([call for call in calls if call["command"] == "sendmail"]) == 2
++    if case == "resource_only":
++        assert not (root / "external-calls.jsonl").exists(), "resource-only path consulted provider/worker"
++    result = {"case": case, "sample_count": count, "emails": len(mails), "expected_key": expected_key,
++        "status": "passed", "evidence_directory": str(root)}
++    (root / "result.json").write_text(json.dumps(result, indent=2) + "\n")
++    return result
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--case", choices=CASES)
++    args = parser.parse_args()
++    args.output.mkdir(parents=True, exist_ok=False)
++    results = []
++    for case in ([args.case] if args.case else CASES):
++        try:
++            result = run_case(args.output.resolve(), case)
++        except Exception as error:
++            result = {"case": case, "status": "failed", "error": str(error)}
++        results.append(result)
++        print(json.dumps(result), flush=True)
++    report = {"command": sys.argv, "time_utc": datetime.now(timezone.utc).isoformat(),
++        "cases": results, "production_jobs_created": 0}
++    (args.output / "result.json").write_text(json.dumps(report, indent=2) + "\n")
++    return int(any(result["status"] != "passed" for result in results))
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())

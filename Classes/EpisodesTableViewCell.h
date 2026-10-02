@@ -35,6 +35,7 @@
 - (void) updatePlayedAndStarredState;
 - (void) updatePlaylistIndicatorState;
 - (void) updateTranscriptIndicatorState;
++ (NSNumber*) cachedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing;
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing;
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle;
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle summaryOverride:(NSString*)summaryOverride;

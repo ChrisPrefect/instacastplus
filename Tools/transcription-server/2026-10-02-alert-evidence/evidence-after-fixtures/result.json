@@ -1,0 +1,91 @@
+{
+  "command": [
+    "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/tools/transcription_alert_process_test.py",
+    "--output",
+    "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/evidence-after-fixtures"
+  ],
+  "time_utc": "2026-10-02T11:04:37.686015+00:00",
+  "cases": [
+    {
+      "case": "authentication",
+      "sample_count": 3,
+      "emails": 1,
+      "expected_key": "provider_authentication",
+      "status": "passed",
+      "evidence_directory": "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/evidence-after-fixtures/authentication"
+    },
+    {
+      "case": "quota",
+      "sample_count": 3,
+      "emails": 1,
+      "expected_key": "provider_quota",
+      "status": "passed",
+      "evidence_directory": "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/evidence-after-fixtures/quota"
+    },
+    {
+      "case": "configuration",
+      "sample_count": 3,
+      "emails": 1,
+      "expected_key": "provider_configuration",
+      "status": "passed",
+      "evidence_directory": "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/evidence-after-fixtures/configuration"
+    },
+    {
+      "case": "runtime",
+      "sample_count": 3,
+      "emails": 1,
+      "expected_key": "provider_runtime_failure",
+      "status": "passed",
+      "evidence_directory": "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/evidence-after-fixtures/runtime"
+    },
+    {
+      "case": "worker",
+      "sample_count": 3,
+      "emails": 1,
+      "expected_key": "worker_unavailable",
+      "status": "passed",
+      "evidence_directory": "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/evidence-after-fixtures/worker"
+    },
+    {
+      "case": "failed_job",
+      "sample_count": 3,
+      "emails": 1,
+      "expected_key": "jobs_failed",
+      "status": "passed",
+      "evidence_directory": "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/evidence-after-fixtures/failed_job"
+    },
+    {
+      "case": "healthy",
+      "sample_count": 3,
+      "emails": 0,
+      "expected_key": null,
+      "status": "passed",
+      "evidence_directory": "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/evidence-after-fixtures/healthy"
+    },
+    {
+      "case": "disabled",
+      "sample_count": 3,
+      "emails": 0,
+      "expected_key": null,
+      "status": "passed",
+      "evidence_directory": "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/evidence-after-fixtures/disabled"
+    },
+    {
+      "case": "mail_retry",
+      "sample_count": 3,
+      "emails": 1,
+      "expected_key": "provider_authentication",
+      "status": "passed",
+      "evidence_directory": "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/evidence-after-fixtures/mail_retry"
+    },
+    {
+      "case": "resource_only",
+      "sample_count": 0,
+      "emails": 0,
+      "expected_key": null,
+      "status": "passed",
+      "evidence_directory": "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002/evidence-after-fixtures/resource_only"
+    }
+  ],
+  "production_jobs_created": 0
+}

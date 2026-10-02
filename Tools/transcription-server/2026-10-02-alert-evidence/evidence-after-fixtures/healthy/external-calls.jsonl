@@ -1,0 +1,9 @@
+{"command": "systemctl", "args": ["show", "transcript-instacast-worker.service", "--property=ActiveState,SubState,MainPID"]}
+{"command": "systemctl", "args": ["show", "transcript-instacast-worker-2.service", "--property=ActiveState,SubState,MainPID"]}
+{"command": "codex", "args": ["--version"]}
+{"command": "codex", "args": ["login", "status"]}
+{"command": "codex", "args": ["app-server", "--stdio", "--disable", "hooks", "--disable", "plugins", "--disable", "apps"]}
+{"command": "systemctl", "args": ["show", "transcript-instacast-worker.service", "--property=ActiveState,SubState,MainPID"]}
+{"command": "systemctl", "args": ["show", "transcript-instacast-worker-2.service", "--property=ActiveState,SubState,MainPID"]}
+{"command": "systemctl", "args": ["show", "transcript-instacast-worker.service", "--property=ActiveState,SubState,MainPID"]}
+{"command": "systemctl", "args": ["show", "transcript-instacast-worker-2.service", "--property=ActiveState,SubState,MainPID"]}

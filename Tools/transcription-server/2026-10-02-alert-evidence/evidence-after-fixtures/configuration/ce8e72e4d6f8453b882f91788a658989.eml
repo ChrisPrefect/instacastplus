@@ -1,0 +1,17 @@
+To: info@instacast.ch
+From: Instacast Transcript <noreply@transcript.instacast.ch>
+Subject: Instacast Transcript Alert: provider_configuration
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Die KI-Konfiguration ist ung=C3=BCltig. Bitte CLI-Version, Modell und Modellk=
+atalog auf dem Server pr=C3=BCfen.
+Fehlercode: provider_configuration
+Neue Transkriptionsauftr=C3=A4ge werden abgewiesen; wartende Auftr=C3=A4ge bl=
+eiben erhalten.
+
+Host: hetzner.iteconomy.ch
+Zeit UTC: 2026-10-02T11:04:11+00:00
+Admin: https://transcript.instacast.ch/admin
+Health: https://transcript.instacast.ch/health

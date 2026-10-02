@@ -401,12 +401,9 @@ enum {
         return;
     }
     
-    [self _dismissPlayerWithCompletion:^{
-        InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
-        if (appDelegate.mainViewController) {
-            [appDelegate.mainViewController showEpisodeListOfEpisode:episode animated:NO];
-        }
-    }];
+    InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
+    [appDelegate.mainViewController showEpisodeListOfEpisode:episode animated:NO];
+    [self _dismissPlayerWithCompletion:nil];
 }
 
 - (void) titleViewTapped:(UITapGestureRecognizer*)recognizer

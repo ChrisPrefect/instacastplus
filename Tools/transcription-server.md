@@ -342,3 +342,23 @@ blieben unverändert. Bei der Liveprüfung waren API und Worker aktiv, die reale
 OpenAI-Anfrage antwortete jedoch mit `401 token_revoked`; für neue Verarbeitung
 ist die angeforderte erneute Anmeldung des Serverkontos erforderlich. Dieser
 Betriebszustand ist unabhängig von erfolgreichem App-Build und Vertragstests.
+
+## Fehlermails und wiederhergestellte Anmeldung – 2. Oktober 2026
+
+Die Anmeldung des Dienstkontos wurde erneuert; eine echte Modellantwort und der
+öffentliche Health-Endpunkt sind wieder erfolgreich. Der vorhandene Mail-Monitor
+war deaktiviert und seine Prüfungen erfassten keine KI-Anbieter- oder Worker-Ausfälle.
+`app/alerts.py` prüft jetzt auch diese Zustände über dieselben Produktionsprüfungen
+wie die Auftragsannahme. Mails nennen den Fehlercode, die Auswirkung und bei
+Anmelde-, Kontingent-, Konfigurations- und Laufzeitfehlern den notwendigen nächsten
+Schritt. Vorhandene Job-, Ressourcen-, Queue- und Budgetmeldungen bleiben erhalten.
+
+`transcript-instacast-monitor.service` ist wieder dauerhaft aktiviert. Prüfung alle
+60 Sekunden, Empfänger `info@instacast.ch`, bestehender Cooldown 3600 Sekunden pro
+Fehlerart. Zehn Monitor-Prozessfälle und zwei Ressourcenprüfungen bestehen. Die
+automatische Mail für einen bereits fehlgeschlagenen Auftrag sowie eine markierte
+Prüfmail wurden nachweislich zugestellt. API und Worker wurden nicht neu gestartet.
+
+Sicherung: `var/backups/transcription-alerts-20261002`. Quellpatch, Prüfsummen,
+Reproduktionsbefehle, Fehlernachweis und Zustelllogs:
+[Prüfnachweis](transcription-server/2026-10-02-alert-evidence/README.md).

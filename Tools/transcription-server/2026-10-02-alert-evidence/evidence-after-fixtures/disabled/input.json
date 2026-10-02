@@ -1,0 +1,14 @@
+{
+  "case": "disabled",
+  "expected": [
+    null,
+    null
+  ],
+  "cwd": "/home/instacast/domains/transcript.instacast.ch/var/checks/alerts-20261002",
+  "command": [
+    "/home/instacast/domains/transcript.instacast.ch/.venv/bin/python",
+    "-c",
+    "\nimport json, os, time\nfrom pathlib import Path\nfrom app import config\nroot = Path(os.environ[\"ALERT_TEST_CASE\"])\nconfig.VAR_DIR = root / \"var\"\nfrom app import alerts, monitor\nfrom app.db import init_db, connect, now_iso\nfrom app.settings import set_settings, get_ai_settings\nfrom app.service import provider_configuration_fingerprint\ninit_db()\nset_settings({\"ai_provider\": \"openai_codex\", \"kimi_model\": \"fixture-model\",\n    \"alert_email\": \"info@instacast.ch\", \"alert_cooldown_seconds\": \"3600\",\n    \"alert_enabled\": \"0\" if root.name == \"disabled\" else \"1\", \"ai_monthly_limit_usd\": \"0\"})\n(config.VAR_DIR / \"codex-models.json\").write_text(json.dumps({\"models\": [\n    {\"slug\": \"fixture-model\", \"apply_patch_tool_type\": None, \"input_modalities\": [\"text\"]}]}))\nif root.name == \"runtime\":\n    set_settings({\"transcription_provider_block\": json.dumps({\n        \"configuration\": provider_configuration_fingerprint(get_ai_settings()),\n        \"until\": time.time() + 600, \"message\": \"Provider rejected processing\"})})\nif root.name == \"failed_job\":\n    with connect() as con:\n        con.execute(\"INSERT INTO jobs(job_type,status,error,created_at,updated_at) VALUES (?,?,?,?,?)\",\n            (\"transcribe\", \"failed\", \"Audio download failed\", now_iso(), now_iso()))\nalerts.SENDMAIL = root / \"bin\" / \"sendmail\"\nif root.name == \"resource_only\":\n    alerts.send_operational_alerts(cpu_total_percent=0, load_1m=0,\n        mem_available_gib=100, resource_only=True)\nelse:\n    monitor.main()\n"
+  ],
+  "sample_seconds": 1
+}

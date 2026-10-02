@@ -1,0 +1,17 @@
+To: info@instacast.ch
+From: Instacast Transcript <noreply@transcript.instacast.ch>
+Subject: Instacast Transcript Alert: provider_runtime_failure
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Der KI-Anbieter hat die Verarbeitung abgelehnt. Bitte die Anbieter- und Auftr=
+agsdiagnose im Adminbereich pr=C3=BCfen.
+Fehlercode: provider_runtime_failure
+Neue Transkriptionsauftr=C3=A4ge werden abgewiesen; wartende Auftr=C3=A4ge bl=
+eiben erhalten.
+
+Host: hetzner.iteconomy.ch
+Zeit UTC: 2026-10-02T11:04:15+00:00
+Admin: https://transcript.instacast.ch/admin
+Health: https://transcript.instacast.ch/health

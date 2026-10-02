@@ -1,0 +1,7 @@
+{"command": "systemctl", "args": ["show", "transcript-instacast-worker.service", "--property=ActiveState,SubState,MainPID"]}
+{"command": "systemctl", "args": ["show", "transcript-instacast-worker-2.service", "--property=ActiveState,SubState,MainPID"]}
+{"command": "sendmail", "args": ["-t", "-oi"]}
+{"command": "systemctl", "args": ["show", "transcript-instacast-worker.service", "--property=ActiveState,SubState,MainPID"]}
+{"command": "systemctl", "args": ["show", "transcript-instacast-worker-2.service", "--property=ActiveState,SubState,MainPID"]}
+{"command": "systemctl", "args": ["show", "transcript-instacast-worker.service", "--property=ActiveState,SubState,MainPID"]}
+{"command": "systemctl", "args": ["show", "transcript-instacast-worker-2.service", "--property=ActiveState,SubState,MainPID"]}
