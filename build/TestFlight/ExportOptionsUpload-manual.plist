@@ -11,16 +11,16 @@
 	<key>provisioningProfiles</key>
 	<dict>
 		<key>com.iteconomy.instacastplus</key>
-		<string>InstacastPlus App Store 2026-09-04</string>
+		<string>InstacastPlus App Store M2 2026-11-02</string>
 		<key>com.iteconomy.instacastplus.watchkitapp</key>
-		<string>InstacastPlus Watch App Store 2026-09-04</string>
+		<string>InstacastPlus Watch App Store M2 2026-11-02</string>
 		<key>com.iteconomy.instacastplus.watchkitapp.widgets</key>
-		<string>InstacastPlus Watch Widgets App Store 2026-09-04</string>
+		<string>InstacastPlus Watch Widgets App Store M2 2026-11-02</string>
 		<key>com.iteconomy.instacastplus.widgets</key>
-		<string>InstacastPlus Widgets App Store 2026-09-04</string>
+		<string>InstacastPlus Widgets App Store M2 2026-11-02</string>
 	</dict>
 	<key>signingCertificate</key>
-	<string>DF82E224AE4B4361954D3AE47E30C4C7536502C5</string>
+	<string>6143FA3B5A5A9017A0FD439A2EA5657555AEC168</string>
 	<key>signingStyle</key>
 	<string>manual</string>
 	<key>teamID</key>

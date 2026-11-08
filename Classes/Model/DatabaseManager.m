@@ -2534,6 +2534,40 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
 	}
 }
 
+- (void)_prependNewFeedToOrder:(CDFeed*)newFeed
+{
+    // Ranks are signed ordering keys, not array indices. Renumbering the whole
+    // library for each insertion journals every subscription again in iCloud.
+    NSArray<CDFeed*>* feeds = self.feeds;
+    CDFeed* firstExistingFeed = nil;
+    for (CDFeed* feed in feeds) {
+        if (feed != newFeed) {
+            firstExistingFeed = feed;
+            break;
+        }
+    }
+    if (!firstExistingFeed) {
+        newFeed.rank = 0;
+    } else if (firstExistingFeed.rank > INT32_MIN) {
+        newFeed.rank = firstExistingFeed.rank - 1;
+    } else {
+        // Move only the saturated leading run into the first available gap.
+        // One imported INT32_MIN must not re-journal the entire library.
+        NSMutableArray<CDFeed*>* ordered = [feeds mutableCopy];
+        [ordered removeObject:newFeed];
+        for (NSUInteger boundary = 1; boundary <= ordered.count; boundary++) {
+            int64_t rightRank = boundary < ordered.count ? ordered[boundary].rank : (int64_t)INT32_MAX + 1;
+            int64_t newRank = rightRank - (int64_t)boundary - 1;
+            if (newRank < INT32_MIN) continue;
+            for (NSUInteger index = boundary; index > 0; index--) {
+                ordered[index - 1].rank = (int32_t)(newRank + (int64_t)index);
+            }
+            newFeed.rank = (int32_t)newRank;
+            return;
+        }
+    }
+}
+
 
 - (BOOL) feedExists:(CDFeed*)aFeed
 {
@@ -2919,9 +2953,7 @@ static const NSInteger kInitialEpisodeLimit = 50;
     persistentFeed.subscribed = YES;
 
     if ((options & kSubscribeOptionDontManageRanking) == 0) {
-        NSMutableArray *feedsCopy = [self.feeds mutableCopy];
-        [feedsCopy insertObject:persistentFeed atIndex:0];
-        [self _updateFeedOrderNums:feedsCopy];
+        [self _prependNewFeedToOrder:persistentFeed];
     }
 
     BOOL hasPendingEpisodeLoad = (totalEpisodeCount > kInitialEpisodeLimit);

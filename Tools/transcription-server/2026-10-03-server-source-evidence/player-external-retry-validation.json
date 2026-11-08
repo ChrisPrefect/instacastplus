@@ -1,0 +1,19 @@
+{
+  "command": "python3 Tools/carplay_restored_episode_runtime_test.py",
+  "environment": "macOS; clang ARC/Foundation; production CarPlay selection, widget/deep-link play-pause branches, AudioSession.togglePlay and PlaybackManager.isPaused/playPause",
+  "inputs": "Retained failed selected episode; loaded paused and playing episodes; loading episode; CarPlay restored/no/other selection",
+  "before": "3 failing cases: retained failed CarPlay selection, widget play-pause, deep-link play-pause; 13 controls passed",
+  "after": "All 16 behavior cases passed",
+  "logs": [
+    "player-external-retry-before.log",
+    "player-external-retry-after.log"
+  ],
+  "e2e_scope": "No physical CarPlay head unit or iOS widget extension used; real App E2E proves retained error state and full-Player explicit retry separately. This harness tests external dispatch semantics at that state.",
+  "source_sha256": {
+    "Classes/InstacastSceneDelegate.m": "d8fe685adf219cf8763bf60d50757bac23d807b15648d93dc01a57e8db748a24",
+    "Classes/WidgetDataExporter.m": "b50b9502cb0c06f08d0be288845c573e4bee71072fb2734dacb9ff4cddf0927f",
+    "Classes/AudioSession.m": "8b9facec3ff6ab206c0c7d2cbc31ffe939c26c46311d5a67cae6941ee9f1a734",
+    "Classes/PlaybackManager.m": "88e62cfe6c994ef48adb42338a25431f7c64384e02d23fddcf659c0b4b7a68e7",
+    "Tools/carplay_restored_episode_runtime_test.py": "4e4531f6e54438ab407442f48bcf0c32361e734826be81974ffb602f9397e778"
+  }
+}

@@ -1,0 +1,79 @@
+[
+  {
+    "case" : "shared_factory_identity",
+    "observed" : {
+      "initializations_after" : 2,
+      "initializations_before" : 1,
+      "title" : "Selected episode"
+    },
+    "passed" : false
+  },
+  {
+    "case" : "failed_episode_play",
+    "observed" : {
+      "direct_play" : 1,
+      "direct_toggle" : 0,
+      "preserved" : 0,
+      "reopens" : 0
+    },
+    "passed" : false
+  },
+  {
+    "case" : "failed_episode_playPause",
+    "observed" : {
+      "direct_play" : 0,
+      "direct_toggle" : 1,
+      "preserved" : 0,
+      "reopens" : 0
+    },
+    "passed" : false
+  },
+  {
+    "case" : "healthy_paused_play",
+    "observed" : {
+      "direct_play" : 1,
+      "reopens" : 0
+    },
+    "passed" : true
+  },
+  {
+    "case" : "healthy_playing_play",
+    "observed" : {
+      "direct_play" : 0,
+      "reopens" : 0
+    },
+    "passed" : true
+  },
+  {
+    "case" : "healthy_toggle",
+    "observed" : {
+      "direct_toggle" : 1,
+      "reopens" : 0
+    },
+    "passed" : true
+  },
+  {
+    "case" : "loading_does_not_restart",
+    "observed" : {
+      "direct_play" : 0,
+      "reopens" : 0
+    },
+    "passed" : true
+  },
+  {
+    "case" : "empty_without_recent_episode",
+    "observed" : {
+      "direct_play" : 0,
+      "direct_toggle" : 0,
+      "reopens" : 0
+    },
+    "passed" : true
+  }
+]
+FAIL: shared_factory_identity, failed_episode_play, failed_episode_playPause
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/app_intent_playback_bridge_runtime_test.py", line 147, in <module>
+    subprocess.run([str(path/'test')],check=True)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/instacast-intent-playback-23gpfrf6/test']' returned non-zero exit status 1.

@@ -807,7 +807,7 @@ static UIImage* ICPlayerTransportImage(NSString* name)
     
     self.backButton.accessibilityLabel = [NSString stringWithFormat:@"%@ %ld %@", @"Backward".ls, (long)[self _configuredSkipSecondsForKey:PlayerSkipBackPeriod], @"Seconds".ls];
 
-    self.playButton.enabled = pman.ready;
+    self.playButton.enabled = pman.ready || (pman.failed && pman.playingEpisode != nil);
     self.backButton.enabled = pman.ready;
     self.forwardButton.enabled = pman.ready;
     self.timeSlider.enabled = pman.ready;
@@ -876,7 +876,9 @@ static UIImage* ICPlayerTransportImage(NSString* name)
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
     PlayHapticFeedback(ICHapticFeedbackMedium);
-    if (pman.paused) {
+    if (pman.failed && !pman.ready && pman.playingEpisode) {
+        [[AudioSession sharedAudioSession] togglePlay];
+    } else if (pman.paused) {
         [pman play];
     } else {
         [pman pause];

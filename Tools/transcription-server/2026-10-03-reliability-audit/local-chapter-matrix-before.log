@@ -1,0 +1,44 @@
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/instacast-local-chapter-identity-rgh9xw7e/main.swift:538:9: warning: immutable value 'revision' was never used; consider replacing with '_' or removing it [#NoUsage]
+536 |   }
+537 |   func save(_ generator:ChapterGenerator,_ identity:(String,String,String?)) throws {
+538 |    let (revision,snapshot,source)=identity
+    |         `- warning: immutable value 'revision' was never used; consider replacing with '_' or removing it [#NoUsage]
+539 |    let chapters=[ICGeneratedChapter(start:0,end:10,title:"Locally generated",isSponsor:false)]
+540 |    try generator.saveChaptersThrowing(chapters, for: hash)
+
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/instacast-local-chapter-identity-rgh9xw7e/main.swift:538:18: warning: immutable value 'snapshot' was never used; consider replacing with '_' or removing it [#NoUsage]
+536 |   }
+537 |   func save(_ generator:ChapterGenerator,_ identity:(String,String,String?)) throws {
+538 |    let (revision,snapshot,source)=identity
+    |                  `- warning: immutable value 'snapshot' was never used; consider replacing with '_' or removing it [#NoUsage]
+539 |    let chapters=[ICGeneratedChapter(start:0,end:10,title:"Locally generated",isSponsor:false)]
+540 |    try generator.saveChaptersThrowing(chapters, for: hash)
+
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/instacast-local-chapter-identity-rgh9xw7e/main.swift:538:27: warning: immutable value 'source' was never used; consider replacing with '_' or removing it [#NoUsage]
+536 |   }
+537 |   func save(_ generator:ChapterGenerator,_ identity:(String,String,String?)) throws {
+538 |    let (revision,snapshot,source)=identity
+    |                           `- warning: immutable value 'source' was never used; consider replacing with '_' or removing it [#NoUsage]
+539 |    let chapters=[ICGeneratedChapter(start:0,end:10,title:"Locally generated",isSponsor:false)]
+540 |    try generator.saveChaptersThrowing(chapters, for: hash)
+
+[#NoUsage]: <https://docs.swift.org/compiler/documentation/diagnostics/no-usage>
+2026-10-03 14:16:55.428 probe[40269:10011713] [ChapterGenerator] Saved 1 chapters for local
+2026-10-03 14:16:55.434 probe[40269:10011713] [ChapterGenerator] Saved 1 chapters for local
+2026-10-03 14:16:55.435 probe[40269:10011713] [ChapterGenerator] Saved 1 chapters for local
+2026-10-03 14:16:55.436 probe[40269:10011713] [ChapterGenerator] Saved 1 chapters for local
+PASS local chapters load in same session
+FAIL matching complete source verifies chapters and transcript in same session
+PASS different audio is rejected in same session
+PASS local chapters load in fresh generator / relaunch
+FAIL matching complete source verifies chapters and transcript in fresh generator / relaunch
+PASS different audio is rejected in fresh generator / relaunch
+PASS different bytes at the same URL are rejected
+FAIL replacement transcript invalidates cached local chapters
+FAIL replacement transcript invalidates persisted local chapters after restart
+FAIL identical cue text with different source cannot inherit chapter identity
+FAIL generation result with replaced SRT snapshot rejected
+FAIL rejected commit preserves prior artifact
+FAIL SRT deletion before commit rejected
+FAIL deliberately retained chapters keep original proof after only SRT is deleted
+PASS legacy chapters never gain current audio identity

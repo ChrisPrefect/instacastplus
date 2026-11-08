@@ -1,0 +1,11 @@
+/home/instacast/domains/transcript.instacast.ch/.venv/lib/python3.10/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_crash_before_duration_keeps_first_download_for_new_claim (__main__.SourceRecoveryTests) ... ok
+test_failed_audio_checkpoint_does_not_bind_unrecoverable_source (__main__.SourceRecoveryTests) ... ok
+test_full_http_200_and_206_are_complete (__main__.SourceRecoveryTests) ... ok
+test_partial_or_invalid_range_never_becomes_source (__main__.SourceRecoveryTests) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 5.539s
+
+OK

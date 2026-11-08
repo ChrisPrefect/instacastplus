@@ -7,9 +7,9 @@ description: "Use in the InstacastPlus repo when asked to build, archive, upload
 
 ## Preconditions
 
-Read [CLAUDE.md](/Users/Chris/Developer/instacastplus/CLAUDE.md) before release work. Treat it as the source of truth for current App Store ID, bundle ID, team ID, ASC key metadata, and known release caveats.
+Read [CLAUDE.md](/Users/prefect/Developer/instacastplus/CLAUDE.md) before release work. Treat it as the source of truth for current App Store ID, bundle ID, team ID, ASC key metadata, and known release caveats.
 
-Never print, copy, commit, or expose the private key at `/Users/Chris/Developer/AuthKey_7QUKV6MHZ2.p8`.
+Never print, copy, commit, or expose the private key at `/Users/prefect/Developer/AuthKey_7QUKV6MHZ2.p8`.
 
 App Store Connect facts currently used by this project:
 
@@ -59,7 +59,7 @@ If the archive contains the embedded Watch app, check only its built `Info.plist
 6. Upload using the repo export options, the ASC API key from the project docs, and log the full output:
 
 ```bash
-xcodebuild -exportArchive -archivePath build/TestFlight/InstacastPlus-<version>-<build>.xcarchive -exportOptionsPlist build/TestFlight/ExportOptionsUpload.plist -allowProvisioningUpdates -authenticationKeyPath /Users/Chris/Developer/AuthKey_7QUKV6MHZ2.p8 -authenticationKeyID 7QUKV6MHZ2 -authenticationKeyIssuerID 69a6de70-cba8-47e3-e053-5b8c7c11a4d1 > build/TestFlight/upload-<version>-<build>.log 2>&1
+xcodebuild -exportArchive -archivePath build/TestFlight/InstacastPlus-<version>-<build>.xcarchive -exportOptionsPlist build/TestFlight/ExportOptionsUpload.plist -allowProvisioningUpdates -authenticationKeyPath /Users/prefect/Developer/AuthKey_7QUKV6MHZ2.p8 -authenticationKeyID 7QUKV6MHZ2 -authenticationKeyIssuerID 69a6de70-cba8-47e3-e053-5b8c7c11a4d1 > build/TestFlight/upload-<version>-<build>.log 2>&1
 ```
 
 7. Verify the upload log contains `Upload succeeded` and `** EXPORT SUCCEEDED **`.
@@ -81,7 +81,7 @@ Use the local ASC API key metadata from project docs:
 
 - Key ID: `7QUKV6MHZ2`
 - Issuer ID: `69a6de70-cba8-47e3-e053-5b8c7c11a4d1`
-- Private key path: `/Users/Chris/Developer/AuthKey_7QUKV6MHZ2.p8`
+- Private key path: `/Users/prefect/Developer/AuthKey_7QUKV6MHZ2.p8`
 
 Generate JWTs with `xcrun altool --generate-jwt ... --p8-file-path ...` or use the bundled script. `altool` prints the JWT to stderr; never relay that output directly.
 

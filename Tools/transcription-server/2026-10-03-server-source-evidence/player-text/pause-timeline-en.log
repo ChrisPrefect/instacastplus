@@ -1,0 +1,148 @@
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-v2thk3mp/main.m:504:292: warning: capturing 'walk' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  504 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                                                                                                                                                                                                                                                                                    ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-v2thk3mp/main.m:504:32: note: block will be retained by the captured object
+  504 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-v2thk3mp/main.m:502:3: warning: capturing 'vc' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  502 |  [vc.view layoutIfNeeded];[vc.tableView layoutIfNeeded];
+      |   ^~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-v2thk3mp/main.m:501:2: note: block will be retained by the captured object
+  501 |  vc.capture = ^{
+      |  ^~
+2 warnings generated.
+com.iteconomy.instacastplus.server-status-test: 32451
+{
+  "passed": 1,
+  "nextAction": true,
+  "title": true,
+  "historyHidden": true,
+  "activity": false,
+  "confirmed": true,
+  "timeline": [
+    {
+      "title": "Send request",
+      "detail": "Request accepted by the server"
+    },
+    {
+      "title": "Download audio on the server",
+      "detail": "Completed"
+    },
+    {
+      "title": "Create transcript",
+      "detail": "Processing paused"
+    },
+    {
+      "title": "Create chapters and summary",
+      "detail": "Not started"
+    },
+    {
+      "title": "Save result on this device",
+      "detail": "Not started"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "",
+      "text": "Diagnostic history"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Save result on this device"
+    },
+    {
+      "id": "",
+      "text": "Not started"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Create chapters and summary"
+    },
+    {
+      "id": "",
+      "text": "Not started"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Create transcript"
+    },
+    {
+      "id": "",
+      "text": "Processing paused"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Download audio on the server"
+    },
+    {
+      "id": "",
+      "text": "Completed"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Send request"
+    },
+    {
+      "id": "",
+      "text": "Request accepted by the server"
+    },
+    {
+      "id": "ICServerAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Cancel request"
+    },
+    {
+      "id": "ICServerNextAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Processing will resume automatically when the service is available again."
+    },
+    {
+      "id": "ICServerStatusTitle",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Processing paused"
+    },
+    {
+      "id": "",
+      "text": "Request accepted by the server\n\nThe transcription service is temporarily unavailable.\n\nStatus updated: 12:56:14"
+    },
+    {
+      "id": "",
+      "text": "What happens next"
+    },
+    {
+      "id": "",
+      "text": "Process"
+    }
+  ],
+  "process": true,
+  "informative": true
+}

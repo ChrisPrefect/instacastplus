@@ -29,9 +29,12 @@ func loadStore(container: NSPersistentContainer, description: NSPersistentStoreD
 }
 
 func genericModel(at path: String) throws -> NSManagedObjectModel {
-    guard let model = NSManagedObjectModel(contentsOf: URL(fileURLWithPath: path)) else {
+    guard let loaded = NSManagedObjectModel(contentsOf: URL(fileURLWithPath: path)) else {
         throw NSError(domain: "MigrationProof", code: 1)
     }
+    // The second scenario must not mutate Core Data's already-frozen cached model.
+    let model = loaded.copy() as! NSManagedObjectModel
+    precondition(model.entityVersionHashesByName == loaded.entityVersionHashesByName)
     for entity in model.entities {
         entity.managedObjectClassName = "NSManagedObject"
     }

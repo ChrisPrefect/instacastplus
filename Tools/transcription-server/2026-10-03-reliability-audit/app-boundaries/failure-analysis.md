@@ -1,0 +1,16 @@
+# Pre-probe failure analysis (2026-10-03)
+
+No repository or production mutations. These probes execute the current production ServerTranscriptionManager method bodies using the existing Swift boundary harness.
+
+## Failure matrix
+
+1. A healthy, atomically persisted URL-only (.server) request waiting behind another held HTTP request is an authorized durable intent. It must retain its UUID/URL/source and remain automatically resumable after restart. Potential failures: queue snapshot not actually written; wrong request inspected; pending converted to rejected/failed; duplicate/new UUID; actual POST before durability. The probe verifies a healthy completed atomic snapshot, holds the first POST, retains the waiting item's UUID, loads the real persistence reader, calls real resume, and records both states and peer events.
+2. A client-source request accepted with a persisted start SHA should accept a result with that exact SHA even after the device cache is removed. Text import should depend on the durable request identity; current playback audio is a separate check. Potential failures: source not persisted; response mismatches source; task no longer owns request; import rejected solely for missing cache; expensive new POST. The probe first completes actual admission and persistence, verifies the stored SHA, removes only the cache boundary, executes actual verifiedImportAudio and then the real ready-response/import path, and records error code/state/HTTP events.
+
+## Isolation rationale and limits
+
+Deterministically suspending a specific HTTP acknowledgement while preserving a second pre-submission queue snapshot requires a controllable boundary. Production server jobs must not be created or modified. The existing harness provides that peer boundary plus controlled cache/hash/terminal artifact interfaces. All admission, durable atomic persistence, restore, scheduling, request ownership, import gating, and failure state transitions are extracted from and execute the actual production Swift source. No decision logic is copied. The SHA is the existing fixed harness hash; source equality rather than cryptographic hashing is under test. These are runtime boundary proofs, not full app E2E or model-inference tests. A real app test can subsequently repeat the same transitions.
+
+## Control/import isolation before the corrective implementation
+
+The request-control path must keep admitting and cancelling other episodes while an artifact download is held. An explicit cancel of the importing item must preserve other jobs, prevent all late commits, and retain its cancellation tombstone until acknowledged. A ready second item must wait truthfully for the single import slot and eventually complete; it must not trigger unbounded parallel artifact buffering. A held unrelated POST must not delay DELETE. The regression executes the production task scheduling, ownership guards, cancellation, persistence, apply/import and post-await commit methods. Only deterministic HTTP/artifact/cache and final write boundaries are controlled. This race cannot be injected reliably through Siri/UI or safely against production. Successful existing full-app flows remain separate E2E evidence; these boundary probes must not be labeled full-device E2E.

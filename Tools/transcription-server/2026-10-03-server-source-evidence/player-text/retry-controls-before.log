@@ -1,0 +1,13 @@
+pending media does not permit duplicate play: PASS
+failed selected media allows explicit Play retry: FAIL
+failed Play uses existing episode reopen action: FAIL
+failed media cannot seek or skip: PASS
+failure without selected episode cannot retry: PASS
+ready transport remains enabled: PASS
+ready Pause retains direct transport action: FAIL
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/player_failed_media_retry_controls_runtime_test.py", line 87, in <module>
+    subprocess.run([str(tmp / "test")], check=True)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/instacast-retry-controls-abnlh24l/test']' returned non-zero exit status 1.

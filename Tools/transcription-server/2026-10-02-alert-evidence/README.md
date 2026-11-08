@@ -1,5 +1,11 @@
 # Transkriptions-Fehlermails – 2. Oktober 2026
 
+**Historischer Stand, am selben Tag abgelöst:** Der Monitor wurde auf Wunsch
+dauerhaft deaktiviert. Fehlermails werden jetzt direkt durch Auftragsfehler
+ausgelöst. Der folgende Nachweis beschreibt die frühere Monitorlösung; aktuelle
+Implementierung und Befehle stehen im
+[Prüfnachweis zur ereignisgesteuerten Lösung](../2026-10-02-job-alert-evidence/README.md).
+
 ## Ergebnis
 
 Die vorhandenen Betreiber-Mails an `info@instacast.ch` erfassen jetzt zusätzlich

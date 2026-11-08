@@ -1,0 +1,81 @@
+{
+  "action": "status",
+  "commandID": "ac8607cf-b06f-4cfd-b74c-4b15328fa2bf",
+  "ok": true,
+  "queue": [
+    {
+      "automaticallyScheduled": false,
+      "chapterOnly": false,
+      "completedAt": "",
+      "episodeHash": "e72691dffc038ac1bcd83a8ff478932e",
+      "episodeTitle": "Stadtbibliothek und Lesekreis",
+      "error": "",
+      "feedTitle": "Server flow fixture",
+      "nextRetryAt": "2026-10-03T12:29:49Z",
+      "progress": 0,
+      "requiresExplicitRetryAfterCrash": false,
+      "retryAttempt": 0,
+      "serverActivity": "running",
+      "serverActivityUpdatedAt": "2026-10-03T12:29:46Z",
+      "serverAdmissionConfirmed": true,
+      "serverAudioSource": "server",
+      "serverConnectionIssue": true,
+      "serverEstimatedPhaseRemainingSeconds": 45,
+      "serverLastProcessingPhase": "transcribing",
+      "serverPhase": "transcribing",
+      "serverPhaseStartedAt": "2026-10-03T12:29:46Z",
+      "serverQueuePosition": null,
+      "serverWaitingForNetwork": false,
+      "serverWorkCompleted": 30,
+      "serverWorkTotal": 114.835875,
+      "serverWorkUnit": "audio_seconds",
+      "shouldGenerateAnalysis": true,
+      "status": 4,
+      "statusDetail": "Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant.",
+      "statusName": "transcribing",
+      "statusStartedAt": "2026-10-03T12:29:34Z",
+      "usesServerTranscription": true
+    }
+  ],
+  "selectedChapterModel": {
+    "deleteBlockedReason": "",
+    "downloaded": false,
+    "downloading": false,
+    "downloadSizeBytes": 2629991680,
+    "downloadSizeText": "2.63 GB",
+    "identifier": "gemma-4-e2b-it-q4-k",
+    "requiresDownload": true,
+    "role": 1,
+    "roleTitle": "Kapitel generieren",
+    "selected": true,
+    "shortTitle": "Gemma 4",
+    "sizeOnDiskBytes": 0,
+    "title": "Gemma 4 E2B-it"
+  },
+  "serverStatusAnimating": false,
+  "serverStatusProcess": [
+    {
+      "detail": "Auftrag vom Server angenommen",
+      "title": "Auftrag senden"
+    },
+    {
+      "detail": "Abgeschlossen",
+      "title": "Audiodatei auf dem Server laden"
+    },
+    {
+      "detail": "Verbindung unterbrochen",
+      "title": "Transkript erstellen"
+    },
+    {
+      "detail": "Noch nicht begonnen",
+      "title": "Kapitel und Zusammenfassung erstellen"
+    },
+    {
+      "detail": "Noch nicht begonnen",
+      "title": "Ergebnis auf diesem Gerät speichern"
+    }
+  ],
+  "source": "commandFile",
+  "statusScreenPresented": true,
+  "timestamp": "2026-10-03T12:29:48Z"
+}

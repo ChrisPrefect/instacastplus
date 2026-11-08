@@ -1619,7 +1619,18 @@ extension ICiCloudSyncManager {
 
     nonisolated static func sha256Hex(_ string: String) -> String {
         let digest = SHA256.hash(data: Data(string.utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
+        // Wire identities stay byte-for-byte identical. Avoid creating and
+        // formatting 32 Foundation strings for each journaled hash on main.
+        let digits = Array("0123456789abcdef".utf8)
+        return String(unsafeUninitializedCapacity: 64) { buffer in
+            var index = 0
+            for byte in digest {
+                buffer[index] = digits[Int(byte >> 4)]
+                buffer[index + 1] = digits[Int(byte & 0x0f)]
+                index += 2
+            }
+            return index
+        }
     }
 
     func refreshAccountStatus() async {

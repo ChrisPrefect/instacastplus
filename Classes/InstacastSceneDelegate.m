@@ -2192,7 +2192,9 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
     // A restored AudioSession selection does not mean its media is loaded.
     if (pman.playingEpisode == episode) {
-        if (pman.isPaused) {
+        if (pman.failed && !pman.ready) {
+            [[AudioSession sharedAudioSession] togglePlay];
+        } else if (pman.isPaused) {
             [pman play];
         }
         [self carPlayUpdateNowPlayingTemplateConfiguration];
@@ -2834,7 +2836,9 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         BOOL handledPlayerAction = NO;
         if ([action isEqualToString:@"playpause"]) {
             PlaybackManager *pm = [PlaybackManager playbackManager];
-            if (pm.playingEpisode) {
+            if (pm.failed && !pm.ready && pm.playingEpisode) {
+                [[AudioSession sharedAudioSession] togglePlay];
+            } else if (pm.playingEpisode) {
                 [pm playPause];
             } else {
                 // No episode loaded — resume last played from widget cache

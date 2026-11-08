@@ -1,0 +1,31 @@
+{
+  "source_sha256": {
+    "Classes/AppIntents/ICIntentBridge.swift": "1f1493ea6704ec98e80489dc7072d6d68ad9b9647015c5c00f311e085dfc3fc0",
+    "Classes/Application.m": "b9e516e0f2040c035ed678faa045c5f691553105e0c3c245cae5a505988b4436",
+    "Classes/AudioSession.h": "625eea69142b6bf091cf54bc6646b135ce4f8416e3c3b48e59fe93a82d601931",
+    "Classes/AudioSession.m": "8b9facec3ff6ab206c0c7d2cbc31ffe939c26c46311d5a67cae6941ee9f1a734",
+    "Classes/ICTranscriptionDebugAutomation.swift": "10c2120cbe2dc40dee3978f918ad154bde6d45b849fd00dfea7dada5272556e1",
+    "Classes/InstacastSceneDelegate.m": "d8fe685adf219cf8763bf60d50757bac23d807b15648d93dc01a57e8db748a24",
+    "Classes/PlaybackControlsViewController.m": "e378049c602c64944749086f4e1a1a4520f516df2cb1afe4dc32c93b15c54021",
+    "Classes/PlaybackManager.h": "4b654b77562c50ff8cd2e0f869d04b975f8787cd39c11732ed05b9011db6ad38",
+    "Classes/PlaybackManager.m": "e4183949a6d1034ad90e995543898d0c5c596d381a59f1d25e5f05104fe51306",
+    "Classes/PlayerController.m": "c0078402a71704c0000590f1cfe53a95a9fcf0395c6c64e01d137bb520d8af70",
+    "Classes/PlayerInfoViewController_v5.m": "52f1263ba800ed812de98e2d3631cbc6f569dea5f3d0cac544775ac5713a588a",
+    "Classes/ServerTranscriptionManager.swift": "d3c18826c0f4609db023d791c10badda0914007ab14f1467b57c43e14e12db10",
+    "Classes/TranscriptionQueue.swift": "37674373a26d118c0efb1136314353920ad797ec870341f8549181a6b64228b2",
+    "Classes/TranscriptionQueueViewController.m": "8f0b897d6dec28a3216b981c8f97691e0515eac45fd9194a9b0b13e10c9e5851",
+    "Classes/WidgetDataExporter.m": "b50b9502cb0c06f08d0be288845c573e4bee71072fb2734dacb9ff4cddf0927f",
+    "Instacast-Bridging-Header.h": "20827a7623a7b67a6a71f55101bf3acddf83f3fe238a07982442cd7dbe76330a",
+    "Instacast.xcodeproj/project.pbxproj": "14f4b519b2fcc414bc83f6ab33c7271ddc75e2d17831548981217c5ecf0ee487",
+    "Resources/de.lproj/Localizable.strings": "7927b57d06532f02730e4f14a1bf4590c8a9c50124249d3bc753923caebfb832",
+    "Resources/en.lproj/Localizable.strings": "7e6edf59a666718d5c7b9740cf72f8221a225d9d7014608dba1802634d5b4ca5",
+    "Tools/server_transcription_app_flow_test.py": "5016eee5053cd975c0cc878fe62785d6e820778dd2e253fb813b1ac9ab0fb744"
+  },
+  "device": "79C6B540-E8DC-4E2A-8171-25BB70F7E5D1",
+  "runtime": "iOS 27.0 simulator",
+  "build_configuration": "Debug",
+  "build_succeeded": true,
+  "app_binary_uuid": "UUID: A8EEEBA6-7090-3C30-871A-251484D8A267 (arm64) build/ServerStatusDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app/InstacastPlus.debug.dylib",
+  "verified_at": "2026-10-03T11:00:43.283284+00:00",
+  "build_command": "xcodebuild -project Instacast.xcodeproj -scheme Instacast -configuration Debug -destination 'platform=iOS Simulator,id=79C6B540-E8DC-4E2A-8171-25BB70F7E5D1' -derivedDataPath build/ServerStatusDD build"
+}

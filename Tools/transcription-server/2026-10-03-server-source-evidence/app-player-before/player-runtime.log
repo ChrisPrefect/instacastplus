@@ -1,0 +1,83 @@
+Timestamp               Ty Process[PID:TID]
+2026-10-03 11:46:07.923 E  InstacastPlus[23208:95bf50] [com.apple.locationd.Core:Core] {"msg":"file does not exist... clearing", "file":/private/var/run/com.apple.security.cryptexd/mnt/com.apple.iPhoneOS.SimulatorRuntime-v24.1.434.0.ptEwdF/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot/private/var/Managed Preferences/kCFPreferencesCurrentUser/com.apple.CoreMotion.plist, "error":Error Domain=NSCocoaErrorDomain Code=260 "Die Datei „com.apple.CoreMotion.plist“ konnte nicht geöffnet werden, da sie nicht existiert." UserInfo={NSFilePath=/private/var/run/com.apple.security.cryptexd/mnt/com.apple.iPhoneOS.SimulatorRuntime-v24.1.434.0.ptEwdF/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot/private/var/Managed Preferences/kCFPreferencesCurrentUser/com.apple.CoreMotion.plist, NSURL=file:///private/var/run/com.apple.security.cryptexd/mnt/com.apple.iPhoneOS.SimulatorRuntime-v24.1.434.0.ptEwdF/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS%2027.0.simruntime/Contents/Resources/RuntimeRoot/private/var/Managed%20Preferences<…>}
+2026-10-03 11:46:08.684 Df InstacastPlus[23208:95bf4c] [com.apple.UserNotifications:Connections] [com.iteconomy.instacastplus] Set badge count [ hasCompletionHandler: 0 hasError: 0 ]
+2026-10-03 11:46:18.917 E  InstacastPlus[23287:95c1de] [com.apple.locationd.Core:Core] {"msg":"file does not exist... clearing", "file":/private/var/run/com.apple.security.cryptexd/mnt/com.apple.iPhoneOS.SimulatorRuntime-v24.1.434.0.ptEwdF/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot/private/var/Managed Preferences/kCFPreferencesCurrentUser/com.apple.CoreMotion.plist, "error":Error Domain=NSCocoaErrorDomain Code=260 "Die Datei „com.apple.CoreMotion.plist“ konnte nicht geöffnet werden, da sie nicht existiert." UserInfo={NSFilePath=/private/var/run/com.apple.security.cryptexd/mnt/com.apple.iPhoneOS.SimulatorRuntime-v24.1.434.0.ptEwdF/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot/private/var/Managed Preferences/kCFPreferencesCurrentUser/com.apple.CoreMotion.plist, NSURL=file:///private/var/run/com.apple.security.cryptexd/mnt/com.apple.iPhoneOS.SimulatorRuntime-v24.1.434.0.ptEwdF/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS%2027.0.simruntime/Contents/Resources/RuntimeRoot/private/var/Managed%20Preferences<…>}
+2026-10-03 11:46:19.280 Df InstacastPlus[23287:95c1d9] [com.apple.UserNotifications:Connections] [com.iteconomy.instacastplus] Set badge count [ hasCompletionHandler: 0 hasError: 0 ]
+2026-10-03 11:46:32.714 Df InstacastPlus[23287:95c1f5] [com.apple.UserNotifications:Connections] [com.iteconomy.instacastplus] Requested authorization [ didGrant: 0 hasError: 0 hasCompletionHandler: 1 ]
+2026-10-03 11:46:36.111 Df InstacastPlus[23287:95c1f5] [com.apple.amp.mediaplayer:RemoteControl] NPIC: setNowPlayingInfo: sending to MediaRemote
+2026-10-03 11:46:36.113 Df InstacastPlus[23287:95c17b] [com.apple.amp.mediaplayer:RemoteControl] [RCC:0x108d14a00:MediaRemote-DefaultPlayer] initWithPlayerPath:【 􁊸 LOCL ❯ 􀐥 com.iteconomy.instacastplus (23287) ❯ 􀽍 default 】
+2026-10-03 11:46:36.113 Df InstacastPlus[23287:95c17b] [com.apple.amp.mediaplayer:RemoteControl] [RCC:0x108d14a00:MediaRemote-DefaultPlayer] _startMediaRemoteSync | MRMediaRemoteAddCommandHandlerForPlayer [] playerPath=【 􁊸 LOCL ❯ 􀐥 com.iteconomy.instacastplus (23287) ❯ 􀽍 default 】
+2026-10-03 11:46:36.117 Df InstacastPlus[23287:95c17b] [com.apple.amp.mediaremote:MediaRemote] MediaRemote server initializing
+2026-10-03 11:46:36.117 Df InstacastPlus[23287:95c1f5] [com.apple.amp.mediaremote:NowPlaying] [NowPlayingInfo] Setting nowPlayingInfo with mergePolicy Replace: <NSCFDictionary 0x114521440 {
+	kMRMediaRemoteNowPlayingInfoExternalContentIdentifier = adc5b511e60496fa62f01b43ffc29e23
+	kMRMediaRemoteNowPlayingInfoDuration = 0
+	kMRMediaRemoteNowPlayingInfoTimestamp = 2026-10-03 09:46:36 +0000
+	kMRMediaRemoteNowPlayingInfoElapsedTime = 0
+	kMRMediaRemoteNowPlayingInfoCollectionIdentifier = B0A38190-0C69-44E1-8DD9-A889443865E7
+	kMRMediaRemoteNowPlayingInfoArtist = Server flow fixture
+	kMRMediaRemoteNowPlayingInfoPlaybackRate = 0
+	kMRMediaRemoteNowPlayingInfoTitle = Stadtbibliothek und Lesekreis
+	kMRMediaRemoteNowPlayingInfoMediaType = MRMediaRemoteMediaTypePodcast
+}>
+2026-10-03 11:46:36.148 Df InstacastPlus[23287:95c17b] [com.apple.coremedia:] <<<< FigCustomURLHandling >>>> FigCustomURLHandlerCreate: newHandler: com.apple.avfoundation.customurl.nsurlsession.0x116269d00 options: {
+    "CURLHOption_ClientRequestsRepresentAccurateNetworkStatistics" = 1;
+    "CURLHOption_OKToLogURLs" = 0;
+}
+2026-10-03 11:46:36.155 Df InstacastPlus[23287:95c1f5] [com.apple.coremedia:] <<<< FigCustomURLHandling >>>> curlh_finishLoadingOnQueue: AVAssetResourceLoader.0x116269c00: requestID: 2, error: Error Domain=ICStreamingCacheErrorDomain Code=503 "Die Folge konnte nicht gestreamt werden, weil der Server HTTP 503 (service unavailable) zurückgegeben hat. Versuche es später erneut." UserInfo={NSLocalizedDescription=Die Folge konnte nicht gestreamt werden, weil der Server HTTP 503 (service unavailable) zurückgegeben hat. Versuche es später erneut.} (503)
+2026-10-03 11:46:36.156 Df InstacastPlus[23287:95c1dd] [com.apple.coremedia:] <<<< AVError >>>> AVLocalizedErrorWithUnderlyingOSStatus: Returning error (AVFoundationErrorDomain / -11800) status (503)
+2026-10-03 11:46:36.158 Df InstacastPlus[23287:95c1e2] [com.apple.CFNetwork:Default] Task <0A2ED29E-9ACD-42BA-805F-E1B42C58D9AD>.<1> finished with error [-999] Error Domain=NSURLErrorDomain Code=-999 "Abgebrochen" UserInfo={NSErrorFailingURLStringKey=http://127.0.0.1:54055/fixture.wav, NSErrorFailingURLKey=http://127.0.0.1:54055/fixture.wav, _NSURLErrorRelatedURLSessionTaskErrorKey=(
+    "LocalDataTask <0A2ED29E-9ACD-42BA-805F-E1B42C58D9AD>.<1>"
+), _NSURLErrorFailingURLSessionTaskErrorKey=LocalDataTask <0A2ED29E-9ACD-42BA-805F-E1B42C58D9AD>.<1>, NSLocalizedDescription=Abgebrochen}
+2026-10-03 11:46:36.369 Df InstacastPlus[23287:95c17b] [com.apple.amp.mediaplayer:RemoteControl] <MPRemoteCommandCenter: 0x108d14a00 (【 􁊸 LOCL (iPhone) ❯ 􀐥 com.iteconomy.instacastplus (23287) ❯ 􀽍 default 】)> [MPRemoteCommandCenter] setSupportedCommands (
+    "<MRCommandInfo: 0x1163e0180, SeekToPlaybackPosition, enabled = 1, options = {\134n    kMRMediaRemoteCommandInfoCanBeControlledByScrubbingKey = 0;\134n    kMRMediaRemoteCommandInfoSupportsReferencePosition = 0;\134n}>",
+    "<MRCommandInfo: 0x1163e1460, BeginRewind, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1163e0e20, EndRewind, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1163e3240, BeginFastForward, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1163e1140, EndFastForward, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1163e1900, PreviousTrack, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1163e1ea0, NextTrack, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1163e1fa0, TogglePlayPause, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1163e30c0, Pause, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1163e3160, Pla
+2026-10-03 11:46:36.369 Df InstacastPlus[23287:95c17b] [com.apple.amp.mediaremote:NowPlaying] [MRNowPlaying] MRMediaRemoteSetCanBeNowPlayingForPlayer 【 􁊸 LOCL (iPhone) ❯ 􀐥 com.iteconomy.instacastplus (23287) ❯ 􀽍 default 】 set to YES
+2026-10-03 11:46:36.379 Df InstacastPlus[23287:95c17b] [com.apple.coremedia:] <<<< AVError >>>> AVLocalizedErrorWithUnderlyingOSStatus: Returning error (AVFoundationErrorDomain / -11800) status (503)
+2026-10-03 11:46:36.385 Df InstacastPlus[23287:95c17b] [com.apple.coremedia:] <<<< AVError >>>> AVLocalizedErrorWithUnderlyingOSStatus: Returning error (AVFoundationErrorDomain / -11800) status (503)
+2026-10-03 11:46:36.399 Df InstacastPlus[23287:95c17b] [com.apple.amp.mediaremote:NowPlaying] [MRNowPlaying] MRMediaRemoteSetCanBeNowPlayingForPlayer 【 􁊸 LOCL (iPhone) ❯ 􀐥 com.iteconomy.instacastplus (23287) ❯ 􀽍 default 】 set to NO
+2026-10-03 11:46:36.896 Df InstacastPlus[23287:95c485] [com.apple.amp.mediaplayer:RemoteControl] NPIC: setNowPlayingInfo: sending to MediaRemote
+2026-10-03 11:47:10.547 Df InstacastPlus[23287:95c1dd] [com.apple.amp.mediaplayer:RemoteControl] NPIC: setNowPlayingInfo: sending to MediaRemote
+2026-10-03 11:47:10.547 Df InstacastPlus[23287:95c1dd] [com.apple.amp.mediaremote:NowPlaying] [NowPlayingInfo] Setting nowPlayingInfo with mergePolicy Replace: <NSCFDictionary 0x1145d6740 {
+	kMRMediaRemoteNowPlayingInfoExternalContentIdentifier = adc5b511e60496fa62f01b43ffc29e23
+	kMRMediaRemoteNowPlayingInfoDuration = 0
+	kMRMediaRemoteNowPlayingInfoTimestamp = 2026-10-03 09:47:10 +0000
+	kMRMediaRemoteNowPlayingInfoElapsedTime = 0
+	kMRMediaRemoteNowPlayingInfoCollectionIdentifier = B0A38190-0C69-44E1-8DD9-A889443865E7
+	kMRMediaRemoteNowPlayingInfoArtist = Server flow fixture
+	kMRMediaRemoteNowPlayingInfoPlaybackRate = 0
+	kMRMediaRemoteNowPlayingInfoTitle = Stadtbibliothek und Lesekreis
+	kMRMediaRemoteNowPlayingInfoMediaType = MRMediaRemoteMediaTypePodcast
+}>
+2026-10-03 11:47:10.561 Df InstacastPlus[23287:95c17b] [com.apple.coremedia:] <<<< FigCustomURLHandling >>>> FigCustomURLHandlerCreate: newHandler: com.apple.avfoundation.customurl.nsurlsession.0x1175cf980 options: {
+    "CURLHOption_ClientRequestsRepresentAccurateNetworkStatistics" = 1;
+    "CURLHOption_OKToLogURLs" = 0;
+}
+2026-10-03 11:47:10.580 E  InstacastPlus[23287:95c839] [com.apple.CFNetwork:Default] Task <7F397F0B-AC11-4412-8D06-1F48EA54BC58>.<1> finished with error [-1004] Error Domain=NSURLErrorDomain Code=-1004 "Verbindung zum Server konnte nicht hergestellt werden." UserInfo={_kCFStreamErrorCodeKey=61, NSUnderlyingError=0x11632c540 {Error Domain=kCFErrorDomainCFNetwork Code=-1004 "(null)" UserInfo={_NSURLErrorNWPathKey=satisfied (Path is satisfied), interface: lo0, _kCFStreamErrorCodeKey=61, _kCFStreamErrorDomainKey=1}}, _NSURLErrorFailingURLSessionTaskErrorKey=LocalDataTask <7F397F0B-AC11-4412-8D06-1F48EA54BC58>.<1>, _NSURLErrorRelatedURLSessionTaskErrorKey=(
+    "LocalDataTask <7F397F0B-AC11-4412-8D06-1F48EA54BC58>.<1>"
+), NSLocalizedDescription=Verbindung zum Server konnte nicht hergestellt werden., NSErrorFailingURLStringKey=http://127.0.0.1:54055/fixture.wav, NSErrorFailingURLKey=http://127.0.0.1:54055/fixture.wav, _kCFStreamErrorDomainKey=1}
+2026-10-03 11:47:10.580 Df InstacastPlus[23287:95c487] [com.apple.coremedia:] <<<< FigCustomURLHandling >>>> curlh_finishLoadingOnQueue: AVAssetResourceLoader.0x1175cd080: requestID: 2, error: Error Domain=kCFErrorDomainCFNetwork Code=-1004 "(null)" UserInfo={_NSURLErrorNWPathKey=satisfied (Path is satisfied), interface: lo0, _kCFStreamErrorCodeKey=61, _kCFStreamErrorDomainKey=1} (-1004)
+2026-10-03 11:47:10.581 Df InstacastPlus[23287:95c1dd] [com.apple.coremedia:] <<<< AVError >>>> AVLocalizedErrorWithUnderlyingOSStatus: Returning error (NSURLErrorDomain / -1004) status (-1004)
+2026-10-03 11:47:10.608 Df InstacastPlus[23287:95c17b] [com.apple.amp.mediaplayer:RemoteControl] <MPRemoteCommandCenter: 0x108d14a00 (【 􁊸 LOCL (iPhone) ❯ 􀐥 com.iteconomy.instacastplus (23287) ❯ 􀽍 default 】)> [MPRemoteCommandCenter] setSupportedCommands (
+    "<MRCommandInfo: 0x1176dc100, SeekToPlaybackPosition, enabled = 1, options = {\134n    kMRMediaRemoteCommandInfoCanBeControlledByScrubbingKey = 0;\134n    kMRMediaRemoteCommandInfoSupportsReferencePosition = 0;\134n}>",
+    "<MRCommandInfo: 0x1176dc120, BeginRewind, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1176dc160, EndRewind, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1176dc1e0, BeginFastForward, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1176dc1a0, EndFastForward, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1176dc1c0, PreviousTrack, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1176dc220, NextTrack, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1176dc420, TogglePlayPause, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1176dc440, Pause, enabled = 1, options = {\134n}>",
+    "<MRCommandInfo: 0x1176dc460, Pla
+2026-10-03 11:47:10.608 Df InstacastPlus[23287:95c17b] [com.apple.amp.mediaremote:NowPlaying] [MRNowPlaying] MRMediaRemoteSetCanBeNowPlayingForPlayer 【 􁊸 LOCL (iPhone) ❯ 􀐥 com.iteconomy.instacastplus (23287) ❯ 􀽍 default 】 set to YES
+2026-10-03 11:47:10.658 Df InstacastPlus[23287:95c17b] [com.apple.coremedia:] <<<< AVError >>>> AVLocalizedErrorWithUnderlyingOSStatus: Returning error (NSURLErrorDomain / -1004) status (-1004)
+2026-10-03 11:47:10.664 Df InstacastPlus[23287:95c17b] [com.apple.coremedia:] <<<< AVError >>>> AVLocalizedErrorWithUnderlyingOSStatus: Returning error (NSURLErrorDomain / -1004) status (-1004)
+2026-10-03 11:47:10.678 Df InstacastPlus[23287:95c17b] [com.apple.amp.mediaremote:NowPlaying] [MRNowPlaying] MRMediaRemoteSetCanBeNowPlayingForPlayer 【 􁊸 LOCL (iPhone) ❯ 􀐥 com.iteconomy.instacastplus (23287) ❯ 􀽍 default 】 set to NO
+2026-10-03 11:47:11.172 Df InstacastPlus[23287:95c839] [com.apple.amp.mediaplayer:RemoteControl] NPIC: setNowPlayingInfo: sending to MediaRemote

@@ -72,6 +72,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     private var player: AVAudioPlayer?
     private var timer: Timer?
     private var lastAutomaticReportDate: Date?
+    private var lastReportedPlaybackState: (hash: String, position: Int, finished: Bool, date: Date)?
     private var manuallySelectedSkipRange: Range<TimeInterval>?
     private let dateFormatter = ISO8601DateFormatter()
     private var playbackGeneration = 0
@@ -232,7 +233,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         setPlaybackActiveMarker(for: episode.episodeHash)
         startTimer()
         updateNowPlayingInfo(for: episode)
-        reportPosition(finished: false)
+        reportPosition(finished: false, newPlaybackEvent: true)
         return true
     }
 
@@ -261,7 +262,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             applyAutomaticChapterSkipping()
         }
         currentPosition = player.currentTime
-        reportPosition(finished: false)
+        reportPosition(finished: false, newPlaybackEvent: true)
         updateNowPlayingInfo()
     }
 
@@ -789,6 +790,8 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
                     metadata: enrichedMetadata
                 )
             }
+            pause()
+            return
         }
         if isPlaying, player.isPlaying {
             applyAutomaticChapterSkipping()
@@ -803,17 +806,27 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         reportPosition(finished: false)
     }
 
-    private func reportPosition(finished: Bool) {
+    private func reportPosition(finished: Bool, newPlaybackEvent: Bool = false) {
         guard let hash = playingEpisodeHash, let player else { return }
         let position = max(0, Int(player.currentTime.rounded()))
         currentPosition = player.currentTime
         lastAutomaticReportDate = Date()
 
-        WatchManifestStore.shared.updateEpisode(hash: hash) { episode in
-            episode.lastPlaybackPosition = finished ? episode.displayDuration : position
-            episode.lastPlaybackDate = Date()
-            if finished {
-                episode.consumed = true
+        // A lifecycle flush or stopped player is not a new listening event. Giving
+        // the same position a fresh date would overwrite newer phone progress.
+        let reportDate: Date
+        if !newPlaybackEvent, let previous = lastReportedPlaybackState,
+           previous.hash == hash, previous.position == position, previous.finished == finished {
+            reportDate = previous.date
+        } else {
+            reportDate = Date()
+            lastReportedPlaybackState = (hash, position, finished, reportDate)
+            WatchManifestStore.shared.updateEpisode(hash: hash) { episode in
+                episode.lastPlaybackPosition = finished ? episode.displayDuration : position
+                episode.lastPlaybackDate = reportDate
+                if finished {
+                    episode.consumed = true
+                }
             }
         }
 
@@ -821,7 +834,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             "episodeHash": hash,
             "position": finished ? Int(player.duration.rounded()) : position,
             "consumed": finished,
-            "timestamp": dateFormatter.string(from: Date()),
+            "timestamp": dateFormatter.string(from: reportDate),
         ]
         if finished {
             WatchConnectivityController.shared.send(type: "playback.watchFinished", payload: payload, delivery: .reliable)

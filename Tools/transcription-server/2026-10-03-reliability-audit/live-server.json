@@ -1,0 +1,55 @@
+{
+  "checked_at": "2026-10-03T11:40:44.579669+00:00",
+  "files": {
+    "app/db.py": "396906469d9f10a8f71ee6ad1ab66b54fa78ea7ac9692c99f7a7e96ed5bad5e3",
+    "app/storage.py": "802d9d9ac0325bdaaefe98ccec1e458fea9420d1c82669a52a797b653d0ee356",
+    "app/service.py": "1a212034140bc1b68e5a4f7ea904b56bada3f6e101356dc60076b0b54f54c44d",
+    "app/alerts.py": "3c84e0a106347188d67cebeb2ba7bf9827f8bffbb1733339ba1cc29ed9a4ea1c",
+    "app/monitor.py": "8c6bfdd1302869b44fd163505e574746a16430e6a861fb4c16c14f6c0952bc3e",
+    "app/settings.py": "3c1cb6d452c70d1c5ea6a3e0bcc071d00d95592cf2e13a809811132755ff802e",
+    "app/caption_sentences.py": "c238fb9ebad849113b38212100227cfcdbe2550feeb195279acf503901a99bd6",
+    "app/worker.py": "7517a24ef65f06587424a30a98211acf6116a44bf503515f9117f13331c0380c",
+    "app/cli.py": "ae2a07286755831f218523805172ecac9a40913f69b3348451e0c0a97889e170",
+    "app/main.py": "dc007fa3c3e531aa1db7d27f32f0eaddefce7f95d8c4a12e0b72d8bb9efd039d",
+    "app/__init__.py": "929f21a83cf6d73a18fa02e690f55fe8a652f288bcdb1f0d4f6c662b8708d471",
+    "app/security.py": "3c2e74555c8a0575dbf750d347697f73396e230c97fb9c43e22f68339d242416",
+    "app/codex_provider.py": "04179ad9a182574e4147dbc4f0195dd5efe2be592e590e6be16bb06340e0cb5c",
+    "app/config.py": "98f800bfdbdb5c58f3f1b2aaf6c89ed3f45e32552bcd43f2634257660a4566e4",
+    "app/rss.py": "039820619c384b5dae931c20f9394034981b8a7a29099094d45172b686a80cbe",
+    "app/checkpoint_provenance.py": "f32ecd2aad01d36e77f482ebe9dd48750e30d0bcd67321c568343e926eb25abd",
+    "app/artifact_contract.py": "d34a9aac436ecd684e075e5ccb10c8e7d90449ddbdf63f5391ab5fda4cdf99f4"
+  },
+  "health_http": 200,
+  "health": {
+    "ok": true,
+    "queued_jobs": 0,
+    "running_jobs": 0,
+    "episodes": 110,
+    "transcription_workers": {
+      "transcript-instacast-worker.service": true,
+      "transcript-instacast-worker-2.service": false
+    },
+    "service_status": null
+  },
+  "schema_revision": "2026-10-03.1",
+  "jobs": [
+    {
+      "status": "canceled",
+      "count": 78
+    },
+    {
+      "status": "done",
+      "count": 2340
+    },
+    {
+      "status": "failed",
+      "count": 1
+    }
+  ],
+  "units": {
+    "transcript-instacast-api.service": "active",
+    "transcript-instacast-worker.service": "active"
+  },
+  "local_snapshot_differences": [],
+  "allow_api_force_verified_separately": false
+}

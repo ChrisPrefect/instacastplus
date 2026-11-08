@@ -6,7 +6,7 @@ def extract(signature):
  for end in range(brace,len(source)):
   depth+=(source[end]=='{')-(source[end]=='}')
   if not depth:return source[start:end+1]
-methods='\n'.join(extract(s) for s in ['func verifyPlaybackAudio(', '@objc func cancelGeneratedAudioVerification()', '@objc func invalidateAnalysisCache(', '@objc func invalidateChaptersCache('])
+methods='\n'.join(extract(s) for s in ['func verifyPlaybackAudio(', '@objc func chapterArtifactSnapshotIdentifier(', '@objc func cancelGeneratedAudioVerification()', '@objc func invalidateAnalysisCache(', '@objc func invalidateChaptersCache('])
 swift='''import Foundation
 final class ICDiagnosticLogger: Sendable {
  static let shared = ICDiagnosticLogger()
@@ -16,7 +16,10 @@ final class ICDiagnosticLogger: Sendable {
  static var pending: CheckedContinuation<String,Never>?
  static func sha256(of url: URL) async throws -> String { await withCheckedContinuation { pending=$0 } }
 }
-enum ICTranscriptionPaths { static func analysisJSONURL(for hash:String)->URL { URL(fileURLWithPath:"/analysis") } }
+enum ICTranscriptionPaths {
+ static func analysisJSONURL(for hash:String)->URL { URL(fileURLWithPath:"/analysis") }
+ static func chaptersJSONURL(for hash:String)->URL { URL(fileURLWithPath:"/chapters") }
+}
 @MainActor final class TranscriptionEngine {
  static let shared=TranscriptionEngine();var source:String?
  func transcriptSourceAudioSHA256(for episodeHash:String)->String? { source }

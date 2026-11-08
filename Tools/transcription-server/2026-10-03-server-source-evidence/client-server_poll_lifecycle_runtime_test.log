@@ -1,0 +1,1 @@
+PASS: scheduled check start/end visible; real status/cancel changes visible; busy/idle lifecycle preserved without false idle between queued jobs

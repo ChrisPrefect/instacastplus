@@ -1,0 +1,73 @@
+[
+  {
+    "case" : "shared_factory_identity",
+    "observed" : {
+      "initializations_after" : 1,
+      "initializations_before" : 1,
+      "title" : "Selected episode"
+    },
+    "passed" : true
+  },
+  {
+    "case" : "failed_episode_play",
+    "observed" : {
+      "direct_play" : 0,
+      "direct_toggle" : 0,
+      "preserved" : 1,
+      "reopens" : 1
+    },
+    "passed" : true
+  },
+  {
+    "case" : "failed_episode_playPause",
+    "observed" : {
+      "direct_play" : 0,
+      "direct_toggle" : 0,
+      "preserved" : 1,
+      "reopens" : 1
+    },
+    "passed" : true
+  },
+  {
+    "case" : "healthy_paused_play",
+    "observed" : {
+      "direct_play" : 1,
+      "reopens" : 0
+    },
+    "passed" : true
+  },
+  {
+    "case" : "healthy_playing_play",
+    "observed" : {
+      "direct_play" : 0,
+      "reopens" : 0
+    },
+    "passed" : true
+  },
+  {
+    "case" : "healthy_toggle",
+    "observed" : {
+      "direct_toggle" : 1,
+      "reopens" : 0
+    },
+    "passed" : true
+  },
+  {
+    "case" : "loading_does_not_restart",
+    "observed" : {
+      "direct_play" : 0,
+      "reopens" : 0
+    },
+    "passed" : true
+  },
+  {
+    "case" : "empty_without_recent_episode",
+    "observed" : {
+      "direct_play" : 0,
+      "direct_toggle" : 0,
+      "reopens" : 0
+    },
+    "passed" : true
+  }
+]
+PASS: 8 actual Swift/ObjC factory and transport cases

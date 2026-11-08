@@ -60,9 +60,12 @@ int main() { @autoreleasepool {
     BOOL failedChaptersPass = [[player _audioIdentityNotice] isEqualToString:@"Chapters could not be loaded."];
     playback.generatedChapterTimelineUnverified = NO;
     player.timingVerified = NO;
-    BOOL failedTranscriptPass = [[player _audioIdentityNotice] isEqualToString:@"Jumping to transcript passages is unavailable."];
+    BOOL failedTranscriptPass = [[player _audioIdentityNotice] isEqualToString:@"You can read the transcript. Jumping to passages is unavailable until its timing is verified for this audio."];
+    playback.generatedAudioVerificationCompleted = NO;
+    BOOL readablePendingPass = [[player _audioIdentityNotice] isEqualToString:@"You can read the transcript. Jumping to passages is unavailable until its timing is verified for this audio."];
+    printf("readable text explains pending timing without requiring a download: %s\n",readablePendingPass ? "PASS" : "FAIL");
     printf("completed failures remain visible: %s\n", failedChaptersPass && failedTranscriptPass ? "PASS" : "FAIL");
-    return pendingPass && publisherPass && verifiedPass && failedChaptersPass && failedTranscriptPass ? 0 : 1;
+    return pendingPass && publisherPass && verifiedPass && failedChaptersPass && failedTranscriptPass && readablePendingPass ? 0 : 1;
 } }
 '''.replace("METHOD", method)
 

@@ -1,0 +1,17 @@
+2026-10-03 14:19:22.071 probe[40581:10015051] [ChapterGenerator] Saved 1 chapters for local
+2026-10-03 14:19:22.083 probe[40581:10015051] [ChapterGenerator] Saved 1 chapters for local
+PASS local chapters load in same session
+PASS matching complete source verifies chapters and transcript in same session
+PASS different audio is rejected in same session
+PASS local chapters load in fresh generator / relaunch
+PASS matching complete source verifies chapters and transcript in fresh generator / relaunch
+PASS different audio is rejected in fresh generator / relaunch
+PASS different bytes at the same URL are rejected
+PASS replacement transcript invalidates cached local chapters
+PASS replacement transcript invalidates persisted local chapters after restart
+PASS identical cue text with different source cannot inherit chapter identity
+PASS generation result with replaced SRT snapshot rejected
+PASS rejected commit preserves prior artifact
+PASS SRT deletion before commit rejected
+PASS deliberately retained chapters keep original proof after only SRT is deleted
+PASS legacy chapters never gain current audio identity

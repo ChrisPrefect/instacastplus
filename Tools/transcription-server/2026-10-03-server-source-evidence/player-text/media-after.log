@@ -1,0 +1,8 @@
+episode content loads before media readiness: PASS
+pending media without transcript keeps loading indication: PASS
+readable text is not covered by pending-media overlay: PASS
+media failure has no loading overlay: PASS
+concrete media error stays visible: PASS
+repeated failed updates do not repeat the error: PASS
+media-ready transition refreshes dependent player content: PASS
+ready playback continues updating controls: PASS

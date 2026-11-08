@@ -33,11 +33,13 @@
 #import <AVKit/AVKit.h>
 #import "InstacastAppDelegate.h"
 #import "MainViewController_4.h"
+#import "InstacastPlus-Swift.h"
 
 enum {
 	NoState = 0,
 	InitedState,
 	LoadedState,
+	ContentReadyState,
 	ReadyState,
 } PlaybackViewControllerState;
 
@@ -59,6 +61,7 @@ enum {
 @property (nonatomic, assign) BOOL playbackInterupted;
 @property (nonatomic, strong) PlaybackControlsViewController* controller;
 @property (nonatomic, strong) VDModalInfo* loadingInfo;
+@property (nonatomic, strong) NSError* presentedPlaybackError;
 @property (nonatomic, strong) CDEpisode* playingEpisode;
 @property (nonatomic, strong) UIImage* image;
 @property (nonatomic, strong) PlayerInfoViewController_v5* infoViewController;
@@ -192,21 +195,38 @@ enum {
         }
         
         [self perform:^(id sender) {
-                        
+            if (![self _canDismissEndedPlayback]) return;
+
             if (self.presentedViewController)
             {
                 [self.presentedViewController dismissViewControllerAnimated:YES completion:^{
                     [self perform:^(id sender) {
-                        [self dismiss:sender];
+                        if ([self _canDismissEndedPlayback]) [self dismiss:sender];
                     } afterDelay:0.1];
                 }];
             } else {
                 [self perform:^(id sender) {
-                    [self dismiss:sender];
+                    if ([self _canDismissEndedPlayback]) [self dismiss:sender];
                 } afterDelay:0.1];
             }
         } afterDelay:0.5];
     }
+}
+
+- (BOOL)_canDismissEndedPlayback
+{
+    // End-of-playback dismissal is deferred for the UI animation. A new
+    // selection retires that old end event, including while media is loading.
+    PlaybackManager* manager = [PlaybackManager playbackManager];
+    CDEpisode* replacement = manager.playingEpisode;
+    if (!replacement) return YES;
+
+    [[ICDiagnosticLogger shared] logEvent:@"player-lifecycle"
+                                  message:@"Veraltetes Player-Schließen nach Episodenwechsel verworfen"
+                                 metadata:@{@"event": @"dismiss-after-end", @"reason": @"replacement-selected",
+                                            @"episodeHash": replacement.objectHash ?: @"",
+                                            @"ready": @(manager.ready), @"paused": @(manager.paused)}];
+    return NO;
 }
 
 - (void) applicationDidRegisterTouchNotification:(NSNotification*)notification
@@ -271,6 +291,7 @@ enum {
 - (void) _resetStateMachine
 {
     self.playingEpisode = nil;
+    self.presentedPlaybackError = nil;
 
     [self.controller resetControlUI];
     [self.controller updateTimeWhenLoading];
@@ -293,31 +314,24 @@ enum {
 {
 	PlaybackManager* pman = [PlaybackManager playbackManager];
 	
-	if (pman.failed)
+    if (pman.failed && pman.playbackError && self.presentedPlaybackError != pman.playbackError && _viewDidAppear)
     {
-        if (App.networkAccessTechnology < kICNetworkAccessTechnlogyEDGE) {
-            [App showBackgroundErrorWithTitle:@"Media not loaded.".ls message:@"Please make sure you are connected to a cellular or WiFi network.".ls];
-        } else {
-            [App showBackgroundErrorWithTitle:@"Media not loaded.".ls message:@"The file is not available anymore.".ls];
-        }
+        self.presentedPlaybackError = pman.playbackError;
+        [self.controller updateControlsUI];
+        [App showBackgroundErrorWithTitle:@"Playback unavailable".ls message:pman.playbackError.localizedDescription];
 	}
 
-    if (_state == LoadedState && !pman.ready)
+    if ((_state == LoadedState || (_state == ContentReadyState && pman.ready)) && _viewDidAppear)
 	{
-        if (!self.loadingInfo && ![[CacheManager sharedCacheManager] episodeIsCached:pman.playingEpisode]) {
-            self.loadingInfo = [VDModalInfo modalInfoWithProgressLabel:@"Loading…".ls];
-            [self.loadingInfo show];
-        }
-    }
-	else if (_state == LoadedState && pman.ready && _viewDidAppear)
-	{
+        BOOL loadingEpisodeContent = _state == LoadedState;
+        _state = pman.ready ? ReadyState : ContentReadyState;
         [self.infoViewController reload];
         
         CDEpisode* episode = [AudioSession sharedAudioSession].episode;
         CDFeed* feed = episode.feed;
         
         NSURL* imageURL = (episode.imageURL) ? episode.imageURL : feed.imageURL;
-        if (imageURL)
+        if (loadingEpisodeContent && imageURL)
         {
             ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
             NSInteger size = [self _episodeArtworkCacheSize];
@@ -331,19 +345,11 @@ enum {
             }];
         }
         
-				
-		_state = ReadyState;
-
         [self _updateArtworkImage];
         [self.controller updateControlsUI];
         self.controller.transcriptAvailable = self.infoViewController.transcriptAvailable;
         self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
 
-        if (self.loadingInfo) {
-            [self.loadingInfo close];
-            self.loadingInfo = nil;
-        }
-        
 //        UIDeviceOrientation orientation = [UIDevice currentDevice].orientation;
 //        if (UIDeviceOrientationIsLandscape(orientation) && !self.infoViewController.videoViewController.fullscreen) {
 //            [self.infoViewController.videoViewController setFullscreen:YES animated:YES completion:NULL];
@@ -354,6 +360,16 @@ enum {
 	{
 		[self.controller updateTimeUI];
 	}
+
+    BOOL loadingMedia = !pman.ready && !pman.failed && !self.infoViewController.transcriptAvailable &&
+        ![[CacheManager sharedCacheManager] episodeIsCached:pman.playingEpisode];
+    if (loadingMedia && !self.loadingInfo) {
+        self.loadingInfo = [VDModalInfo modalInfoWithProgressLabel:@"Loading…".ls];
+        [self.loadingInfo show];
+    } else if (!loadingMedia && self.loadingInfo) {
+        [self.loadingInfo close];
+        self.loadingInfo = nil;
+    }
 }
 
 - (void) _dismissPlayerWithCompletion:(void (^)(void))completion
@@ -594,6 +610,7 @@ enum {
         } else {
             self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
         }
+        [self _stateMachine];
     };
     
     [self addChildViewController:self.infoViewController];

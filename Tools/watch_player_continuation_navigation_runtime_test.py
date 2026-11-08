@@ -94,6 +94,7 @@ POP_UNAVAILABLE
     var currentPosition = 0.0
     var playbackGeneration = 0
     var lastAutomaticReportDate: Date?
+    var lastReportedPlaybackState: (hash: String, position: Int, finished: Bool, date: Date)?
     let dateFormatter = ISO8601DateFormatter()
     func play(_ episode: WatchEpisode) async -> Bool {
         player = AVAudioPlayer()

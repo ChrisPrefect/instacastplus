@@ -13,7 +13,7 @@ import jwt
 
 KEY_ID = "7QUKV6MHZ2"
 ISSUER_ID = "69a6de70-cba8-47e3-e053-5b8c7c11a4d1"
-KEY_PATH = "/Users/Chris/Developer/AuthKey_7QUKV6MHZ2.p8"
+KEY_PATH = "/Users/prefect/Developer/AuthKey_7QUKV6MHZ2.p8"
 APP_ID = "6472283494"
 BASE = "https://api.appstoreconnect.apple.com"
 

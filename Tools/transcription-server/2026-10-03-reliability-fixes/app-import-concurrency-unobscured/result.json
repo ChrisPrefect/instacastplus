@@ -1,0 +1,170 @@
+{
+  "passed": true,
+  "command": [
+    "Tools/server_transcription_app_flow_test.py",
+    "--device",
+    "79C6B540-E8DC-4E2A-8171-25BB70F7E5D1",
+    "--app",
+    "build/ServerStatusDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app",
+    "--scenario",
+    "import_concurrency",
+    "--preserve-installation",
+    "--output",
+    "Tools/transcription-server/2026-10-03-reliability-fixes/app-import-concurrency-unobscured"
+  ],
+  "expected": "Independent POST/DELETE; one import; canceled result stays absent",
+  "posts": [
+    {
+      "episode_url": "http://127.0.0.1:56340/fixture.wav",
+      "podcast_url": "http://127.0.0.1:56340/api/fixture.xml",
+      "force": false,
+      "title": "Stadtbibliothek und Lesekreis",
+      "wait_seconds": 0,
+      "client_request_id": "6b3e2f1f-5bd2-4a1c-b54d-8d3b29b7ba14",
+      "audio_source": "server",
+      "client_duration_seconds": 115
+    },
+    {
+      "title": "Stadtbibliothek und Lesekreis",
+      "wait_seconds": 0,
+      "podcast_url": "http://127.0.0.1:56340/api/fixture.xml",
+      "episode_url": "http://127.0.0.1:56340/fixture.wav",
+      "client_duration_seconds": 115,
+      "client_request_id": "1ae9ea8a-4053-464c-9b42-819f2fa54e8d",
+      "force": false,
+      "audio_source": "server"
+    }
+  ],
+  "deletes": [
+    "1ae9ea8a-4053-464c-9b42-819f2fa54e8d"
+  ],
+  "events": [
+    [
+      "POST",
+      "/api/v1/episodes"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/6b3e2f1f-5bd2-4a1c-b54d-8d3b29b7ba14"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/6b3e2f1f-5bd2-4a1c-b54d-8d3b29b7ba14"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/1"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/4"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/2"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/3"
+    ],
+    [
+      "POST",
+      "/api/v1/episodes"
+    ],
+    [
+      "DELETE",
+      "/api/v1/client-requests/1ae9ea8a-4053-464c-9b42-819f2fa54e8d"
+    ]
+  ],
+  "observed": {
+    "action": "status",
+    "commandID": "867e1b65-a737-40c6-9dd7-15c4fc06aa61",
+    "ok": true,
+    "queue": [
+      {
+        "automaticallyScheduled": false,
+        "chapterOnly": false,
+        "completedAt": "2026-10-03T12:33:54Z",
+        "episodeHash": "b1c31d590dcb838760776377568e4ae3",
+        "episodeTitle": "Stadtbibliothek und Lesekreis",
+        "error": "",
+        "feedTitle": "Server flow fixture",
+        "nextRetryAt": "",
+        "progress": 1,
+        "requiresExplicitRetryAfterCrash": false,
+        "retryAttempt": 0,
+        "serverActivity": "",
+        "serverActivityUpdatedAt": "",
+        "serverAdmissionConfirmed": true,
+        "serverAudioSource": "server",
+        "serverConnectionIssue": false,
+        "serverEstimatedPhaseRemainingSeconds": null,
+        "serverLastProcessingPhase": "ready",
+        "serverPhase": "importing",
+        "serverPhaseStartedAt": "",
+        "serverQueuePosition": null,
+        "serverWaitingForNetwork": false,
+        "serverWorkCompleted": null,
+        "serverWorkTotal": null,
+        "serverWorkUnit": "",
+        "shouldGenerateAnalysis": true,
+        "status": 6,
+        "statusDetail": "",
+        "statusName": "completed",
+        "statusStartedAt": "",
+        "usesServerTranscription": true
+      },
+      {
+        "automaticallyScheduled": false,
+        "chapterOnly": false,
+        "completedAt": "2026-10-03T12:34:43Z",
+        "episodeHash": "fa894dc746823eb0b1830be4681e39cd",
+        "episodeTitle": "Stadtbibliothek und Lesekreis",
+        "error": "",
+        "feedTitle": "Server flow fixture",
+        "nextRetryAt": "",
+        "progress": 1,
+        "requiresExplicitRetryAfterCrash": false,
+        "retryAttempt": 0,
+        "serverActivity": "",
+        "serverActivityUpdatedAt": "",
+        "serverAdmissionConfirmed": true,
+        "serverAudioSource": "server",
+        "serverConnectionIssue": false,
+        "serverEstimatedPhaseRemainingSeconds": null,
+        "serverLastProcessingPhase": "ready",
+        "serverPhase": "importing",
+        "serverPhaseStartedAt": "",
+        "serverQueuePosition": null,
+        "serverWaitingForNetwork": false,
+        "serverWorkCompleted": null,
+        "serverWorkTotal": null,
+        "serverWorkUnit": "",
+        "shouldGenerateAnalysis": true,
+        "status": 6,
+        "statusDetail": "",
+        "statusName": "completed",
+        "statusStartedAt": "",
+        "usesServerTranscription": true
+      }
+    ],
+    "selectedChapterModel": {
+      "deleteBlockedReason": "",
+      "downloaded": false,
+      "downloading": false,
+      "downloadSizeBytes": 2629991680,
+      "downloadSizeText": "2.63 GB",
+      "identifier": "gemma-4-e2b-it-q4-k",
+      "requiresDownload": true,
+      "role": 1,
+      "roleTitle": "Kapitel generieren",
+      "selected": true,
+      "shortTitle": "Gemma 4",
+      "sizeOnDiskBytes": 0,
+      "title": "Gemma 4 E2B-it"
+    },
+    "source": "commandFile",
+    "statusScreenPresented": true,
+    "timestamp": "2026-10-03T12:34:45Z"
+  }
+}

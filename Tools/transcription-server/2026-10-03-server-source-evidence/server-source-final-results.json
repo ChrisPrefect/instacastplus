@@ -1,0 +1,46 @@
+[
+  {
+    "command": [
+      "tools/queue_admission_mysql_regression.py",
+      "--server-audio-source"
+    ],
+    "returncode": 0,
+    "elapsed": 22.91
+  },
+  {
+    "command": [
+      "tools/server_reliability_regression.py"
+    ],
+    "returncode": 0,
+    "elapsed": 36.18
+  },
+  {
+    "command": [
+      "tools/lifecycle_regression.py"
+    ],
+    "returncode": 0,
+    "elapsed": 22.43
+  },
+  {
+    "command": [
+      "tools/queue_admission_mysql_regression.py",
+      "--reliability"
+    ],
+    "returncode": 0,
+    "elapsed": 102.79
+  },
+  {
+    "command": [
+      "tools/api_contract_v3_regression.py"
+    ],
+    "returncode": 0,
+    "elapsed": 0.3
+  },
+  {
+    "command": [
+      "tools/work_status_regression.py"
+    ],
+    "returncode": 0,
+    "elapsed": 17.55
+  }
+]

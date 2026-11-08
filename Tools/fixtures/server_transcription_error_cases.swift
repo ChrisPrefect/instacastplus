@@ -21,6 +21,31 @@
    let expectedHours=NumberFormatter.localizedString(from:NSNumber(value:Double(seconds)/3600),number:.decimal)
    expect(error.localizedMessage.contains(expectedHours),"Duration limit must use server value, not a fixed 24h assumption")
   }
+  for source in [ICServerAudioSource.server,.client] {
+   for transport in ["episode","http"] {
+    let manager=Harness(server:FakeServer(),file:dir.appendingPathComponent("source-change-\(source.rawValue)-\(transport).json"))
+    let changed=manager.add(accepted:true);changed.serverAudioSource=source
+    let originalID=manager.clientRequestIDByItem[ObjectIdentifier(changed)]!
+    let expected=source == .server
+     ? "The audio file has changed since this request started. Start transcription again."
+     : "This episode was delivered in a different audio version. Server transcription is unavailable for this download."
+    if transport == "episode" {
+     let wire:[String:Any] = ["api_version":"v1","episode":["id":42,"status":"failed","phase":"failed","progress":0,"warnings":[],"artifacts":[],"error":["code":"audio_source_mismatch","message":"RAW_SOURCE_DIAGNOSTIC","retryable":false]]]
+     await manager.apply(try JSONDecoder().decode(ICServerEpisodeEnvelope.self,from:JSONSerialization.data(withJSONObject:wire)),to:changed,requestID:originalID)
+    } else {
+     await manager.handle(error:NSError(domain:"ICServerTranscription",code:409,userInfo:["serverErrorCode":"audio_source_mismatch","serverRetryable":false,NSLocalizedDescriptionKey:"RAW_SOURCE_DIAGNOSTIC"]),for:changed)
+    }
+    expect(changed.error == expected,"\(source.rawValue) \(transport) mismatch must explain the correct audio source")
+    expect(changed.status == .failed && changed.nextRetryAt == nil,"Source mismatch must terminate automatic retries")
+    expect(manager.admissionByItem[ObjectIdentifier(changed)] == .accepted,"Source mismatch must preserve historical admission")
+    expect(!changed.requiresExplicitRetryAfterCrash,"A terminal source mismatch must allow a new request, not recheck its rejected UUID")
+    manager.networkUnavailable=true
+    manager.retryEpisodeHash(changed.episodeHash)
+    expect(manager.clientRequestIDByItem[ObjectIdentifier(changed)] != originalID,"Explicit retry after \(transport) mismatch must create a new UUID")
+    expect(manager.explicitRestartByItem[ObjectIdentifier(changed)] == true,"Explicit retry after a source failure must allow the failed server job to restart")
+    await manager.durable();manager.retryWakeTask?.cancel()
+   }
+  }
   let paused=Harness(server:FakeServer(),file:dir.appendingPathComponent("resource-pause.json"));let item=paused.add(accepted:true)
   let id=paused.clientRequestIDByItem[ObjectIdentifier(item)]!
   let data=Data(#"{"api_version":"v1","episode":{"id":42,"status":"running","phase":"transcribing","progress":0.2,"warnings":[],"artifacts":[],"error":{"code":"resources_unavailable","message":"RAW_DISK_PATH","retryable":true}},"retry_after_seconds":60,"service_status":{"available":false,"code":"resources_unavailable"}}"#.utf8)

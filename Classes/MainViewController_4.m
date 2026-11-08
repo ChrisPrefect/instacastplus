@@ -702,8 +702,9 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     [self _transcriptionQueueDidChange];
     if ([notification.userInfo[@"automatic"] boolValue]) return;
     TranscriptionQueue* queue = [TranscriptionQueue shared];
-    NSString* message = [NSString stringWithFormat:NSLocalizedString(@"The queue already contains %ld open jobs (limit: %ld). Wait for a job to finish or remove an entry.", nil), (long)queue.activeItemCount, (long)[TranscriptionQueue maximumActiveItemCount]];
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Transcription queue limit reached", nil) message:message preferredStyle:UIAlertControllerStyleAlert];
+    NSString* message = notification.userInfo[@"message"] ?: [NSString stringWithFormat:NSLocalizedString(@"The queue already contains %ld open jobs (limit: %ld). Wait for a job to finish or remove an entry.", nil), (long)queue.activeItemCount, (long)[TranscriptionQueue maximumActiveItemCount]];
+    NSString* title = notification.userInfo[@"title"] ?: NSLocalizedString(@"Transcription queue limit reached", nil);
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
     UIViewController* presenter = self;
     while (presenter.presentedViewController) presenter = presenter.presentedViewController;

@@ -29,11 +29,12 @@
 	
 }
 
-+ (PlaybackManager*) playbackManager;
++ (PlaybackManager*) playbackManager NS_SWIFT_NAME(shared());
 
 @property (nonatomic, readonly, strong) CDEpisode* playingEpisode;
 @property (nonatomic, readonly, getter=isReady) BOOL ready;
 @property (nonatomic, readonly) BOOL failed;
+@property (nonatomic, readonly, strong) NSError* playbackError;
 @property (nonatomic, readonly, getter=hasMovingVideo) BOOL movingVideo;
 @property (nonatomic, readonly) CGSize viewImageSize;
 @property (nonatomic, readonly, getter=isAirPlayVideoActive) BOOL airPlayVideoActive;

@@ -1,0 +1,37 @@
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-server-source-recovery-final/queued.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-server-source-recovery-final/downloading_audio.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-server-source-recovery-final/transcribing.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-server-source-recovery-final/restored.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-server-source-recovery-final/paused.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-server-source-recovery-final/connection-interrupted.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-server-source-recovery-final/analyzing.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-server-source-recovery-final/finalizing.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-server-source-recovery-final/ready.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-server-source-recovery-final/transcript-reading.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-server-source-recovery-final/playback-retry.png
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/server_transcription_app_flow_test.py", line 273, in <module>
+    assert retried['playbackReady'] and not retried['playbackFailed'] and retried['playerPresented'], retried
+AssertionError: {'action': 'serverFlowTranscript', 'audioVerified': False, 'commandID': 'f5a48958-45f4-4469-931a-7ad6a69d3528', 'cueCount': 28, 'notice': 'Das Transkript ist lesbar. Zeitsprünge sind erst verfügbar, wenn die Zeitmarken für diese Audioversion bestätigt sind.', 'ok': True, 'playbackFailed': True, 'playbackReady': False, 'playEnabled': True, 'playerPresented': True, 'source': 'commandFile', 'text': 'Willkommen zu unserem Podcast über Bücher und das Leben in der Stadt.\n\nHeute besuchen wir die Stadtbibliothek.\n\nDort gibt es seit diesem Sommer neue ruhige Arbeitsplätze, eine bessere Beleuchtung und zusätzliche Steckdosen für Laptops.\n\nBesonders beliebt ist der Lesegarten hinter dem Gebäude.\n\nWer einfach nur ein Buch lesen möchte, braucht keine Anmeldung.\n\nFür die Ausleihe wird weiterhin ein Bibliotheksausweis benötigt.\n\nDie Mitarbeiterinnen erklären uns auch, warum gedruckte Bücher und digitale Angebote gut zusammenpassen.\n\nÄltere Ausgaben werden sorgfältig repariert, damit möglichst viele Menschen sie benutzen können.\n\nBevor wir über den neuen Lesekreis sprechen, folgt jetzt eine klar gekennzeichnete Werbepause.\n\nWerbung.\n\nDiese Folge wird von Beispiel Café unterstützt.\n\nBeispiel Kaffee liefert frisch gerösteten Kaffee direkt zu euch nach Hause.\n\nMit dem Rabattcode Bibliothek bekommt ihr bei eurer ersten Bestellung 20% Rabatt.\n\nBesucht dazu Beispiel Kaffee Punkte und gebt den Code beim Bezahlen ein.\n\nProbiert das Probierpaket mit drei verschiedenen Röstungen.\n\nVielen Dank an Beispiel Kaffee für die Unterstützung dieses Podcasts.\n\nEnde der Werbung.\n\nZurück zu unserem Gespräch über die Stadtbibliothek.\n\nDer neue Lesekreis trifft sich jeden ersten Donnerstag im Monat.\n\nGemeinsam wird ein Roman ausgewählt, den alle Teilnehmerinnen und Teilnehmer bis zum nächsten Treffen lesen.\n\nNiemand muss eine vorbereitete Präsentation halten.\n\nEs reicht, eigene Eindrücke und Fragen mitzubringen.\n\nIm Herbst soll außerdem ein Gespräch mit einer Autorin stattfinden.\n\nDer Termin wird am schwarzen Brett der Bibliothek angekündigt.\n\nZum Abschluss gehen wir noch einmal durch den Lesegarten.\n\nDie neuen Bänke stehen im Schatten, und die Wege sind auch mit einem Rollstuhl gut erreichbar.\n\nDamit endet unser heutiger Besuch.\n\nWir verabschieden uns und wünschen einen schönen Tag.', 'timestamp': '2026-10-03T10:13:27Z', 'timingVerified': False, 'transcriptAvailable': True, 'transcriptVisible': True}

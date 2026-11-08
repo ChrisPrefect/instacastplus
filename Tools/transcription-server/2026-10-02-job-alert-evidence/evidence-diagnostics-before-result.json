@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/home/instacast/domains/transcript.instacast.ch/var/checks/job-alerts-20261002/tools/transcription_alert_process_test.py",
+    "--output",
+    "/home/instacast/domains/transcript.instacast.ch/var/checks/job-alerts-20261002/evidence-diagnostics-before"
+  ],
+  "tests": 19,
+  "failures": 2,
+  "errors": 1,
+  "successful": false,
+  "failed_tests": [
+    "test_event_job_retry_reports_actual_error (__main__.EventAlertTests)",
+    "test_event_unexpected_submit_error (__main__.EventAlertTests)",
+    "test_event_exception_without_message (__main__.EventAlertTests)"
+  ]
+}

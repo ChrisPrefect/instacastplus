@@ -1696,10 +1696,10 @@
 "Play the newest unplayed episode of a podcast." = "Die neueste ungespielte Folge eines Podcasts abspielen.";
 "Play a specific episode." = "Eine bestimmte Folge abspielen.";
 "Minutes" = "Minuten";
-"Set playback speed to \\(\\.$speed)" = "Wiedergabegeschwindigkeit auf \\(\\.$speed) setzen";
-"Set a sleep timer for \\(\\.$minutes) minutes" = "Sleep-Timer für \\(\\.$minutes) Minuten stellen";
-"Play \\(\\.$podcast)" = "\\(\\.$podcast) abspielen";
-"Play \\(\\.$episode)" = "\\(\\.$episode) abspielen";
+"Set playback speed to ${speed}" = "Wiedergabegeschwindigkeit auf ${speed} setzen";
+"Set a sleep timer for ${minutes} minutes" = "Sleep-Timer für ${minutes} Minuten stellen";
+"Play ${podcast}" = "${podcast} abspielen";
+"Play ${episode}" = "${episode} abspielen";
 "Playback speed set to %@×" = "Wiedergabegeschwindigkeit auf %@× gesetzt";
 "Sleep timer set for %d minutes." = "Sleep-Timer für %d Minuten gestellt.";
 "Marked “%@” as played." = "„%@“ als gespielt markiert.";
@@ -1992,7 +1992,9 @@
 "Server transcription could not be completed. Try again later." = "Die Server-Transkription konnte nicht abgeschlossen werden. Bitte später erneut versuchen.";
 
 "Chapters could not be loaded." = "Die Kapitel konnten nicht geladen werden.";
+"Playback unavailable" = "Wiedergabe nicht verfügbar";
 "Jumping to transcript passages is unavailable." = "Das Springen zu Textstellen ist nicht verfügbar.";
+"You can read the transcript. Jumping to passages is unavailable until its timing is verified for this audio." = "Das Transkript ist lesbar. Zeitsprünge sind erst verfügbar, wenn die Zeitmarken für diese Audioversion bestätigt sind.";
 
 "The saved transcription queue is damaged or incompatible. Existing data has not been replaced." = "Die gespeicherte Transkriptionsqueue ist beschädigt oder inkompatibel. Bestehende Daten wurden nicht ersetzt.";
 
@@ -2027,6 +2029,7 @@
 "Checking audio file." = "Audiodatei wird geprüft.";
 "The audio file could not be verified. Download the episode again." = "Die Audiodatei konnte nicht geprüft werden. Lade die Folge erneut herunter.";
 "The audio file has changed. Start a new transcription request." = "Die Audiodatei hat sich geändert. Starte die Transkription erneut.";
+"The audio file has changed since this request started. Start transcription again." = "Die Audiodatei hat sich seit Beginn des Auftrags geändert. Starte die Transkription erneut.";
 "This episode was delivered in a different audio version. Server transcription is unavailable for this download." = "Diese Folge wurde in unterschiedlichen Audioversionen ausgeliefert. Für deinen Download ist die Server-Transkription nicht verfügbar.";
 
 "Start transcription again so the audio file can be verified." = "Starte die Transkription erneut, damit die Audiodatei geprüft werden kann.";
@@ -2147,3 +2150,37 @@
 
 "The transcription service is temporarily unavailable." = "Der Transkriptionsdienst ist vorübergehend nicht verfügbar.";
 "Your request is paused on the server and remains saved." = "Dein Auftrag ist auf dem Server pausiert und bleibt gespeichert.";
+
+"Episode is already being processed" = "Folge wird bereits bearbeitet";
+
+"This episode already has an open transcription or chapter request. Wait for it to finish or cancel it before starting another." = "Für diese Folge läuft bereits ein Transkriptions- oder Kapitelauftrag. Warte auf den Abschluss oder brich den Auftrag ab, bevor du einen neuen startest.";
+
+"Waiting to retrieve results" = "Ergebnis wartet auf Abruf";
+
+"The server result is ready. Waiting to retrieve it." = "Das Ergebnis ist auf dem Server fertig und wartet auf den Abruf.";
+
+"The server result is ready. It will be retrieved automatically after the current result has been saved." = "Das Ergebnis ist auf dem Server fertig. Es wird automatisch abgerufen, sobald das Ergebnis der anderen Folge gespeichert ist.";
+
+"The saved request is waiting until queue changes can be saved." = "Der Auftrag wartet darauf, dass Änderungen an der Warteschlange gespeichert werden können.";
+
+"The transcript changed while chapters were being generated. Generate the chapters again." = "Das Transkript wurde während der Kapitelerstellung geändert. Erstelle die Kapitel erneut.";
+
+"Saved chapters belong to a different transcript version." = "Die gespeicherten Kapitel gehören zu einer anderen Transkript-Version.";
+
+/* Shortcuts: lists, current episode and automatic sleep timer */
+"Play List" = "Liste abspielen";
+"Play the first episode in the selected list's order and use its continuous playback setting." = "Die erste Folge in der Reihenfolge der gewählten Liste abspielen und deren Einstellung für kontinuierliche Wiedergabe verwenden.";
+"Play list ${list}" = "Liste ${list} abspielen";
+"The list is empty or no longer available." = "Die Liste ist leer oder nicht mehr verfügbar.";
+"Current Episode" = "Aktuelle Folge";
+"Playback Position (Seconds)" = "Wiedergabeposition (Sekunden)";
+"Get Current Episode" = "Aktuelle Folge abfragen";
+"Get the current episode's title, podcast and playback position in seconds, including when paused. Returns no value if no episode is loaded." = "Titel, Podcast und Wiedergabeposition der aktuellen Folge in Sekunden abfragen, auch bei pausierter Wiedergabe. Liefert keinen Wert, wenn keine Folge geladen ist.";
+"Get Sleep Timer Remaining Time" = "Sleep-Timer-Restzeit abfragen";
+"Get the sleep timer's remaining seconds, including when paused. Returns 0 when no timer is active." = "Die verbleibenden Sekunden des Sleep-Timers abfragen, auch bei pausierter Wiedergabe. Liefert 0, wenn kein Timer aktiv ist.";
+"Remaining Time (Seconds)" = "Restzeit (Sekunden)";
+"Set Automatic Sleep Timer" = "Automatischen Sleep-Timer einstellen";
+"Automatically start a sleep timer when playback starts. Enabling also starts a missing timer during playback. An existing timer keeps its remaining time." = "Bei Wiedergabebeginn automatisch einen Sleep-Timer starten. Beim Einschalten während der Wiedergabe wird ein fehlender Timer gestartet. Ein vorhandener Timer behält seine Restzeit.";
+"Set automatic sleep timer to ${enabled}" = "Automatischen Sleep-Timer auf ${enabled} setzen";
+"Enabled" = "Aktiviert";
+"List" = "Liste";

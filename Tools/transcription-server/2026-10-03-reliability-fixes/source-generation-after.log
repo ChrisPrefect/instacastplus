@@ -1,0 +1,20 @@
+/home/instacast/domains/transcript.instacast.ch/.venv/lib/python3.10/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_broken_ready_can_be_repaired_without_global_force (__main__.SourceGenerationTests) ... ok
+test_cancel_old_generation_does_not_cancel_unbound_new_uuid (__main__.SourceGenerationTests) ... ok
+test_changed_client_hash_gets_generation_without_overwriting_original (__main__.SourceGenerationTests) ... ok
+test_distinct_requested_hashes_have_distinct_pending_generations (__main__.SourceGenerationTests) ... ok
+test_existing_sqlite_schema_migration_preserves_foreign_keys (__main__.SourceGenerationTests) ... ok
+test_feed_alias_resolves_current_generation_without_rebinding_original (__main__.SourceGenerationTests) ... ok
+test_first_admission_race_keeps_different_hashes_separate (__main__.SourceGenerationTests) ... ok
+test_first_lookup_race_does_not_force_overwrite_matching_ready (__main__.SourceGenerationTests) ... ok
+test_generation_schema_is_idempotent_and_unique (__main__.SourceGenerationTests) ... ok
+test_matching_ready_is_reused_and_admin_force_stays_disabled (__main__.SourceGenerationTests) ... ok
+test_new_explicit_source_preserves_old_uuid_artifacts_and_cancel (__main__.SourceGenerationTests) ... ok
+test_parallel_restarts_deduplicate_current_generation (__main__.SourceGenerationTests) ... ok
+test_podcast_discovery_returns_current_generation_once (__main__.SourceGenerationTests) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 14.125s
+
+OK

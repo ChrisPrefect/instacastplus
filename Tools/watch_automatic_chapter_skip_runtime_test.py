@@ -74,6 +74,7 @@ enum WatchDiagnostics {
     var manuallySelectedSkipRange: Range<TimeInterval>?
     var lastStallReportedPosition = -1.0
     var lastAutomaticReportDate: Date?
+    var lastReportedPlaybackState: (hash: String, position: Int, finished: Bool, date: Date)?
     let dateFormatter = ISO8601DateFormatter()
     func updateNowPlayingInfo() {}
     func updateNowPlayingInfo(for episode: WatchEpisode) {}

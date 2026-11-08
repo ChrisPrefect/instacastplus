@@ -1,0 +1,4 @@
+2026-10-03 12:57:34.462 run[32675:9914820] [ServerTranscription] Queue persistence failed: The file couldn’t be saved because there isn’t enough space.
+2026-10-03 12:57:34.463 run[32675:9914820] [ServerTranscription] Queue persistence failed: The file couldn’t be saved because there isn’t enough space.
+2026-10-03 12:57:34.463 run[32675:9914820] [ServerTranscription] Queue persistence failed: The file couldn’t be saved because there isn’t enough space.
+PASS: pre-POST disk-full rejection + pending restore without auto-POST, definite refusals, offline before POST, confirmed-only feedback, truthful queued state, lost/malformed POST + restart + GET404 same UUID, offline unconfirmed cancellation, accepted provider pause, long offline job

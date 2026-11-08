@@ -1,0 +1,12 @@
+{
+  "command": [
+    "/home/instacast/domains/transcript.instacast.ch/var/checks/job-alerts-20261002/tools/transcription_alert_process_test.py",
+    "--output",
+    "/home/instacast/domains/transcript.instacast.ch/var/checks/job-alerts-20261002/evidence-final"
+  ],
+  "tests": 19,
+  "failures": 0,
+  "errors": 0,
+  "successful": true,
+  "failed_tests": []
+}

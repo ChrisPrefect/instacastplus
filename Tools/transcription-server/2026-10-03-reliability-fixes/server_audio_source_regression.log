@@ -1,0 +1,18 @@
+/home/instacast/domains/transcript.instacast.ch/.venv/lib/python3.10/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_additive_migration_defaults_existing_requests_to_client (__main__.ServerAudioSourceTests) ... ok
+test_cancellation_blocks_server_replay (__main__.ServerAudioSourceTests) ... ok
+test_client_mode_still_requires_hash (__main__.ServerAudioSourceTests) ... ok
+test_explicit_source_contract_rejects_ambiguity (__main__.ServerAudioSourceTests) ... ok
+test_first_server_hash_binding_is_durable_and_replay_stays_hashless (__main__.ServerAudioSourceTests) ... ok
+test_late_server_join_binds_known_worker_source (__main__.ServerAudioSourceTests) ... ok
+test_no_device_audio_is_admitted_and_replayed (__main__.ServerAudioSourceTests) ... ok
+test_public_schema_describes_source_receipt (__main__.ServerAudioSourceTests) ... ok
+test_real_worker_download_binds_server_source_before_asr (__main__.ServerAudioSourceTests) ... ok
+test_shared_work_rejects_client_mismatch_only (__main__.ServerAudioSourceTests) ... ok
+test_uuid_source_mode_is_immutable_both_directions (__main__.ServerAudioSourceTests) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 10.548s
+
+OK

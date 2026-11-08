@@ -125,6 +125,6 @@ com.iteconomy.instacastplus.server-status-test: 30209
   "process": true
 }
 Traceback (most recent call last):
-  File "/Users/Chris/Developer/instacastplus/Tools/server_transcription_status_screen_runtime_test.py", line 156, in <module>
+  File "/Users/prefect/Developer/instacastplus/Tools/server_transcription_status_screen_runtime_test.py", line 156, in <module>
     assert data['passed'], 'Status needs a distinct current state, next action, process and collapsed diagnostics'
 AssertionError: Status needs a distinct current state, next action, process and collapsed diagnostics

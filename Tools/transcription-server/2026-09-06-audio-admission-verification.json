@@ -16,7 +16,7 @@
         "app",
         "--device",
         "943DD226-88E3-57DD-B2B2-E128005AC50D",
-        "/Users/Chris/Library/Developer/Xcode/DerivedData/Instacast-cgtqgggsjixnfbdsmznxtbkjogvj/Build/Products/Release-iphoneos/InstacastPlus.app",
+        "/Users/prefect/Library/Developer/Xcode/DerivedData/Instacast-cgtqgggsjixnfbdsmznxtbkjogvj/Build/Products/Release-iphoneos/InstacastPlus.app",
         "--json-output",
         "/tmp/instacast-pre-asr-install.json"
       ],

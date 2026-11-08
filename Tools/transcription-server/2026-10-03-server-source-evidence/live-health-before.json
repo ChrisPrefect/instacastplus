@@ -1,0 +1,32 @@
+{
+  "checked_at": "2026-10-03T09:35:17.782789+00:00",
+  "http_status": 200,
+  "health": {
+    "ok": true,
+    "queued_jobs": 0,
+    "running_jobs": 0,
+    "episodes": 110,
+    "transcription_workers": {
+      "transcript-instacast-worker.service": true,
+      "transcript-instacast-worker-2.service": false
+    },
+    "service_status": null
+  },
+  "units": {
+    "transcript-instacast-api.service": {
+      "MainPID": "685082",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    "transcript-instacast-worker.service": {
+      "MainPID": "685083",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    "transcript-instacast-worker-2.service": {
+      "MainPID": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    }
+  }
+}

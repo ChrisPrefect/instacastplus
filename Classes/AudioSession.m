@@ -905,6 +905,11 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
     NSMutableDictionary* metadata = [[self sleepTimerDiagnosticsMetadata] mutableCopy];
     [metadata addEntriesFromDictionary:extraMetadata];
     metadata[@"eventDate"] = @(now.timeIntervalSince1970);
+    if ([reason isEqualToString:@"motion"]) {
+        AVAudioSession* audioSession = [AVAudioSession sharedInstance];
+        metadata[@"audioOutputPorts"] = [[audioSession.currentRoute.outputs valueForKey:@"portType"] componentsJoinedByString:@","];
+        metadata[@"outputVolume"] = @(audioSession.outputVolume);
+    }
     // Raw addresses allow offline symbolication with this build's dSYM; no symbol lookup on main.
     void* addresses[8];
     int count = backtrace(addresses, 8);
@@ -969,9 +974,14 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
 
 - (void)resetSleepTimerForActivity:(NSString*)reason
 {
+    [self resetSleepTimerForActivity:reason metadata:@{}];
+}
+
+- (void)resetSleepTimerForActivity:(NSString*)reason metadata:(NSDictionary*)metadata
+{
     if (![NSThread isMainThread]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self resetSleepTimerForActivity:reason];
+            [self resetSleepTimerForActivity:reason metadata:metadata];
         });
         return;
     }
@@ -981,10 +991,13 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
         [self _shouldDisableSleepTimerForCarPlay]) {
         return;
     }
+    NSMutableDictionary* resetMetadata = [metadata mutableCopy];
+    resetMetadata[@"previousStopDate"] = @(self.stopDate.timeIntervalSince1970);
+    resetMetadata[@"previousRemainingSeconds"] = @(self.stopDate.timeIntervalSinceNow);
     [self.playbackTimer invalidate];
     self.playbackTimer = nil;
     [self _scheduleSleepTimerWithDuration:self.sleepTimerDuration];
-    [self _logSleepTimerEvent:reason metadata:@{}];
+    [self _logSleepTimerEvent:reason metadata:resetMetadata];
     [self willChangeValueForKey:@"timerRemainingTime"];
     [self didChangeValueForKey:@"timerRemainingTime"];
 }

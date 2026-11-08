@@ -1,0 +1,8 @@
+{
+  "Classes/ServerTranscriptionManager.swift": "d3c18826c0f4609db023d791c10badda0914007ab14f1467b57c43e14e12db10",
+  "Classes/TranscriptionQueue.swift": "37674373a26d118c0efb1136314353920ad797ec870341f8549181a6b64228b2",
+  "Classes/TranscriptionEngine.swift": "eeeb7c8a2057909346f9ccc965a3c6fe78ec989ec559c2909123e6b2b2a6569d",
+  "Classes/ChapterGenerator.swift": "9207c558fb8460055afee62adb5817072700b20d08a801b33779609059385a4d",
+  "Classes/PlaybackManager.m": "e4183949a6d1034ad90e995543898d0c5c596d381a59f1d25e5f05104fe51306",
+  "Classes/EpisodeViewController.m": "b2d40724d584c382e08c476fbc0300bed2cb43805d6736d4c52f0c45455b9ce2"
+}

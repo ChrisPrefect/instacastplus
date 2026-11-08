@@ -1,0 +1,8 @@
+Server-source import must accept absent device audio when server source identity is valid
+test/main.swift:80: Fatal error: Server-source import contract failed
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/server_transcript_source_binding_regression_test.py", line 81, in <module>
+    subprocess.run([str(tmp/"test")],check=True)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/instacast-import-audio-rf5ux1wg/test']' died with <Signals.SIGTRAP: 5>.

@@ -139,6 +139,8 @@ struct GeneratedTopicMarker {
 
 private struct ChaptersFile: Codable {
     let chapters: [ChapterEntry]
+    let transcriptRevision: String?
+    let sourceAudioSHA256: String?
 
     struct ChapterEntry: Codable {
         let start: Double
@@ -6139,16 +6141,31 @@ private struct RemoteJSONObjectResult {
         }
     }
 
-    @objc func saveChapters(_ chapters: [ICGeneratedChapter], for episodeHash: String) {
-        try? saveChaptersThrowing(chapters, for: episodeHash)
+    @objc func saveChapters(_ chapters: [ICGeneratedChapter], for episodeHash: String,
+                            transcriptRevision: String, transcriptSnapshot: String,
+                            sourceAudioSHA256: String?) {
+        try? saveChaptersThrowing(chapters, for: episodeHash, transcriptRevision: transcriptRevision,
+                                  transcriptSnapshot: transcriptSnapshot, sourceAudioSHA256: sourceAudioSHA256)
     }
 
-    func saveChaptersThrowing(_ chapters: [ICGeneratedChapter], for episodeHash: String) throws {
+    func saveChaptersThrowing(_ chapters: [ICGeneratedChapter], for episodeHash: String,
+                              transcriptRevision: String, transcriptSnapshot: String,
+                              sourceAudioSHA256: String?) throws {
+        guard !transcriptSnapshot.isEmpty,
+              transcriptSnapshot == TranscriptionEngine.shared.transcriptSnapshotIdentifier(for: episodeHash),
+              sourceAudioSHA256 == TranscriptionEngine.shared.transcriptSourceAudioSHA256(for: episodeHash) else {
+            throw NSError(domain: "ChapterGenerator.ChapterPersistence", code: 76,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("The transcript changed while chapters were being generated. Generate the chapters again.", comment: "")])
+        }
         let file = ChaptersFile(
             chapters: chapters.map {
                 .init(start: $0.start, end: $0.end, title: $0.title, isSponsor: $0.isSponsor)
-            }
+            },
+            transcriptRevision: transcriptRevision,
+            sourceAudioSHA256: sourceAudioSHA256
         )
+        try validateChapterTranscriptRevision(file, episodeHash: episodeHash)
+        try Self.validatePersistedChapterIntervals(chapters)
         let url = ICTranscriptionPaths.chaptersJSONURL(for: episodeHash)
         let data = try JSONEncoder().encode(file)
         do {
@@ -6160,6 +6177,11 @@ private struct RemoteJSONObjectResult {
             _chaptersCache[episodeHash] = true
             _loadedChaptersCache[episodeHash] = chapters
             _summaryCache.removeValue(forKey: episodeHash)
+            _analysisAudioSHA256Cache[episodeHash] = file.sourceAudioSHA256
+            _analysisSnapshotCache[episodeHash] = TranscriptionEngine.artifactSnapshotIdentifier(at: url)
+            _analysisTranscriptSnapshotCache[episodeHash] = transcriptSnapshot
+            NotificationCenter.default.post(name: Notification.Name("ICTranscriptArtifactsDidChangeNotification"),
+                                            object: nil, userInfo: ["episodeHash": episodeHash])
             NSLog("[ChapterGenerator] Saved %d chapters for %@", chapters.count, episodeHash)
             ICDiagnosticLogger.shared.logFileEvent("file-write",
                                                    message: "Kapiteldatei geschrieben",
@@ -6538,8 +6560,30 @@ private struct RemoteJSONObjectResult {
         }
     }
 
+    private func validateChapterTranscriptRevision(_ file: ChaptersFile, episodeHash: String) throws {
+        guard let revision = file.transcriptRevision, !revision.isEmpty else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        guard let cues = try TranscriptionEngine.shared.persistedTranscriptCues(for: episodeHash) else {
+            // Deleting only the transcript must not erase the provenance of retained chapters.
+            return
+        }
+        guard !cues.isEmpty, revision == transcriptRevision(for: cues),
+              file.sourceAudioSHA256 == TranscriptionEngine.shared.transcriptSourceAudioSHA256(for: episodeHash) else {
+            throw NSError(domain: "ChapterGenerator.ChapterPersistence", code: 75,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Saved chapters belong to a different transcript version.", comment: "")])
+        }
+    }
+
+    @objc func chapterArtifactSnapshotIdentifier(for episodeHash: String) -> String? {
+        let analysisURL = ICTranscriptionPaths.analysisJSONURL(for: episodeHash)
+        let url = FileManager.default.fileExists(atPath: analysisURL.path)
+            ? analysisURL : ICTranscriptionPaths.chaptersJSONURL(for: episodeHash)
+        return TranscriptionEngine.artifactSnapshotIdentifier(at: url)
+    }
+
     @objc func loadChapters(for episodeHash: String) -> [ICGeneratedChapter]? {
-        let snapshot = TranscriptionEngine.artifactSnapshotIdentifier(at: ICTranscriptionPaths.analysisJSONURL(for: episodeHash))
+        let snapshot = chapterArtifactSnapshotIdentifier(for: episodeHash)
         if let cached = _loadedChaptersCache[episodeHash],
            snapshot != nil, snapshot == _analysisSnapshotCache[episodeHash],
            _analysisTranscriptSnapshotCache[episodeHash] == TranscriptionEngine.shared.transcriptSnapshotIdentifier(for: episodeHash) {
@@ -6614,6 +6658,7 @@ private struct RemoteJSONObjectResult {
         do {
             let data = try Data(contentsOf: url)
             let file = try JSONDecoder().decode(ChaptersFile.self, from: data)
+            try validateChapterTranscriptRevision(file, episodeHash: episodeHash)
             ICDiagnosticLogger.shared.logFileEvent("file-read",
                                                    message: "Kapiteldatei geladen",
                                                    path: url.path,
@@ -6624,7 +6669,14 @@ private struct RemoteJSONObjectResult {
             let chapters = file.chapters.map {
                 ICGeneratedChapter(start: $0.start, end: $0.end, title: $0.title, isSponsor: $0.isSponsor)
             }
+            try Self.validatePersistedChapterIntervals(chapters)
+            guard !chapters.isEmpty, snapshot == TranscriptionEngine.artifactSnapshotIdentifier(at: url) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
             _loadedChaptersCache[episodeHash] = chapters
+            _analysisSnapshotCache[episodeHash] = snapshot
+            _analysisTranscriptSnapshotCache[episodeHash] = TranscriptionEngine.shared.transcriptSnapshotIdentifier(for: episodeHash)
+            _analysisAudioSHA256Cache[episodeHash] = file.sourceAudioSHA256
             _chaptersCache[episodeHash] = true
             return chapters
         } catch {
@@ -6644,7 +6696,7 @@ private struct RemoteJSONObjectResult {
         let analysisURL = ICTranscriptionPaths.analysisJSONURL(for: episodeHash)
         let exists = FileManager.default.fileExists(atPath: analysisURL.path)
             ? hasValidAnalysis(for: episodeHash)
-            : FileManager.default.fileExists(atPath: ICTranscriptionPaths.chaptersJSONURL(for: episodeHash).path)
+            : loadChapters(for: episodeHash)?.isEmpty == false
         _chaptersCache[episodeHash] = exists
         return exists
     }
@@ -6689,7 +6741,7 @@ private struct RemoteJSONObjectResult {
             let analysisCurrent = expectedAnalysisSnapshot != nil &&
                 expectedAnalysisSnapshot == self._analysisSnapshotCache[episodeHash] &&
                 self._analysisTranscriptSnapshotCache[episodeHash] == TranscriptionEngine.shared.transcriptSnapshotIdentifier(for: episodeHash) &&
-                expectedAnalysisSnapshot == TranscriptionEngine.artifactSnapshotIdentifier(at: ICTranscriptionPaths.analysisJSONURL(for: episodeHash))
+                expectedAnalysisSnapshot == self.chapterArtifactSnapshotIdentifier(for: episodeHash)
             let transcriptCurrent = expectedTranscriptSnapshot != nil &&
                 expectedTranscriptSnapshot == TranscriptionEngine.shared.transcriptSnapshotIdentifier(for: episodeHash)
             ICDiagnosticLogger.shared.logEvent("audio-identity", message: "Audio- und Artefaktidentität geprüft",

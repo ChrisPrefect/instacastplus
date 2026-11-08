@@ -15,26 +15,40 @@ NSString* ApplicationDidDetectMotionNotification=@"motion";
 typedef struct { double x,y,z; } CMAcceleration;
 @interface CMAccelerometerData:NSObject
 @property CMAcceleration acceleration;
+@property NSTimeInterval timestamp;
 @end
 @implementation CMAccelerometerData @end
 @interface CMMotionManager:NSObject
 @property double accelerometerUpdateInterval;
+@property (copy) void(^handler)(CMAccelerometerData*,NSError*);
 @end
 @implementation CMMotionManager
 - (BOOL)isAccelerometerAvailable {return YES;}
 - (void)startAccelerometerUpdatesToQueue:(NSOperationQueue*)queue withHandler:(void(^)(CMAccelerometerData*,NSError*))handler {
+    self.handler=handler;
     CMAccelerometerData* data=[CMAccelerometerData new];data.acceleration=(CMAcceleration){1,0,0};handler(data,nil);
 }
 @end
-@interface SensorProbe:NSObject { NSTimer* myidleTimer; double lastAccelX,lastAccelY,lastAccelZ; }
+@interface SensorProbe:NSObject {
+    NSTimer* myidleTimer; double lastAccelX,lastAccelY,lastAccelZ;
+    NSTimeInterval lastAccelTimestamp,previousAccelerationTimestamp;
+    CMAcceleration previousAcceleration;
+    NSUInteger motionSampleCount;
+}
 @property CMMotionManager* motionManager;
 - (void)resetIdleTimer;
 - (void)idleTimerExceeded;
 - (void)deviceMotionDetection;
 - (void)trigger:(NSString*)kind;
+- (void)sample:(CMAcceleration)value timestamp:(NSTimeInterval)timestamp error:(NSError*)error;
 @end
 @implementation SensorProbe
 - (void)idleTimerExceeded {}
+- (void)sample:(CMAcceleration)value timestamp:(NSTimeInterval)timestamp error:(NSError*)error {
+    CMAccelerometerData* data=[CMAccelerometerData new];data.acceleration=value;data.timestamp=timestamp;
+    self.motionManager.handler(data,error);
+    [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+}
 - (void)trigger:(NSString*)kind {
     if([kind isEqual:@"motion"]) {
         [self deviceMotionDetection];
@@ -45,6 +59,7 @@ typedef struct { double x,y,z; } CMAcceleration;
 }
 '''+ '\n'.join(ns['method'](application, signature) for signature in [
     '-(void)resetIdleTimer', '- (void)_resetSleepTimerForActivity:',
+    '- (void)_resetSleepTimerForActivity:(NSString*)reason metadata:',
     '-(void)deviceMotionDetection', '-(void) observeValueForKeyPath:',
 ])+'\n@end\n'
 main=r'''
@@ -88,6 +103,59 @@ int main(int argc,const char** argv){@autoreleasepool{
      CHECK(s.timerRemainingTime>1199 && s.timerValue==1);
      CHECK([s.lastSleepTimerResetReason isEqual:kind]);
    }
+ } else if([mode isEqual:@"motion-diagnostics"]) {
+   // Failure analysis: reset-only logs lose the old baseline/deadline, hide stale
+   // samples and cannot distinguish gradual changes from a single large delta.
+   // CoreMotion input is synthetic because the simulator has no accelerometer;
+   // execute the production callback/reset/logger, not a copied detection model.
+   [defaults setBool:YES forKey:IntelligentSleepTimerAlwaysActive];
+   [defaults setBool:YES forKey:DeviceMovementIntelligentSleep];
+   [defaults setDouble:0.004 forKey:DeviceMovementSensitivity];
+   s.timerValue=3;
+   SensorProbe* probe=[SensorProbe new];[probe trigger:@"motion"];
+   NSTimeInterval stamp=NSProcessInfo.processInfo.systemUptime-60;
+   [probe sample:(CMAcceleration){0,0,1} timestamp:stamp error:nil];
+   NSUInteger resets=s.sleepTimerMotionResetCount;
+   NSDate* deadline=s.stopDate;
+   [probe sample:(CMAcceleration){0.002,0,1} timestamp:stamp+0.3 error:nil];
+   CHECK(s.stopDate==deadline && s.sleepTimerMotionResetCount==resets);
+   s.lastSleepTimerDiagnosticDate=[NSDate dateWithTimeIntervalSinceNow:-31];
+   s.stopDate=[NSDate dateWithTimeIntervalSinceNow:12];deadline=s.stopDate;
+   [probe sample:(CMAcceleration){0.005,0,1} timestamp:stamp+0.6 error:nil];
+   NSDictionary* event=[ICDiagnosticLogger shared].events.lastObject;
+   NSDictionary* m=event[@"metadata"];
+   CHECK([event[@"message"] isEqual:@"motion"] && s.sleepTimerMotionResetCount==resets+1);
+   CHECK(m[@"motion.x"] && fabs([m[@"motion.x"] doubleValue]-0.005)<0.000001);
+   CHECK(m[@"motion.referenceX"] && [m[@"motion.referenceX"] doubleValue]==0);
+   CHECK(fabs([m[@"motion.deltaX"] doubleValue]-0.005)<0.000001);
+   CHECK(fabs([m[@"motion.previousDeltaX"] doubleValue]-0.003)<0.000001);
+   CHECK(fabs([m[@"motion.referenceSampleUptime"] doubleValue]-stamp)<0.000001);
+   CHECK(fabs([m[@"motion.sampleUptime"] doubleValue]-(stamp+0.6))<0.000001);
+   CHECK(fabs([m[@"motion.sampleIntervalSeconds"] doubleValue]-0.3)<0.000001);
+   CHECK([m[@"motion.deliveryLagSeconds"] doubleValue]>=59);
+   CHECK([m[@"motion.samplePresent"] boolValue] && [m[@"motion.threshold"] doubleValue]==0.004);
+   CHECK(fabs([m[@"previousStopDate"] doubleValue]-deadline.timeIntervalSince1970)<0.001);
+   CHECK([m[@"previousRemainingSeconds"] doubleValue]>11 && [m[@"previousRemainingSeconds"] doubleValue]<=12);
+   CHECK([m[@"remainingSeconds"] doubleValue]>179);
+   CHECK([m[@"audioOutputPorts"] isEqual:@"Speaker"] && [m[@"outputVolume"] doubleValue]==0.25);
+   NSUInteger logged=[ICDiagnosticLogger shared].events.count;
+   for(int i=0;i<100;i++) [probe sample:(CMAcceleration){i%2 ? 0.02 : -0.02,0,1} timestamp:stamp+0.9+i*0.3 error:nil];
+   CHECK(s.sleepTimerMotionResetCount==resets+101 && [ICDiagnosticLogger shared].events.count==logged);
+   // Release the existing log throttle without waiting 30 seconds in the test.
+   s.lastSleepTimerDiagnosticDate=[NSDate dateWithTimeIntervalSinceNow:-31];
+   NSError* error=[NSError errorWithDomain:@"CMErrorDomain" code:104 userInfo:nil];
+   [probe sample:(CMAcceleration){0,0,1.01} timestamp:stamp+31 error:error];
+   m=[ICDiagnosticLogger shared].events.lastObject[@"metadata"];
+   CHECK([m[@"motion.errorDomain"] isEqual:@"CMErrorDomain"] && [m[@"motion.errorCode"] integerValue]==104);
+   CHECK(fabs([m[@"motion.deltaZ"] doubleValue]-0.01)<0.000001);
+   CHECK([m[@"motion.sampleNumber"] unsignedIntegerValue]==105);
+   s.lastSleepTimerDiagnosticDate=[NSDate dateWithTimeIntervalSinceNow:-31];
+   [probe sample:(CMAcceleration){0,-0.01,1.01} timestamp:stamp+31.3 error:nil];
+   m=[ICDiagnosticLogger shared].events.lastObject[@"metadata"];
+   CHECK(fabs([m[@"motion.deltaY"] doubleValue]+0.01)<0.000001);
+   CHECK([m[@"motion.errorDomain"] isEqual:@""] && [m[@"motion.errorCode"] integerValue]==0);
+   NSData* evidence=[NSJSONSerialization dataWithJSONObject:@[event,[ICDiagnosticLogger shared].events.lastObject] options:NSJSONWritingPrettyPrinted error:nil];
+   puts([[NSString alloc] initWithData:evidence encoding:NSUTF8StringEncoding].UTF8String);
  } else if([mode isEqual:@"selection"]) {
    [s setTimerWithDuration:600];[p pause];
    [defaults setDouble:120 forKey:UncompletedSleepTimeInterval];
@@ -134,12 +202,13 @@ with tempfile.TemporaryDirectory(prefix='instacast-external-proof-') as d:
  f.write_text('#import <Foundation/Foundation.h>\n'+ns['declarations']+'\n'+ns['preamble']+'\n'+'\n'.join(ns['audio_methods'])+'\n@end\n'+ns['player_implementation']+ns['controls_probe']+sensor+main)
  subprocess.run(['xcrun','clang','-fobjc-arc','-fblocks','-framework','Foundation',str(f),'-o',str(p/'probe')],check=True)
  failures=[]
- for mode in ['carplay','sensor-touch','sensor-motion','sensor-volume',
+ for mode in ['motion-diagnostics','carplay','sensor-touch','sensor-motion','sensor-volume',
               'cancel-touch','cancel-motion','cancel-volume',
               'disabled-touch','disabled-motion','disabled-volume',
               'ui','ui-smart','ui-preset','widget','expiry','selection']:
   result=subprocess.run([str(p/'probe'),mode],capture_output=True,text=True)
   print(('PASS' if result.returncode==0 else 'FAIL')+': '+mode)
+  if mode=='motion-diagnostics' and result.returncode==0: print(result.stdout)
   if result.returncode: print(result.stdout,result.stderr)
   if result.returncode: failures.append(mode)
  assert not failures, f'Failed timer scenarios: {failures}'

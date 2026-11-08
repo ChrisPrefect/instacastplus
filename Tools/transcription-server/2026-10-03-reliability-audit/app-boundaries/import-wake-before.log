@@ -1,0 +1,10 @@
+A due import without a free slot scheduled an immediate retry loop
+Explicit new transcription did not request a fresh source (completed=true)
+New transcription inherited the old result's import-only flag
+Explicit new transcription did not request a fresh source (completed=false)
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/server_transcription_independent_control_runtime_test.py", line 66, in <module>
+    subprocess.run([str(executable)], check=True, timeout=30)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-cancellation-test-lb67iwm2/run']' returned non-zero exit status 1.

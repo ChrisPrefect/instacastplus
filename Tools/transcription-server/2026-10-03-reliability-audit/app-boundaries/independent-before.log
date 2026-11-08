@@ -1,0 +1,14 @@
+Healthy durable pending request was rejected during restore
+Restored healthy saved intent did not submit automatically
+Matching accepted source required device cache: 55
+Source mismatch must be distinguished from missing cache
+Missing immutable identity must fail explicitly
+An unrelated import blocked DELETE
+An unrelated import blocked new POST
+An unrelated held POST blocked DELETE
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/server_transcription_independent_control_runtime_test.py", line 66, in <module>
+    subprocess.run([str(executable)], check=True, timeout=30)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-cancellation-test-lv8f_omb/run']' returned non-zero exit status 1.

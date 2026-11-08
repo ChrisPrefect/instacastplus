@@ -1,0 +1,32 @@
+{
+  "command": "python3 /private/tmp/instacast-app-assumption-probes-20261003/probe.py",
+  "compile_command": [
+    "xcrun",
+    "swiftc",
+    "-swift-version",
+    "6",
+    "-parse-as-library",
+    "/private/tmp/instacast-app-assumption-probes-20261003/main.swift",
+    "-o",
+    "/private/tmp/instacast-app-assumption-probes-20261003/run"
+  ],
+  "run_command": [
+    "/private/tmp/instacast-app-assumption-probes-20261003/run",
+    "/private/tmp/instacast-app-assumption-probes-20261003/evidence"
+  ],
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "swift_version": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+  "sources_sha256": {
+    "/Users/prefect/Developer/instacastplus/Classes/ServerTranscriptionManager.swift": "d3c18826c0f4609db023d791c10badda0914007ab14f1467b57c43e14e12db10",
+    "/Users/prefect/Developer/instacastplus/Classes/TranscriptionQueue.swift": "37674373a26d118c0efb1136314353920ad797ec870341f8549181a6b64228b2",
+    "/Users/prefect/Developer/instacastplus/Tools/server_transcription_admission_runtime_test.py": "4ed5bd963476ac1c5026664a4acfc2255fb6d431912a7ac6d2b1464ce12d5bc7",
+    "/Users/prefect/Developer/instacastplus/Tools/fixtures/server_transcription_cancellation_harness.swift": "c592834481b692ed13ed98d16af320b61beac46e59ef6dcedaf7111d2783380e",
+    "/private/tmp/instacast-app-assumption-probes-20261003/probe.py": "60725266a8b7ccc62296f9ee56eaf079f93a26cf7ee5cca97f0084077c938b4d",
+    "/private/tmp/instacast-app-assumption-probes-20261003/cases.swift": "9f378d61e07aa17c83e9211bae88765cdc1744dd4c97f64660865cd76b599747",
+    "/private/tmp/instacast-app-assumption-probes-20261003/failure-analysis.md": "ea23b2092412353f692b6ff896aa6b27627333a5f94d13dbd33466936a072874",
+    "/private/tmp/instacast-app-assumption-probes-20261003/main.swift": "8680bcc1dd2cb93aad37e76bb04a187ac24ee0c20a3a0f6f7a3db9b2f0342b0b"
+  },
+  "production_behavior": "unmodified extracted production methods; existing FakeServer/cache/hash/artifact boundary harness",
+  "compile_exit_code": 0,
+  "runtime_exit_code": 1
+}

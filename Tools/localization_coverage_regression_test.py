@@ -173,6 +173,10 @@ def require_source_strings_localized(root: str, localized_keys: set[str], extra_
                 if not literal_is_localizable(literal, pattern_name, path):
                     continue
                 key = lookup_key(literal) if pattern_name == "objc_ls" else literal
+                if pattern_name == "summary":
+                    # Match the actual extract.actionsdata formatString emitted
+                    # by AppIntents, rather than the Swift interpolation syntax.
+                    key = re.sub(r"\\\(\\\.\$([A-Za-z_][A-Za-z_0-9]*)\)", r"${\1}", key)
                 if key not in localized_keys:
                     line = source.count("\n", 0, match.start()) + 1
                     missing.append(f"{path.relative_to(ROOT)}:{line}: {key}")

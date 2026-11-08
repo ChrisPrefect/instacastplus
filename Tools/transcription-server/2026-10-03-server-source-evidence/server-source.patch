@@ -1,0 +1,401 @@
+--- a/app/db.py
++++ b/app/db.py
+@@ -704,6 +704,7 @@
+ 
+ 
+ def ensure_state_columns(con: Any) -> None:
++    ensure_column(con, "transcription_requests", "audio_source", "VARCHAR(16) NOT NULL DEFAULT 'client'")
+     for table, column in (("episodes","terminal_error"),("episodes","latest_source_url"),
+                           ("jobs","source_url"),("jobs","next_attempt_at"),
+                           ("jobs","verified_audio_sha256"),("jobs","work_json"),("transcription_requests","audio_sha256")):
+--- a/app/main.py
++++ b/app/main.py
+@@ -7,7 +7,7 @@
+ import shutil
+ import time
+ from pathlib import Path
+-from typing import Any
++from typing import Any, Literal
+ from urllib.parse import urlparse
+ 
+ from fastapi import Cookie, Depends, FastAPI, Form, Header, HTTPException, Request
+@@ -90,6 +90,7 @@
+     podcast_url: str | None = Field(default=None, min_length=1, max_length=config.MAX_URL_LENGTH)
+     title: str = Field(..., max_length=300)
+     client_duration_seconds: FiniteFloat = Field(..., ge=0)
++    audio_source: Literal["client", "server"] = "client"
+     client_audio_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+     client_audio_bytes: int | None = Field(default=None, ge=0)
+     client_audio_etag: str | None = Field(default=None, max_length=200)
+@@ -759,7 +760,7 @@
+     return {
+         "api_version": "v1",
+         "$schema": "https://json-schema.org/draft/2020-12/schema",
+-        "schema_revision": "2026-09-27.1",
++        "schema_revision": "2026-10-03.1",
+         "base_url": f"{config.PUBLIC_BASE_URL.rstrip('/')}/api/v1",
+         "request_lifecycle_contract": {
+             "identity": "Full SHA-256 client identity plus durable request UUID; request URLs have an immutable SHA-256 fingerprint.",
+@@ -789,6 +790,7 @@
+             "max_artifact_bytes":config.MAX_ARTIFACT_BYTES,
+             "max_duration_seconds":config.MAX_AUDIO_DURATION_SECONDS,
+             "duration_authority":"Finite positive duration measured from the downloaded audio; client/feed duration is advisory.",
++            "audio_source":"Explicit server mode needs no device audio or hash. A durable UUID binds its mode and URL; the first server download binds the actual SHA. Default/client mode requires the device SHA, compared before ASR. Source mode and bound SHA never change on replay.",
+             "download_timeout_seconds":config.AUDIO_DOWNLOAD_TIMEOUT_SECONDS,
+             "probe_timeout_seconds":config.AUDIO_PROBE_TIMEOUT_SECONDS,
+             "terminal_errors":["audio_source_mismatch","audio_identity_required","audio_too_large","audio_duration_exceeded","audio_duration_invalid","source_audio_unavailable","no_speech","unsupported_language"],
+@@ -942,7 +944,12 @@
+             "SubmitEpisodeRequest": {
+                 "type": "object",
+                 "additionalProperties": False,
+-                "required": ["episode_url", "title", "client_duration_seconds", "client_audio_sha256", "wait_seconds", "force"],
++                "required": ["episode_url", "title", "client_duration_seconds", "wait_seconds", "force"],
++                "allOf": [{
++                    "if": {"required": ["audio_source"], "properties": {"audio_source": {"const": "server"}}},
++                    "then": {"required": ["client_request_id"], "properties": {"client_request_id": {"type": "string", "format": "uuid"}, "client_audio_sha256": {"type": "null"}}},
++                    "else": {"required": ["client_audio_sha256"], "properties": {"client_audio_sha256": {"type": "string"}}},
++                }],
+                 "properties": {
+                     "episode_url": {"type": "string", "pattern": "^https?://", "maxLength": config.MAX_URL_LENGTH},
+                     "podcast_url": {
+@@ -957,7 +964,8 @@
+                     "client_audio_etag": {"type": ["string", "null"]},
+                     "wait_seconds": {"type": "integer", "minimum": 0, "maximum": 25},
+                     "force": {"type": "boolean", "description": "True only for an explicit new request UUID restarting a canceled/deleted/failed episode; ready shared results are preserved."},
+-                    "client_audio_sha256": {"type":"string","pattern":"^[0-9a-f]{64}$","description":"SHA-256 of the complete downloaded device audio; immutable for a request UUID. Compared after server download, before ASR."},
++                    "audio_source": {"enum": ["client", "server"], "default": "client", "description": "Immutable source selection for this UUID. Server mode downloads only on the server."},
++                    "client_audio_sha256": {"type":["string","null"],"pattern":"^[0-9a-f]{64}$","description":"Required in client mode and absent/null in server mode. Compared after server download, before ASR."},
+                     "client_request_id": {"type": ["string", "null"], "format": "uuid", "description": "Persist before POST; replay the same UUID after a lost response."},
+                 },
+             },
+@@ -976,6 +984,17 @@
+                     "enqueue_latest": {"type": "boolean", "default": True},
+                 },
+             },
++            "ClientRequestReceipt": {
++                "type": "object",
++                "additionalProperties": False,
++                "required": ["id", "state", "episode_id", "audio_source"],
++                "properties": {
++                    "id": {"type": ["string", "null"], "format": "uuid"},
++                    "state": {"type": "string"},
++                    "episode_id": {"type": ["integer", "null"]},
++                    "audio_source": {"enum": ["client", "server"]},
++                },
++            },
+             "EpisodeEnvelope": {
+                 "type": "object",
+                 "additionalProperties": False,
+@@ -983,6 +1002,7 @@
+                 "properties": {
+                     "api_version": {"const": "v1"},
+                     "episode": {"$ref": "#/schemas/Episode"},
++                    "client_request": {"$ref": "#/schemas/ClientRequestReceipt"},
+                     "retry_after_seconds": {"type": ["integer", "null"], "minimum": 1, "maximum": 86400},
+                 },
+                 "allOf": [
+@@ -1515,9 +1535,12 @@
+     request: Request,
+     token_id: int = Depends(require_api_token),
+ ) -> JSONResponse:
+-    if not payload.client_audio_sha256:
++    if payload.audio_source == "client" and not payload.client_audio_sha256:
+         raise HTTPException(status_code=422, detail={"code":"audio_identity_required",
+-            "message":"Lade die Folge vollständig herunter, bevor du die Transkription startest.", "retryable":False})
++            "message":"Für diese Gerätequelle fehlt die Audioprüfsumme.", "retryable":False})
++    if payload.audio_source == "server" and (payload.client_audio_sha256 is not None or payload.client_request_id is None):
++        raise HTTPException(status_code=422, detail={"code":"invalid_request",
++            "message":"Server audio requires a request UUID and no device audio hash.", "retryable":False})
+     client_uuid = request_client_id(request)
+     client_label = note_api_client(request, client_uuid)
+     enforce_submit_limit(request, token_id, "episode", client_uuid)
+@@ -1532,7 +1555,8 @@
+         if row and row["url_hash"] and row["url_hash"] != url_hash:
+             raise HTTPException(status_code=409, detail={"code":"request_conflict", "message":"Request UUID belongs to another episode.", "retryable":False})
+         reject_terminal_request(row)
+-        if row and row["audio_sha256"] != payload.client_audio_sha256:
++        if row and (row["audio_source"] != payload.audio_source or
++                    (payload.audio_source == "client" and row["audio_sha256"] != payload.client_audio_sha256)):
+             raise HTTPException(status_code=409, detail={"code":"request_conflict", "message":"Request UUID belongs to another audio source.", "retryable":False})
+         if row:
+             prior_receipt = dict(row)
+@@ -1543,8 +1567,8 @@
+                 prior_receipt = {"state":existing["status"]}
+         elif request_id:
+             store_client_request(con, client_hash, request_id, None, "unconfirmed", url_hash)
+-            con.execute("UPDATE transcription_requests SET audio_sha256=? WHERE client_hash=? AND request_id=?",
+-                        (payload.client_audio_sha256,client_hash,request_id))
++            con.execute("UPDATE transcription_requests SET audio_sha256=?,audio_source=? WHERE client_hash=? AND request_id=?",
++                        (payload.client_audio_sha256,payload.audio_source,client_hash,request_id))
+         explicit_restart = bool(request_id and payload.force and existing and existing["status"] in {"canceled","deleted","failed"})
+         reuse_shared = bool(request_id and existing and (active_transcribe_job(con, int(existing["id"])) or (existing["status"] == "ready" and has_required_client_artifacts(con, int(existing["id"])))))
+     if payload.force and reuse_shared:
+--- a/app/service.py
++++ b/app/service.py
+@@ -226,7 +226,7 @@
+ 
+ def client_request_receipt(row: Any) -> dict[str, Any]:
+     return {"id": None if row["request_id"].startswith("legacy:") else row["request_id"],
+-            "state": row["state"], "episode_id": row["episode_id"]}
++            "state": row["state"], "episode_id": row["episode_id"], "audio_source": row["audio_source"]}
+ 
+ 
+ def reject_terminal_request(row: Any) -> None:
+@@ -262,8 +262,13 @@
+ 
+ def verify_requested_audio(con: Any, episode_id: int, actual: str) -> bool:
+     """Reject only mismatching interests; never overwrite another client's source."""
++    # An explicit server-source request selects its audio only on the first download.
++    # Keep that binding across retries so a changed dynamic-ad variant cannot reuse it.
++    con.execute("""UPDATE transcription_requests SET audio_sha256=?,updated_at=?
++        WHERE episode_id=? AND state='active' AND audio_source='server' AND audio_sha256 IS NULL""",
++        (actual, now_iso(), episode_id))
+     con.execute("""UPDATE transcription_requests SET state='audio_unverified',updated_at=?
+-        WHERE episode_id=? AND state='active' AND audio_sha256 IS NULL""", (now_iso(),episode_id))
++        WHERE episode_id=? AND state='active' AND audio_source='client' AND audio_sha256 IS NULL""", (now_iso(),episode_id))
+     con.execute("""UPDATE transcription_requests SET state='audio_mismatch',updated_at=?
+         WHERE episode_id=? AND state='active' AND audio_sha256!=?""",
+         (now_iso(), episode_id, actual))
+@@ -283,6 +288,11 @@
+     else:
+         episode = con.execute("SELECT status,audio_sha256 FROM episodes WHERE id=?", (episode_id,)).fetchone()
+         actual = episode["audio_sha256"] if episode and episode["status"] == "ready" else None
++    if actual and row["audio_source"] == "server" and row["audio_sha256"] is None:
++        con.execute("""UPDATE transcription_requests SET audio_sha256=?,updated_at=?
++            WHERE client_hash=? AND request_id=? AND state='active' AND audio_sha256 IS NULL""",
++            (actual,now_iso(),row["client_hash"],row["request_id"]))
++        row = request_record(con,row["client_hash"],row["request_id"])
+     if actual and row["audio_sha256"] != actual:
+         con.execute("""UPDATE transcription_requests SET state='audio_mismatch',updated_at=?
+             WHERE client_hash=? AND request_id=? AND state='active'""",
+--- a/tools/api_contract_v3_regression.py
++++ b/tools/api_contract_v3_regression.py
+@@ -26,7 +26,7 @@
+ 
+ def test_schema_has_one_public_contract() -> None:
+     schema = api_schema(1)
+-    if schema["schema_revision"] != "2026-09-27.1":
++    if schema["schema_revision"] != "2026-10-03.1":
+         fail(f"wrong schema revision: {schema['schema_revision']}")
+     if schema["base_url"] != "https://transcript.instacast.ch/api/v1":
+         fail(f"wrong API base URL: {schema['base_url']}")
+--- a/tools/lifecycle_regression.py
++++ b/tools/lifecycle_regression.py
+@@ -122,7 +122,7 @@
+         self.assert_error(lambda:main.cancel_legacy_client_request(episode,self.request('foreign'),1),403,'request_ownership_unknown')
+         response=main.cancel_legacy_client_request(episode,self.request(),1)
+         receipt=json.loads(response.body)['client_request']
+-        self.assertEqual({'id':None,'episode_id':episode,'state':'canceled'},receipt)
++        self.assertEqual({'id':None,'episode_id':episode,'state':'canceled','audio_source':'client'},receipt)
+ 
+     def test_legacy_get_honors_own_tombstone_while_other_client_runs(self):
+         episode=json.loads(self.submit(100).body)['episode']['id']
+--- a/tools/queue_admission_mysql_regression.py
++++ b/tools/queue_admission_mysql_regression.py
+@@ -30,6 +30,7 @@
+     parser.add_argument('--systematic', action='store_true')
+     parser.add_argument('--audio-admission', action='store_true')
+     parser.add_argument('--work-status', action='store_true')
++    parser.add_argument('--server-audio-source', action='store_true')
+     parser.add_argument('--test', help='Run one isolated test method')
+     parser.add_argument('--admin-config', default='/etc/webmin/mysql/config')
+     args = parser.parse_args()
+@@ -64,6 +65,9 @@
+         if args.work_status:
+             from work_status_regression import WorkStatusTests
+             base = WorkStatusTests
++        if args.server_audio_source:
++            from server_audio_source_regression import ServerAudioSourceTests
++            base = ServerAudioSourceTests
+         class MySQLAdmissionTests(base):
+             def setUp(self):
+                 super().setUp()
+--- /dev/null
++++ b/tools/server_audio_source_regression.py
+@@ -0,0 +1,186 @@
++#!/usr/bin/env python3
++"""Explicit server-source HTTP admission and real worker download, with no inference."""
++import hashlib
++import io
++import json
++import os
++from pathlib import Path
++import sys
++import threading
++import unittest
++import wave
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
++from unittest.mock import patch
++sys.path.insert(0,str(Path(__file__).resolve().parent))
++import queue_admission_regression as admission
++from app import config,main,service,worker
++from app.db import tx,init_db
++from app.security import hash_token
++from fastapi.testclient import TestClient
++
++ROOT=Path(__file__).resolve().parents[1]
++RID='11111111-1111-4111-8111-111111111111'
++RID2='22222222-2222-4222-8222-222222222222'
++
++class ASRReached(Exception):pass
++
++class ServerAudioSourceTests(unittest.TestCase):
++    def setUp(self):
++        admission.AdmissionTests.setUp(self)
++        self.contexts.enter_context(patch.object(main,'transcription_resource_status',return_value=None))
++        self.contexts.enter_context(patch.object(worker,'transcription_resource_status',return_value=None))
++        self.contexts.enter_context(patch.object(worker,'transcription_provider_status',return_value=None))
++        self.contexts.enter_context(patch.object(worker,'transcribe_block_reason',return_value=None))
++        self.contexts.enter_context(patch.object(config,'ROOT',ROOT))
++        self.contexts.enter_context(patch.object(worker,'PYTHON',Path(sys.executable)))
++        main.app.dependency_overrides[main.require_api_token]=lambda:1
++        self.addCleanup(main.app.dependency_overrides.clear)
++        self.client=TestClient(main.app)
++        self.url='https://example.org/audio.wav'
++
++    def post(self,mode='server',sha=None,rid=RID,client='client-a'):
++        data={'episode_url':self.url,'title':'Server source fixture','client_duration_seconds':0.0,
++              'wait_seconds':0,'force':False}
++        if mode is not None:data['audio_source']=mode
++        if sha is not None:data['client_audio_sha256']=sha
++        if rid is not None:data['client_request_id']=rid
++        result=self.client.post('/api/v1/episodes',json=data,headers={'x-client':client})
++        if evidence:=os.environ.get('SERVER_SOURCE_EVIDENCE'):
++            with Path(evidence).open('a') as output:
++                output.write(json.dumps({'test':self.id(),'request':data,'status':result.status_code,'response':result.json()})+'\n')
++        return result
++
++    def admitted(self,**kwargs):
++        response=self.post(**kwargs)
++        self.assertEqual(202,response.status_code,response.text)
++        return response.json()['episode']['id']
++
++    def request_row(self,client='client-a',rid=RID):
++        with tx() as con:return dict(service.request_record(con,hash_token(client),rid))
++
++    def test_no_device_audio_is_admitted_and_replayed(self):
++        episode=self.admitted()
++        self.assertEqual('server',self.request_row()['audio_source'])
++        self.assertIsNone(self.request_row()['audio_sha256'])
++        again=self.post()
++        self.assertEqual(202,again.status_code,again.text)
++        self.assertEqual(episode,again.json()['episode']['id'])
++        self.assertEqual('server',again.json()['client_request']['audio_source'])
++        with tx() as con:self.assertEqual(1,con.execute('SELECT COUNT(*) AS n FROM jobs').fetchone()['n'])
++
++    def test_public_schema_describes_source_receipt(self):
++        schema=self.client.get('/api/v1/schema').json()
++        props=schema['schemas']['EpisodeEnvelope']['properties']
++        self.assertIn('client_request',props,'The receipt carrying immutable source selection must be part of the public response contract')
++        receipt=schema['schemas']['ClientRequestReceipt']
++        self.assertEqual({'client','server'},set(receipt['properties']['audio_source']['enum']))
++        self.assertEqual({'client','server'},set(schema['schemas']['SubmitEpisodeRequest']['properties']['audio_source']['enum']))
++
++    def test_client_mode_still_requires_hash(self):
++        for mode in [None,'client']:
++            response=self.post(mode=mode)
++            self.assertEqual(422,response.status_code,response.text)
++            self.assertEqual('audio_identity_required',response.json()['error']['code'])
++        with tx() as con:self.assertEqual(0,con.execute('SELECT COUNT(*) AS n FROM jobs').fetchone()['n'])
++
++    def test_explicit_source_contract_rejects_ambiguity(self):
++        for options in [{'mode':'upload'},{'sha':'a'*64},{'rid':None}]:
++            response=self.post(**options)
++            self.assertEqual(422,response.status_code,response.text)
++        with tx() as con:self.assertEqual(0,con.execute('SELECT COUNT(*) AS n FROM jobs').fetchone()['n'])
++
++    def test_uuid_source_mode_is_immutable_both_directions(self):
++        self.admitted()
++        changed=self.post(mode='client',sha='a'*64)
++        self.assertEqual(409,changed.status_code,changed.text)
++        self.assertEqual('request_conflict',changed.json()['error']['code'])
++        self.admitted(mode='client',sha='a'*64,rid=RID2,client='client-b')
++        changed=self.post(rid=RID2,client='client-b')
++        self.assertEqual(409,changed.status_code,changed.text)
++        self.assertEqual('request_conflict',changed.json()['error']['code'])
++
++    def test_first_server_hash_binding_is_durable_and_replay_stays_hashless(self):
++        episode=self.admitted()
++        with tx() as con:self.assertTrue(service.verify_requested_audio(con,episode,'a'*64))
++        self.assertEqual('a'*64,self.request_row()['audio_sha256'])
++        self.assertEqual(202,self.post().status_code)
++        with tx() as con:self.assertFalse(service.verify_requested_audio(con,episode,'b'*64))
++        self.assertEqual('a'*64,self.request_row()['audio_sha256'])
++        response=self.client.get('/api/v1/client-requests/'+RID,headers={'x-client':'client-a'})
++        self.assertEqual(409,response.status_code,response.text)
++        self.assertEqual('audio_source_mismatch',response.json()['error']['code'])
++
++    def test_shared_work_rejects_client_mismatch_only(self):
++        episode=self.admitted()
++        self.admitted(mode='client',sha='b'*64,rid=RID2,client='client-b')
++        with tx() as con:self.assertTrue(service.verify_requested_audio(con,episode,'a'*64))
++        self.assertEqual('active',self.request_row()['state'])
++        self.assertEqual('audio_mismatch',self.request_row('client-b',RID2)['state'])
++        self.assertEqual('a'*64,self.request_row()['audio_sha256'])
++
++    def test_late_server_join_binds_known_worker_source(self):
++        episode=self.admitted(mode='client',sha='a'*64)
++        with tx() as con:con.execute('UPDATE jobs SET verified_audio_sha256=? WHERE episode_id=?',('a'*64,episode))
++        self.admitted(rid=RID2,client='client-b')
++        self.assertEqual('a'*64,self.request_row('client-b',RID2)['audio_sha256'])
++        self.assertEqual('active',self.request_row('client-b',RID2)['state'])
++
++    def test_cancellation_blocks_server_replay(self):
++        response=self.client.delete('/api/v1/client-requests/'+RID,headers={'x-client':'client-a'})
++        self.assertEqual(200,response.status_code,response.text)
++        response=self.post()
++        self.assertEqual(410,response.status_code,response.text)
++        self.assertEqual('request_canceled',response.json()['error']['code'])
++
++    def test_real_worker_download_binds_server_source_before_asr(self):
++        data=io.BytesIO()
++        with wave.open(data,'wb') as wav:
++            wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(16000);wav.writeframes(b'\x00\x00'*16000)
++        audio=data.getvalue();observed=[]
++        class Source(BaseHTTPRequestHandler):
++            def do_GET(self):
++                observed.append(self.path)
++                self.send_response(200);self.send_header('Content-Length',str(len(audio)));self.end_headers();self.wfile.write(audio)
++            def log_message(self,*args):pass
++        source=ThreadingHTTPServer(('127.0.0.1',0),Source)
++        threading.Thread(target=source.serve_forever,daemon=True).start()
++        self.addCleanup(source.server_close);self.addCleanup(source.shutdown)
++        self.url=f'http://127.0.0.1:{source.server_port}/audio.wav'
++        episode=self.admitted()
++        self.assertEqual([],observed,'Submitting a URL must not download audio in the API/client')
++        job=worker.claim_job('server-source-proof')
++        # Only loopback address validation and the expensive inference invocation are controlled.
++        with worker.job_claim(job),patch.object(worker,'guarded_get',side_effect=lambda url,**kw:worker.requests.get(url,stream=True,timeout=5)), \
++             patch.object(worker,'run_command',side_effect=ASRReached) as asr:
++            with self.assertRaises(ASRReached):worker.run_transcribe(job,{'source':'api_episode'})
++        self.assertEqual(['/audio.wav'],observed)
++        self.assertEqual(hashlib.sha256(audio).hexdigest(),self.request_row()['audio_sha256'])
++        self.assertEqual('active',self.request_row()['state'])
++        self.assertEqual(1,asr.call_count)
++        with tx() as con:
++            row=dict(con.execute('SELECT * FROM episodes WHERE id=?',(episode,)).fetchone())
++        self.assertEqual(1.0,row['detected_duration_seconds'])
++        self.assertEqual(hashlib.sha256(audio).hexdigest(),row['audio_sha256'])
++        self.assertEqual('transcribing',row['status'])
++        # A new worker must resume the selected source even if its public URL now changes.
++        audio=b'changed publisher bytes that must not be downloaded'
++        with tx() as con:con.execute("UPDATE jobs SET status='queued' WHERE id=?",(job['id'],))
++        resumed=worker.claim_job('server-source-resume-proof')
++        self.assertNotEqual(job['claim_token'],resumed['claim_token'])
++        with worker.job_claim(resumed),patch.object(worker,'guarded_get',side_effect=lambda url,**kw:worker.requests.get(url,stream=True,timeout=5)), \
++             patch.object(worker,'run_command',side_effect=ASRReached):
++            with self.assertRaises(ASRReached):worker.run_transcribe(resumed,{'source':'api_episode'})
++        self.assertEqual(['/audio.wav'],observed,'Resume must keep the first server source')
++        self.assertEqual(row['audio_sha256'],self.request_row()['audio_sha256'])
++        self.assertEqual(202,self.post().status_code)
++
++    def test_additive_migration_defaults_existing_requests_to_client(self):
++        self.admitted(mode='client',sha='a'*64)
++        with tx() as con:con.execute('ALTER TABLE transcription_requests DROP COLUMN audio_source')
++        init_db()
++        row=self.request_row()
++        self.assertEqual('client',row['audio_source'])
++        self.assertEqual('a'*64,row['audio_sha256'])
++        self.assertEqual(202,self.post(mode='client',sha='a'*64).status_code)
++
++if __name__=='__main__':unittest.main(verbosity=2)

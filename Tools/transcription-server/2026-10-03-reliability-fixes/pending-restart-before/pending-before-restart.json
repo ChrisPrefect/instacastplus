@@ -1,0 +1,45 @@
+{
+  "items": [
+    {
+      "clientRequestID": "b9344379-b0f2-4e0a-8332-f09ee4b94789",
+      "automaticallyScheduled": false,
+      "statusDetail": "Der gespeicherte Auftrag wird an den Server gesendet.",
+      "audioSource": "server",
+      "feedTitle": "Server flow fixture",
+      "statusRawValue": 1,
+      "episodeURL": "http://127.0.0.1:55907/fixture.wav",
+      "progress": 0,
+      "admissionState": "unconfirmed",
+      "duration": 115,
+      "episodeHash": "7900f92a58de71a9500d6be26e3d2478",
+      "connectionIssue": false,
+      "explicitRestart": false,
+      "podcastURL": "http://127.0.0.1:55907/api/fixture.xml",
+      "requiresExplicitRetry": false,
+      "episodeTitle": "Stadtbibliothek und Lesekreis",
+      "waitingForNetwork": false,
+      "serverPhase": "sending"
+    },
+    {
+      "clientRequestID": "7c68356a-5e53-4407-ab65-674a69e507a0",
+      "automaticallyScheduled": false,
+      "statusDetail": "Server-Auftrag wird auf diesem Ger\u00e4t vorbereitet.",
+      "audioSource": "server",
+      "feedTitle": "Server flow fixture",
+      "statusRawValue": 1,
+      "episodeURL": "http://127.0.0.1:55907/fixture.wav",
+      "progress": 0,
+      "admissionState": "pending",
+      "duration": 115,
+      "episodeHash": "b1b564490c175e982e71115c3299f4f3",
+      "connectionIssue": false,
+      "explicitRestart": false,
+      "podcastURL": "http://127.0.0.1:55907/api/fixture.xml",
+      "requiresExplicitRetry": false,
+      "episodeTitle": "Stadtbibliothek und Lesekreis",
+      "waitingForNetwork": false
+    }
+  ],
+  "cancellations": [],
+  "ownerClientID": "F40946B8-E812-4558-8157-051EEE3CEB4F"
+}

@@ -1,0 +1,4 @@
+[
+  ".codex/private/ssh",
+  "sudo -n bash -c 'set -a; source /home/instacast/domains/transcript.instacast.ch/var/app/db.env; set +a; cd /home/instacast/domains/transcript.instacast.ch; exec .venv/bin/python -B /tmp/instacast-reliability-release-20261003/deploy-server.py /tmp/instacast-reliability-release-20261003'"
+]

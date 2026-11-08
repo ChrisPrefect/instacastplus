@@ -18,6 +18,18 @@ cases=r'''
   let removed=original.add(hash:"cancelled",accepted:true)
   original.dequeueEpisodeHash(removed.episodeHash);await original.durable();original.retryWakeTask?.cancel()
   let valid=try Data(contentsOf:file)
+  for raw in [0,-1,999] {
+   var damaged=try JSONSerialization.jsonObject(with:valid) as! [String:Any]
+   var damagedItems=damaged["items"] as! [[String:Any]]
+   damagedItems[0]["statusRawValue"]=raw;damaged["items"]=damagedItems
+   let bytes=try JSONSerialization.data(withJSONObject:damaged)
+   try bytes.write(to:file,options:.atomic)
+   let invalid=Harness(server:server,file:file);invalid.loadPersistedQueue()
+   precondition(invalid.queueLoadError != nil && invalid.items.isEmpty,"Invalid lifecycle was silently restored as runnable work")
+   invalid.start();await invalid.durable();invalid.retryWakeTask?.cancel()
+   precondition(try! Data(contentsOf:file)==bytes,"Invalid lifecycle snapshot was overwritten")
+  }
+  try valid.write(to:file,options:.atomic)
   let originalOwner=try original.clientIdentifier()
   var snapshot=try JSONSerialization.jsonObject(with:valid) as! [String:Any]
   var entries=snapshot["items"] as! [[String:Any]]

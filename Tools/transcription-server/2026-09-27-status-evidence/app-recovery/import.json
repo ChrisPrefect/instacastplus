@@ -7,43 +7,43 @@
         "bytes": 1148,
         "exists": true,
         "modifiedAt": "2026-09-27T20:21:41Z",
-        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_analysis.json"
+        "path": "/Users/prefect/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_analysis.json"
       },
       "chapterDebug": {
         "bytes": 0,
         "exists": false,
         "modifiedAt": "",
-        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_chapter_debug.json"
+        "path": "/Users/prefect/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_chapter_debug.json"
       },
       "chapters": {
         "bytes": 0,
         "exists": false,
         "modifiedAt": "",
-        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_chapters.json"
+        "path": "/Users/prefect/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_chapters.json"
       },
       "checkpoint": {
         "bytes": 0,
         "exists": false,
         "modifiedAt": "",
-        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_checkpoint.json"
+        "path": "/Users/prefect/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_checkpoint.json"
       },
       "episodeLog": {
         "bytes": 1982,
         "exists": true,
         "modifiedAt": "2026-09-27T20:21:41Z",
-        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_log.json"
+        "path": "/Users/prefect/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_log.json"
       },
       "music": {
         "bytes": 0,
         "exists": false,
         "modifiedAt": "",
-        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_music.json"
+        "path": "/Users/prefect/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f_music.json"
       },
       "srt": {
         "bytes": 2835,
         "exists": true,
         "modifiedAt": "2026-09-27T20:21:41Z",
-        "path": "/Users/Chris/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f.srt"
+        "path": "/Users/prefect/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/9D91B061-50C3-4DC9-8FB3-27CEEA59FB9C/Documents/Transcripts/c2a40c6748efe422c2d4ae90a0dff25f.srt"
       }
     },
     "chapters": [

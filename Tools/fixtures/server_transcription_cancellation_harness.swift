@@ -9,8 +9,16 @@ class ICTranscriptionQueueItem: NSObject {
  var error: String?; var statusDetail: String?; var statusStartedAt: Date?; var completedAt: Date?; var nextRetryAt: Date?
  var serverWaitingForNetwork = false
  var serverPhase: String?; var serverLastResponseAt: Date?; var serverConnectionIssue = false
+ var serverLastProcessingPhase: String?
  var serverWork: ICServerTranscriptionWork?
+ var serverAudioSource: ICServerAudioSource = .client
  var usesServerTranscription = true; var automaticallyScheduled = false; var shouldGenerateAnalysis = true
+ // Transport harness boundary. The queue transition matrix separately compiles
+ // the real queue item; transport-only tests do not model its transition policy.
+ @discardableResult func requeue()->Bool {status = .queued;return true}
+ @discardableResult func restart()->Bool {status = .queued;return true}
+ @discardableResult func restoreStatus(_ value:ICTranscriptionStatus)->Bool {status=value;return true}
+ @discardableResult func transition(to value:ICTranscriptionStatus)->Bool {status=value;return true}
  init(episodeHash: String, episodeTitle: String, feedTitle: String, audioURL: URL?, language: String?) {
   self.episodeHash=episodeHash; self.episodeTitle=episodeTitle; self.feedTitle=feedTitle
  }
@@ -23,6 +31,10 @@ class ICTranscriptionQueueItem: NSObject {
 @MainActor class TranscriptionLogger {
  static let shared = TranscriptionLogger()
  func append(episodeHash: String, phase: String, message: String, detailText: String? = nil) { }
+}
+final class ICDiagnosticLogger: @unchecked Sendable {
+ static let shared=ICDiagnosticLogger()
+ func logEvent(_ category:String,message:String,metadata:NSDictionary) {}
 }
 struct ICTranscriptCue: Sendable { let start:Double;let end:Double;let text:String }
 struct ICGeneratedChapter: Sendable { let start: Double; let end: Double; let title: String; let isSponsor: Bool }
@@ -58,8 +70,11 @@ typealias EpisodeAnalysisResult = String
  var online = true; var loseAck = false; var holdAck = false
  var rejectionCode: String?; var pollErrorCode: String?; var malformedAck = false; var getEvents: [String] = []
  var postGate: CheckedContinuation<Void, Never>?
+ var holdDeleteAck=false;var deleteGate:CheckedContinuation<Void,Never>?
  var registrations: [String:Int] = [:]; var byURL: [String:Int] = [:]; var tombstones = Set<String>(); var nextID = 100
  var postBodies: [[String:Any]] = []
+ var audioSourceByRequest: [String:String] = [:]
+ var receiptAudioSourceOverride: String?; var omitAudioSource = false
  var events: [String] = []; var status = "queued"; var terminalCode: String?
  var warnings: [[String:Any]] = []
  var artifacts: [[String:Any]] = []
@@ -73,6 +88,7 @@ typealias EpisodeAnalysisResult = String
    let id = path.hasPrefix("client-requests/") ? String(path.dropFirst("client-requests/".count)) : nil
    let episodeID = id.flatMap { registrations[$0] } ?? Int(path.split(separator:"/")[1])
    events.append("DELETE:" + (id ?? "legacy")); if let id { tombstones.insert(id) }
+   if holdDeleteAck { await withCheckedContinuation {deleteGate=$0} }
    return try JSONSerialization.data(withJSONObject:["api_version":"v1","client_request":["id":id as Any? ?? NSNull(),"state":"canceled","episode_id":episodeID as Any? ?? NSNull()]])
   }
   var requestID: String?; var episodeID: Int?
@@ -84,8 +100,15 @@ typealias EpisodeAnalysisResult = String
    let saved=try Data(contentsOf:disk)
    precondition(String(data:saved,encoding:.utf8)!.contains(id), "POST before UUID persistence")
    let audio=String(repeating:"a",count:64)
-   precondition(body?["client_audio_sha256"] as? String == audio, "POST without actual device audio hash")
-   precondition(String(data:saved,encoding:.utf8)!.contains(audio), "POST before audio hash persistence")
+   let source=body?["audio_source"] as? String ?? "client"
+   if source == "client" {
+    precondition(body?["client_audio_sha256"] as? String == audio, "POST without actual device audio hash")
+    precondition(String(data:saved,encoding:.utf8)!.contains(audio), "POST before audio hash persistence")
+   } else {
+    precondition(source == "server" && body?["client_audio_sha256"] == nil, "Server source must not invent a client hash")
+   }
+   if let savedSource=audioSourceByRequest[id], savedSource != source { throw error("request_conflict",http:409,retryable:false) }
+   audioSourceByRequest[id]=source
    if tombstones.contains(id) { throw error("request_canceled",http:410,retryable:false) }
    let url=body!["episode_url"] as! String
    if let known=registrations[id] { episodeID=known }
@@ -101,9 +124,13 @@ typealias EpisodeAnalysisResult = String
    guard let known=registrations[requestID!] else { throw error("request_not_found",http:404,retryable:false) }
    episodeID=known
   } else { episodeID=Int(path.split(separator:"/")[1]) }
-  let episode: [String:Any] = ["id":episodeID!,"status":status,"phase":status == "running" ? "transcribing" : status,"progress":0,"warnings":warnings,"artifacts":artifacts,"media":["audio_sha256":String(repeating:"a",count:64)]]
+  let episode: [String:Any] = ["id":episodeID!,"status":status,"phase":status == "running" ? "transcribing" : status,"progress":0,"server_duration_seconds":60,"warnings":warnings,"artifacts":artifacts,"media":["audio_sha256":String(repeating:"a",count:64)]]
   var envelope:[String:Any] = ["api_version":"v1","retry_after_seconds":300,"episode":episode]
-  if let requestID { envelope["client_request"]=["id":requestID,"state":"active","episode_id":episodeID!] }
+  if let requestID {
+   var receipt:[String:Any] = ["id":requestID,"state":"active","episode_id":episodeID!]
+   if !omitAudioSource { receipt["audio_source"] = receiptAudioSourceOverride ?? audioSourceByRequest[requestID] ?? "client" }
+   envelope["client_request"]=receipt
+  }
   return try JSONSerialization.data(withJSONObject:envelope)
  }
 }
@@ -134,6 +161,7 @@ final class SnapshotWriter: @unchecked Sendable {
  var sourceAudioSHA256ByItem:[ObjectIdentifier:String]=[:]
  var retryImportOnlyByItem:[ObjectIdentifier:Bool]=[:]
  private var cancellations:[ICServerCancellation]=[]
+ var currentImportTask:Task<Void,Never>?; var currentImportItem:ICTranscriptionQueueItem?
  var currentTask:Task<Void,Never>?; var currentItem:ICTranscriptionQueueItem?; var cancellationTask:Task<Void,Never>?; var retryWakeTask:Task<Void,Never>?
  private var admissionByItem:[ObjectIdentifier:ICServerAdmissionState]=[:]
  var admissionCompletions:[ObjectIdentifier:(Bool,String)->Void]=[:]
@@ -144,14 +172,15 @@ final class SnapshotWriter: @unchecked Sendable {
  var needsIdentityPersistence=false
  let persistenceQueue=DispatchQueue(label:"harness.persistence",qos:.utility)
  var pendingPersistenceCount=0; var persistenceCompletions:[(NSError?)->Void]=[]; var queuePersistenceError:NSError?; var publishedQueueState:NSDictionary?; var publishedProcessingState:Bool?
- var isProcessing:Bool { currentItem != nil || cancellationTask != nil || pendingPersistenceCount > 0 }
  var downloadGates:[CheckedContinuation<Data,Error>]=[]
+ var downloadKinds:[String]=[]
+ var artifactBytesByKind:[String:Data]=[:]
  init(server:FakeServer, file:URL) { self.server=server;queueFileURL=file;super.init() }
  private func request<T:Decodable>(path:String,method:String,body:[String:Any]?) async throws -> T {
   let data=try await server.perform(path:path,method:method,body:body,disk:queueFileURL)
   return try JSONDecoder().decode(T.self,from:data)
  }
- private func download(_ artifact:ICServerArtifact) async throws -> Data { try await withCheckedThrowingContinuation { downloadGates.append($0) } }
+ private func download(_ artifact:ICServerArtifact) async throws -> Data { try await withCheckedThrowingContinuation { downloadKinds.append(artifact.kind);downloadGates.append($0) } }
  private func findEpisode(hash:String)->CDEpisode? { CDEpisode() }
  private func publisherChapters(for episode:CDEpisode,fallback:[ICServerChaptersArtifact.Chapter])->[ICGeneratedChapter] { [] }
  nonisolated private func validateServerArtifacts(_ chapters:ICServerChaptersArtifact,ads:ICServerAdsArtifact,summary:ICServerSummaryArtifact,transcriptRevision:String,serverDuration:Double?) throws { }
@@ -160,7 +189,7 @@ final class SnapshotWriter: @unchecked Sendable {
  func add(hash:String="episode", accepted:Bool=false)->ICTranscriptionQueueItem {
   let item=makeItem(episodeHash:hash,episodeTitle:hash,feedTitle:"feed",episodeURL:URL(string:"https://example.com/\(hash).mp3")!,podcastURL:nil,duration:60,automaticallyScheduled:false)
   items.append(item)
-  if accepted { admissionByItem[ObjectIdentifier(item)] = .accepted;let id=clientRequestIDByItem[ObjectIdentifier(item)]!; serverIDByItem[ObjectIdentifier(item)]=42;server.registrations[id]=42;server.byURL[endpointByItem[ObjectIdentifier(item)]!.absoluteString]=42 }
+  if accepted { sourceAudioSHA256ByItem[ObjectIdentifier(item)]=String(repeating:"a",count:64); admissionByItem[ObjectIdentifier(item)] = .accepted;let id=clientRequestIDByItem[ObjectIdentifier(item)]!; serverIDByItem[ObjectIdentifier(item)]=42;server.registrations[id]=42;server.byURL[endpointByItem[ObjectIdentifier(item)]!.absoluteString]=42 }
   return item
  }
  func until(_ predicate:()->Bool) async {
@@ -170,7 +199,7 @@ final class SnapshotWriter: @unchecked Sendable {
  func durable() async { await until { !isProcessing } }
  func start() { persistQueue() }
  func setDue(_ item:ICTranscriptionQueueItem) { retryWakeTask?.cancel(); item.nextRetryAt=nil; processNext() }
- func releaseDownloads() { let gates=downloadGates;downloadGates=[];for gate in gates {gate.resume(returning:Data())} }
+ func releaseDownloads() { let gates=downloadGates;let kinds=downloadKinds;downloadGates=[];downloadKinds=[];for (kind,gate) in zip(kinds,gates) {gate.resume(returning:artifactBytesByKind[kind] ?? Data())} }
  static func run(in dir:URL) async throws {
   UserDefaults.standard.set(true,forKey:kServerTranscriptionEnabled)
   // No POST with missing audio, a changed durable source, or replacement during hashing.
@@ -244,14 +273,16 @@ final class SnapshotWriter: @unchecked Sendable {
   let kinds=["transcript_srt","chapters_json","ads_json","summary_json"]
   let hash=String(repeating:"0",count:64)
   importServer.artifacts=kinds.enumerated().map { i,kind in ["id":i,"kind":kind,"url":"https://example.com/\(i)","content_type":"application/json","byte_size":0,"sha256":hash,"transcript_revision":"sha256:"+hash,"etag":"tag"] }
-  // A missing local download must never start paid server processing again on retry/relaunch.
+  // Missing device audio permits retrieval; an artifact failure retries only import after relaunch.
   CacheManager.instance.cached=false
   let waiting=Harness(server:importServer,file:dir.appendingPathComponent("waiting-import.json"));let waitingItem=waiting.add(accepted:true)
   let waitingID=waiting.clientRequestIDByItem[ObjectIdentifier(waitingItem)]!
-  waiting.start();await waiting.until {waitingItem.status == .failed && !waiting.isProcessing}
+  waiting.start();await waiting.until {waiting.downloadGates.count==4}
+  waiting.releaseDownloads();await waiting.until {waitingItem.status == .failed && !waiting.isProcessing}
   let waitingReloaded=Harness(server:importServer,file:waiting.queueFileURL);waitingReloaded.loadPersistedQueue()
   let restoredItem=waitingReloaded.items[0];waitingReloaded.retryEpisodeHash(restoredItem.episodeHash)
-  await waitingReloaded.until {restoredItem.status == .failed && !waitingReloaded.isProcessing}
+  await waitingReloaded.until {waitingReloaded.downloadGates.count==4}
+  waitingReloaded.releaseDownloads();await waitingReloaded.until {restoredItem.status == .failed && !waitingReloaded.isProcessing}
   precondition(waitingReloaded.clientRequestIDByItem[ObjectIdentifier(restoredItem)]==waitingID && importServer.events.isEmpty,
                "Retrying an import after relaunch canceled and regenerated an already completed server result")
   CacheManager.instance.cached=true

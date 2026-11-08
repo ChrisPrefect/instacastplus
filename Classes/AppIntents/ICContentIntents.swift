@@ -110,6 +110,99 @@ struct ICEpisodeEntityQuery: EntityStringQuery {
     }
 }
 
+// MARK: - Lists
+
+struct ICListEntity: AppEntity, Sendable {
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "List")
+    static let defaultQuery = ICListEntityQuery()
+
+    let id: String
+    let name: String
+
+    var displayRepresentation: DisplayRepresentation {
+        .init(title: "\(name)")
+    }
+
+    init(_ info: ICListInfo) {
+        id = info.id
+        name = info.name
+    }
+}
+
+struct ICListEntityQuery: EntityStringQuery {
+    func entities(for identifiers: [String]) async throws -> [ICListEntity] {
+        await ICIntentBridge.listInfos(forIDs: identifiers).map(ICListEntity.init)
+    }
+
+    func entities(matching string: String) async throws -> [ICListEntity] {
+        await ICIntentBridge.matchingLists(string).map(ICListEntity.init)
+    }
+
+    func suggestedEntities() async throws -> [ICListEntity] {
+        await ICIntentBridge.allLists().map(ICListEntity.init)
+    }
+}
+
+struct ICPlayListIntent: AudioPlaybackIntent {
+    static let title: LocalizedStringResource = "Play List"
+    static let description = IntentDescription("Play the first episode in the selected list's order and use its continuous playback setting.")
+    static var openAppWhenRun: Bool { false }
+
+    @Parameter(title: "List") var list: ICListEntity
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Play list \(\.$list)")
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let episode = await ICIntentBridge.playList(withID: list.id) else {
+            throw ICListPlaybackError.emptyOrUnavailable
+        }
+        return .result(dialog: ICLocalizedIntentDialog("Playing “%@”.", episode.title))
+    }
+}
+
+enum ICListPlaybackError: Error, CustomLocalizedStringResourceConvertible {
+    case emptyOrUnavailable
+
+    var localizedStringResource: LocalizedStringResource {
+        "The list is empty or no longer available."
+    }
+}
+
+// MARK: - Current episode snapshot
+
+struct ICCurrentEpisodeEntity: TransientAppEntity {
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Current Episode")
+
+    @Property(title: "Title") var title: String
+    @Property(title: "Podcast") var podcast: String?
+    @Property(title: "Playback Position (Seconds)") var position: Double
+
+    var displayRepresentation: DisplayRepresentation {
+        .init(title: "\(title)", subtitle: podcast.map { LocalizedStringResource("\($0)") })
+    }
+
+    init() {}
+
+    init(_ episode: ICEpisodeInfo, position: Double) {
+        title = episode.title
+        podcast = episode.podcast
+        self.position = position
+    }
+}
+
+struct ICGetCurrentEpisodeIntent: AudioPlaybackIntent {
+    static let title: LocalizedStringResource = "Get Current Episode"
+    static let description = IntentDescription("Get the current episode's title, podcast and playback position in seconds, including when paused. Returns no value if no episode is loaded.", resultValueName: "Current Episode")
+    static var openAppWhenRun: Bool { false }
+
+    func perform() async throws -> some IntentResult & ReturnsValue<ICCurrentEpisodeEntity?> {
+        let current = await ICIntentBridge.currentEpisode()
+        return .result(value: current.map { ICCurrentEpisodeEntity($0.episode, position: $0.position) })
+    }
+}
+
 // MARK: - Spotlight and Open
 
 @available(iOS 18.0, *)

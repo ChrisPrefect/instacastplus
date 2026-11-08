@@ -1,0 +1,657 @@
+--- a/app/alerts.py
++++ b/app/alerts.py
+@@ -10,7 +10,6 @@
+ 
+ from . import config
+ from .db import connect, now_iso
+-from .service import transcription_provider_status, transcription_worker_status
+ from .settings import ai_monthly_spend, get_ai_settings, get_alert_settings, get_setting, set_setting
+ 
+ 
+@@ -130,32 +129,6 @@
+     if resource_only:
+         return alerts
+ 
+-    workers = transcription_worker_status()
+-    if not any(workers.values()):
+-        alerts.append((
+-            "worker_unavailable",
+-            "Kein Transkriptions-Worker läuft. Neue Aufträge werden abgewiesen; "
+-            "vorhandene Aufträge können nicht verarbeitet werden.\n"
+-            "Bitte die Worker-Dienste prüfen: " + ", ".join(workers),
+-        ))
+-    provider_status = transcription_provider_status()
+-    if provider_status is not None:
+-        reason = provider_status.get("reason_code") or provider_status["code"]
+-        instructions = {
+-            "provider_authentication": "Die Anmeldung beim KI-Anbieter fehlt oder wurde abgelehnt. "
+-                "Bitte das KI-Konto im Dienstkonto instacast auf dem Server erneut anmelden.",
+-            "provider_quota": "Das KI-Kontingent ist ausgeschöpft oder konnte nicht bestätigt werden. "
+-                "Bitte Kontingent und Rücksetzzeit des Serverkontos prüfen.",
+-            "provider_configuration": "Die KI-Konfiguration ist ungültig. "
+-                "Bitte CLI-Version, Modell und Modellkatalog auf dem Server prüfen.",
+-            "provider_budget": "Das konfigurierte KI-Budget reicht nicht aus. Bitte das Serverbudget prüfen.",
+-            "provider_runtime_failure": "Der KI-Anbieter hat die Verarbeitung abgelehnt. "
+-                "Bitte die Anbieter- und Auftragsdiagnose im Adminbereich prüfen.",
+-        }
+-        message = instructions.get(reason, provider_status["message"])
+-        alerts.append((reason, f"{message}\nFehlercode: {reason}\n"
+-            "Neue Transkriptionsaufträge werden abgewiesen; wartende Aufträge bleiben erhalten."))
+-
+     if stats["queued"] >= config.MAX_QUEUED_TRANSCRIBE_JOBS:
+         alerts.append(
+             (
+@@ -199,15 +172,41 @@
+     settings = get_alert_settings()
+     if not settings["enabled"] or not settings["email"]:
+         return 0
+-    sent = 0
+-    for key, message in collect_alerts(
++    return send_alerts(collect_alerts(
+         cpu_total_percent=cpu_total_percent,
+         load_1m=load_1m,
+         mem_available_gib=mem_available_gib,
+         transcribe_cpu_percent=transcribe_cpu_percent,
+         transcribe_rss_gib=transcribe_rss_gib,
+         resource_only=resource_only,
+-    ):
++    ))
++
++
++def send_transcription_error(error: dict[str, Any], context: str, job: dict[str, Any] | None = None) -> int:
++    """Report an observed error; never query provider readiness or scan for failures."""
++    reason = error.get("reason_code") or error["code"]
++    instructions = {
++        "provider_authentication": "Die Anmeldung beim KI-Anbieter fehlt oder wurde abgelehnt. "
++            "Bitte das KI-Konto im Dienstkonto instacast auf dem Server erneut anmelden.",
++        "provider_quota": "Das KI-Kontingent ist ausgeschöpft oder konnte nicht bestätigt werden. "
++            "Bitte Kontingent und Rücksetzzeit des Serverkontos prüfen.",
++        "provider_configuration": "Die KI-Konfiguration ist ungültig. "
++            "Bitte CLI-Version, Modell und Modellkatalog auf dem Server prüfen.",
++    }
++    message = f"{context}\nFehlercode: {reason}\n{error['message']}"
++    if reason in instructions:
++        message += "\n" + instructions[reason]
++    if job is not None:
++        message += f"\nJob: {job['id']}\nEpisode: {job.get('episode_id')}"
++    return send_alerts([(reason, message)])
++
++
++def send_alerts(events: list[tuple[str, str]]) -> int:
++    settings = get_alert_settings()
++    if not settings["enabled"] or not settings["email"]:
++        return 0
++    sent = 0
++    for key, message in events:
+         signature = None
+         if key == "jobs_failed":
+             signature = failed_jobs_signature()
+--- a/app/main.py
++++ b/app/main.py
+@@ -16,8 +16,10 @@
+ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, StrictBool
+ from starlette.exceptions import HTTPException as StarletteHTTPException
++from starlette.background import BackgroundTask
+ 
+ from . import config
++from .alerts import send_transcription_error
+ from .db import exact_url_predicate, connect, init_db, loads, now_iso, tx
+ from .rss import fetch_feed
+ from .security import (
+@@ -164,6 +166,15 @@
+     return content
+ 
+ 
++def transcription_error_task(request: Request, detail: Any) -> BackgroundTask | None:
++    if request.method == "POST" and isinstance(detail, dict) and detail.get("code") in {
++        "provider_unavailable", "unsupported_language", "worker_unavailable", "resources_unavailable",
++        "queue_full", "queue_unavailable", "server_error",
++    }:
++        return BackgroundTask(send_transcription_error, detail, f"Auftragsannahme ({request.url.path})")
++    return None
++
++
+ def api_http_exception_response(request: Request, exc: HTTPException) -> JSONResponse:
+     headers = dict(exc.headers or {})
+     if exc.status_code == 503 and "Retry-After" not in headers:
+@@ -172,6 +183,7 @@
+         status_code=exc.status_code,
+         content=api_error_content(exc.status_code, exc.detail, headers),
+         headers=headers,
++        background=transcription_error_task(request, exc.detail),
+     )
+ 
+ 
+@@ -232,7 +244,9 @@
+ async def api_starlette_http_exception_handler(request: Request, exc: StarletteHTTPException):
+     if is_api_request(request):
+         return api_http_exception_response(request, exc)
+-    return await http_exception_handler(request, exc)
++    response = await http_exception_handler(request, exc)
++    response.background = transcription_error_task(request, exc.detail)
++    return response
+ 
+ 
+ @app.exception_handler(RequestValidationError)
+@@ -266,6 +280,9 @@
+                     "retryable": True,
+                 },
+             ),
++            background=transcription_error_task(request, {
++                "code": "server_error", "message": f"{type(exc).__name__}: {exc}",
++            }),
+         )
+     return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+ 
+@@ -369,7 +386,7 @@
+ 
+ def svg_history(samples: list[Any]) -> str:
+     if not samples:
+-        return '<p class="muted">Noch keine CPU-History. Der Monitor schreibt alle 60 Sekunden einen Messpunkt.</p>'
++        return '<p class="muted">Noch keine CPU-Messwerte. Messpunkte entstehen während einer Transkription.</p>'
+     width = 900
+     height = 220
+     pad = 28
+@@ -635,6 +652,7 @@
+     if provider_status:
+         raise HTTPException(status_code=503, detail={
+             "code": provider_status["code"], "message": provider_status["message"], "retryable": provider_status.get("retryable", True), "admitted":False,
++            "reason_code": provider_status.get("reason_code"),
+         }, headers={"Retry-After": "300"})
+     if not any(transcription_worker_status().values()):
+         raise HTTPException(status_code=503, detail={
+--- a/app/worker.py
++++ b/app/worker.py
+@@ -27,6 +27,7 @@
+ 
+ from .checkpoint_provenance import asr_provenance, digest
+ from . import config
++from .alerts import send_transcription_error
+ from .artifact_contract import canonical_seconds, parse_srt, validate_required_artifacts
+ from .caption_sentences import (
+     ANALYSIS_REVISION as CAPTION_SENTENCE_ANALYSIS_REVISION,
+@@ -159,6 +160,7 @@
+ 
+ def reset_stale_jobs(reset_running: bool = False) -> None:
+     now = now_iso()
++    expired = []
+     with queue_admission_transaction() as con:
+         clause = "status='running'" if reset_running else "status='running' AND lease_until IS NOT NULL AND lease_until < ?"
+         params = () if reset_running else (now,)
+@@ -173,6 +175,7 @@
+                 (state,now,now if terminal else None,"Worker-Lease abgelaufen; Zeitlimit der Verarbeitung überschritten.",row["id"],*lease_params))
+             if changed.rowcount != 1:
+                 continue
++            expired.append(dict(row))
+             if row["episode_id"]:
+                 con.execute("""UPDATE episodes SET status=CASE WHEN ?='failed' THEN 'failed'
+                     WHEN status IN ('downloading','transcribing','postprocessing','finalizing') THEN status ELSE 'queued' END,
+@@ -182,6 +185,10 @@
+                 if terminal and row["job_type"] == "transcribe":
+                     payload = loads(row["payload_json"], {}) or {}
+                     queue_webhook(payload.get("callback_url"),int(row["episode_id"]),int(row["id"]),"episode.failed",connection=con)
++    for job in expired:
++        send_transcription_error({"code": "processing_timeout",
++            "message": "Worker-Lease abgelaufen; Zeitlimit der Verarbeitung überschritten."},
++            "Verarbeitung unterbrochen", job)
+ 
+ 
+ 
+@@ -227,6 +234,8 @@
+     with connect() as check:
+         has_transcription = check.execute("SELECT 1 FROM jobs WHERE status='queued' AND job_type='transcribe' AND (next_attempt_at IS NULL OR next_attempt_at <= ?) LIMIT 1", (now_iso(),)).fetchone() is not None
+     provider_status = transcription_provider_status() if has_transcription else None
++    if provider_status:
++        send_transcription_error(provider_status, "Start eines wartenden Transkriptionsauftrags")
+     with queue_admission_transaction() as con:
+         rows = con.execute(
+             """
+@@ -352,6 +361,11 @@
+                 error=?, lease_until=NULL, locked_by=NULL, updated_at=? WHERE id=? AND status='running'""",
+             (message[:4000], now_iso(), job["id"]),
+         )
++    if not STOP:
++        error = loads(message, None)
++        if not isinstance(error, dict):
++            error = {"code": "provider_unavailable", "message": message}
++        send_transcription_error(error, "Verarbeitung zurückgestellt", job)
+ 
+ 
+ def fail_job(job: dict[str, Any], error: str) -> str:
+@@ -410,6 +424,9 @@
+         if status == "failed" and job["job_type"] == "transcribe" and job["episode_id"]:
+             payload = loads(job["payload_json"], {}) or {}
+             queue_webhook(payload.get("callback_url"),int(job["episode_id"]),int(job["id"]),"episode.failed",connection=con)
++    failure = job_error({"error": error})
++    send_transcription_error({"code": failure["code"] if failure else "transcription_failed", "message": error},
++        "Verarbeitung fehlgeschlagen" if status == "failed" else "Verarbeitung wird erneut versucht", job)
+     return status
+ 
+ 
+--- a/tools/queue_admission_regression.py
++++ b/tools/queue_admission_regression.py
+@@ -35,6 +35,8 @@
+                                MAX_CLIENT_ACTIVE_TRANSCRIBE_JOBS=25, MIN_FREE_MEM_GIB=0, MAX_LOAD_1M=1000000).items():
+             self.contexts.enter_context(patch.object(config, key, value, create=True))
+         init_db()
++        from app.settings import set_setting
++        set_setting("alert_enabled", "0")
+         self.contexts.enter_context(patch.object(main, 'transcription_provider_status', return_value=None, create=True))
+         self.workers = self.contexts.enter_context(patch.object(main, 'transcription_worker_status',
+             return_value={'worker': True}, create=True))
+--- a/tools/transcription_alert_process_test.py
++++ b/tools/transcription_alert_process_test.py
+@@ -1,190 +1,231 @@
+ #!/usr/bin/env python3
+-"""Run real monitor cycles with isolated DB and external-process fixtures."""
++"""Real HTTP and worker error transitions -> RFC mail, with no alert polling."""
+ import argparse
+-from datetime import datetime, timezone
+ from email import policy
+ from email.parser import BytesParser
++import errno
+ import json
+-import os
+ from pathlib import Path
+-import sqlite3
+-import subprocess
++import shutil
+ import sys
+-import time
+-
+-ROOT = Path(__file__).resolve().parents[1]
+-CASES = {
+-    "authentication": ("provider_authentication", "Anmeldung"),
+-    "quota": ("provider_quota", "Kontingent"),
+-    "configuration": ("provider_configuration", "Konfiguration"),
+-    "runtime": ("provider_runtime_failure", "Anbieter"),
+-    "worker": ("worker_unavailable", "Worker"),
+-    "failed_job": ("jobs_failed", "fehlgeschlagen"),
+-    "healthy": (None, None),
+-    "disabled": (None, None),
+-    "mail_retry": ("provider_authentication", "Anmeldung"),
+-    "resource_only": (None, None),
+-}
+-
+-FIXTURE = r'''
+-import json, os, sys
+-from pathlib import Path
+-from uuid import uuid4
+-root = Path(__file__).resolve().parents[1]
+-case = root.name
+-name = Path(sys.argv[0]).name
+-with (root / "external-calls.jsonl").open("a") as log:
+-    log.write(json.dumps({"command": name, "args": sys.argv[1:]}) + "\n")
+-if name == "systemctl":
+-    active = case != "worker" and "worker-2" not in " ".join(sys.argv)
+-    print("ActiveState=" + ("active" if active else "inactive"))
+-    print("SubState=" + ("running" if active else "dead"))
+-    print("MainPID=" + ("123" if active else "0"))
+-elif name == "codex":
+-    if "--version" in sys.argv:
+-        print("codex-cli " + ("0.0.0" if case == "configuration" else "0.154.0"))
+-    elif "login" in sys.argv:
+-        unavailable = case in {"authentication", "disabled", "mail_retry", "resource_only"}
+-        print("Not logged in" if unavailable else "Logged in using ChatGPT")
+-        sys.exit(1 if unavailable else 0)
+-    else:
+-        for line in sys.stdin:
+-            request = json.loads(line)
+-            if "id" not in request:
+-                continue
+-            result = {} if request["method"] == "initialize" else {
+-                "rateLimitsByLimitId": {"codex": {"primary": {
+-                    "usedPercent": 100 if case == "quota" else 5,
+-                    "resetsAt": 1999999999,
+-                }}}
+-            }
+-            print(json.dumps({"id": request["id"], "result": result}), flush=True)
+-elif name == "sendmail":
+-    mail = sys.stdin.buffer.read()
+-    failed = root / "first-send-failed"
+-    if case == "mail_retry" and not failed.exists():
+-        failed.touch()
+-        sys.exit(75)
+-    (root / (uuid4().hex + ".eml")).write_bytes(mail)
+-'''
+-
+-BOOTSTRAP = r'''
+-import json, os, time
+-from pathlib import Path
+-from app import config
+-root = Path(os.environ["ALERT_TEST_CASE"])
+-config.VAR_DIR = root / "var"
+-from app import alerts, monitor
+-from app.db import init_db, connect, now_iso
+-from app.settings import set_settings, get_ai_settings
+-from app.service import provider_configuration_fingerprint
+-init_db()
+-set_settings({"ai_provider": "openai_codex", "kimi_model": "fixture-model",
+-    "alert_email": "info@instacast.ch", "alert_cooldown_seconds": "3600",
+-    "alert_enabled": "0" if root.name == "disabled" else "1", "ai_monthly_limit_usd": "0"})
+-(config.VAR_DIR / "codex-models.json").write_text(json.dumps({"models": [
+-    {"slug": "fixture-model", "apply_patch_tool_type": None, "input_modalities": ["text"]}]}))
+-if root.name == "runtime":
+-    set_settings({"transcription_provider_block": json.dumps({
+-        "configuration": provider_configuration_fingerprint(get_ai_settings()),
+-        "until": time.time() + 600, "message": "Provider rejected processing"})})
+-if root.name == "failed_job":
+-    with connect() as con:
+-        con.execute("INSERT INTO jobs(job_type,status,error,created_at,updated_at) VALUES (?,?,?,?,?)",
+-            ("transcribe", "failed", "Audio download failed", now_iso(), now_iso()))
+-alerts.SENDMAIL = root / "bin" / "sendmail"
+-if root.name == "resource_only":
+-    alerts.send_operational_alerts(cpu_total_percent=0, load_1m=0,
+-        mem_available_gib=100, resource_only=True)
+-else:
+-    monitor.main()
+-'''
+-
+-
+-def run_case(base: Path, case: str) -> dict:
+-    root = base / case
+-    root.mkdir()
+-    binary = root / "bin"
+-    binary.mkdir()
+-    for command in ("codex", "systemctl", "sendmail"):
+-        path = binary / command
+-        path.write_text("#!" + sys.executable + "\n" + FIXTURE)
+-        path.chmod(0o700)
+-    env = {k: v for k, v in os.environ.items() if not k.startswith("INSTACAST_")}
+-    env.update({"ALERT_TEST_CASE": str(root), "PATH": str(binary) + os.pathsep + env["PATH"],
+-        "INSTACAST_DB_BACKEND": "sqlite", "INSTACAST_TRANSCRIPT_DB": str(root / "test.sqlite3"),
+-        "INSTACAST_TRANSCRIPT_STORAGE": str(root / "storage"), "INSTACAST_MONITOR_SAMPLE_SECONDS": "1",
+-        "INSTACAST_MIN_FREE_DISK_GIB": "0", "INSTACAST_WHISPER_LANGUAGE": "auto"})
+-    args = [sys.executable, "-c", BOOTSTRAP]
+-    (root / "input.json").write_text(json.dumps({"case": case, "expected": CASES[case],
+-        "cwd": str(ROOT), "command": args, "sample_seconds": 1}, indent=2))
+-    count = 0
+-    with (root / "monitor.log").open("wb") as log:
+-        process = subprocess.Popen(args, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
+-        try:
+-            deadline = time.monotonic() + 20
+-            if case == "resource_only":
+-                assert process.wait(timeout=20) == 0
+-            else:
+-                while time.monotonic() < deadline:
+-                    assert process.poll() is None, "monitor exited: " + (root / "monitor.log").read_text()
+-                    if (root / "test.sqlite3").exists():
+-                        with sqlite3.connect(root / "test.sqlite3") as con:
+-                            try:
+-                                count = con.execute("SELECT COUNT(*) FROM resource_samples").fetchone()[0]
+-                            except sqlite3.OperationalError:
+-                                pass
+-                    if count >= 3:
+-                        break
+-                    time.sleep(0.1)
+-                assert count >= 3, "monitor did not complete three sample intervals"
+-        finally:
+-            if process.poll() is None:
+-                process.terminate()
+-            process.wait(timeout=5)
+-    mails = [BytesParser(policy=policy.default).parsebytes(p.read_bytes()) for p in sorted(root.glob("*.eml"))]
+-    expected_key, expected_word = CASES[case]
+-    assert len(mails) == (1 if expected_key else 0), f"{case}: expected {expected_key}, received {len(mails)} mails"
+-    if expected_key:
+-        message = mails[0]
+-        assert message["To"] == "info@instacast.ch"
+-        assert message["Subject"] == "Instacast Transcript Alert: " + expected_key, str(message["Subject"])
+-        body = message.get_content()
+-        assert expected_word in body, body
+-        assert "Health: https://transcript.instacast.ch/health" in body
+-        with sqlite3.connect(root / "test.sqlite3") as con:
+-            assert con.execute("SELECT value FROM app_config WHERE key=?", ("alert_last:" + expected_key,)).fetchone()
+-    if case == "mail_retry":
+-        assert (root / "first-send-failed").exists()
+-        calls = [json.loads(line) for line in (root / "external-calls.jsonl").read_text().splitlines()]
+-        assert len([call for call in calls if call["command"] == "sendmail"]) == 2
+-    if case == "resource_only":
+-        assert not (root / "external-calls.jsonl").exists(), "resource-only path consulted provider/worker"
+-    result = {"case": case, "sample_count": count, "emails": len(mails), "expected_key": expected_key,
+-        "status": "passed", "evidence_directory": str(root)}
+-    (root / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+-    return result
+-
+-
+-def main() -> int:
++import unittest
++from unittest.mock import patch
++
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++from queue_admission_regression import AdmissionTests
++from app import alerts, main, service, worker
++from app.db import connect, tx
++from app.settings import set_setting
++from fastapi.testclient import TestClient
++
++OUTPUT = None
++BLOCK = {'available': False, 'code': 'provider_unavailable', 'reason_code': 'provider_authentication',
++         'message': 'Die Server-Transkription ist momentan nicht verfügbar.', 'retry_after_seconds': 300}
++
++
++class EventAlertTests(AdmissionTests):
++    def setUp(self):
++        super().setUp()
++        self.root = Path(self.temp.name)
++        set_setting('alert_enabled', '1')
++        set_setting('alert_email', 'info@instacast.ch')
++        set_setting('alert_cooldown_seconds', '3600')
++        self.sender = self.root / 'sendmail'
++        self.sender.write_text('#!' + sys.executable + '\n' +
++            'import sys,uuid\nfrom pathlib import Path\nroot=Path(__file__).parent\n' +
++            'flag=root/"fail-mail"\n' +
++            'if flag.exists():\n flag.unlink()\n sys.exit(75)\n' +
++            '(root/(uuid.uuid4().hex+".eml")).write_bytes(sys.stdin.buffer.read())\n')
++        self.sender.chmod(0o700)
++        self.contexts.enter_context(patch.object(alerts, 'SENDMAIL', self.sender))
++        self.contexts.enter_context(patch.object(main, 'transcription_resource_status', return_value=None))
++        self.contexts.enter_context(patch.object(worker, 'transcription_resource_status', return_value=None))
++        self.contexts.enter_context(patch.object(service, 'transcription_provider_status',
++            side_effect=AssertionError('notification performed an extra provider check')))
++        main.app.dependency_overrides[main.require_api_token] = lambda: 1
++        self.addCleanup(main.app.dependency_overrides.clear)
++        if OUTPUT:
++            def preserve():
++                destination = OUTPUT / self._testMethodName
++                shutil.copytree(self.root, destination)
++                (destination / 'input.json').write_text(json.dumps({'case': self._testMethodName,
++                    'endpoint': 'POST /api/v1/episodes', 'body': self.body(),
++                    'provider_failure_fixture': BLOCK}, indent=2) + '\n')
++            self.addCleanup(preserve)
++
++    def body(self):
++        return {'episode_url': 'https://example.org/audio.mp3', 'title': 'Alert regression episode',
++                'client_audio_sha256': 'a' * 64, 'client_duration_seconds': 120,
++                'wait_seconds': 0, 'force': False}
++
++    def post(self, client):
++        response = client.post('/api/v1/episodes', json=self.body(), headers={'x-client': 'alert-test'})
++        (self.root / 'response.json').write_text(json.dumps({'status': response.status_code,
++            'body': response.json()}, indent=2) + '\n')
++        return response
++
++    def mail(self, count=1):
++        paths = list(self.root.glob('*.eml'))
++        self.assertEqual(count, len(paths), 'incorrect number of event-triggered emails')
++        if count:
++            message = BytesParser(policy=policy.default).parsebytes(paths[0].read_bytes())
++            self.assertEqual('info@instacast.ch', message['To'])
++            return message.get_content()
++
++    def claim(self):
++        self.seed(1)
++        with patch.object(worker, 'transcription_provider_status', return_value=None), \
++             patch.object(worker, 'transcribe_block_reason', return_value=None):
++            job = worker.claim_job('event-test')
++        self.assertIsNotNone(job)
++        return job
++
++    def test_event_admission_authentication_uses_observed_error(self):
++        with patch.object(main, 'transcription_provider_status', return_value=BLOCK) as provider, TestClient(main.app) as client:
++            self.assertEqual(503, self.post(client).status_code)
++        self.assertEqual(1, provider.call_count)
++        body = self.mail()
++        self.assertIn('provider_authentication', body)
++        self.assertIn('Anmeldung', body)
++        self.assertIn('Auftragsannahme', body)
++        with connect() as con:
++            self.assertEqual(0, con.execute('SELECT COUNT(*) n FROM jobs').fetchone()['n'])
++
++    def test_event_admission_worker_failure(self):
++        self.workers.return_value = {'worker': False}
++        with TestClient(main.app) as client:
++            self.assertEqual(503, self.post(client).status_code)
++        self.assertIn('worker_unavailable', self.mail())
++
++    def test_event_admission_resource_failure(self):
++        unavailable = {'code': 'resources_unavailable', 'message': 'Kein Speicherplatz.', 'retry_after_seconds': 60}
++        with patch.object(main, 'transcription_resource_status', return_value=unavailable), TestClient(main.app) as client:
++            self.assertEqual(503, self.post(client).status_code)
++        self.assertIn('resources_unavailable', self.mail())
++
++    def test_event_healthy_post_does_not_email(self):
++        with TestClient(main.app) as client:
++            self.assertEqual(202, self.post(client).status_code)
++        self.mail(0)
++
++    def test_event_idle_and_get_do_not_check_or_email(self):
++        with patch.object(worker, 'transcription_provider_status', side_effect=AssertionError('idle provider check')):
++            for _ in range(3):
++                self.assertIsNone(worker.claim_job('idle'))
++        with patch.object(main, 'transcription_provider_status', side_effect=AssertionError('GET provider check')), TestClient(main.app) as client:
++            self.assertEqual(200, client.get('/api/v1/schema').status_code)
++        self.mail(0)
++
++    def test_event_job_retry_reports_actual_error(self):
++        job = self.claim()
++        with worker.job_claim(job):
++            self.assertEqual('queued', worker.record_job_exception(job, RuntimeError('Audio download failed')))
++        body = self.mail()
++        self.assertIn('audio_download_failed', body)
++        self.assertIn('Audio download failed', body)
++        self.assertIn('Job: ' + str(job['id']), body)
++        self.assertIn('Episode: ' + str(job['episode_id']), body)
++
++    def test_event_exception_without_message(self):
++        job = self.claim()
++        with worker.job_claim(job):
++            self.assertEqual('queued', worker.record_job_exception(job, TimeoutError()))
++        self.assertIn('transcription_failed', self.mail())
++
++    def test_event_terminal_job_failure(self):
++        job = self.claim()
++        with worker.job_claim(job):
++            self.assertEqual('failed', worker.record_job_exception(job,
++                service.TranscriptionJobError('no_speech', 'Keine Sprache erkannt.')))
++        self.assertIn('no_speech', self.mail())
++
++    def test_event_provider_pause_retains_job(self):
++        job = self.claim()
++        with worker.job_claim(job):
++            worker.defer_job_for_provider(job, 'Codex ChatGPT authentication is required.')
++        self.assertIn('authentication', self.mail())
++        with connect() as con:
++            row = con.execute('SELECT status, attempts FROM jobs WHERE id=?', (job['id'],)).fetchone()
++            self.assertEqual(('queued', 0), (row['status'], row['attempts']))
++
++    def test_event_disk_write_failure(self):
++        job = self.claim()
++        with worker.job_claim(job):
++            self.assertEqual('queued', worker.record_job_exception(job, OSError(errno.ENOSPC, 'disk full')))
++        self.assertIn('resources_unavailable', self.mail())
++
++    def test_event_lost_claim_does_not_email(self):
++        job = self.claim()
++        with tx() as con:
++            con.execute('UPDATE jobs SET status=? WHERE id=?', ('canceled', job['id']))
++        with worker.job_claim(job):
++            self.assertEqual('canceled', worker.fail_job(job, 'old worker error'))
++            worker.defer_job_for_provider(job, 'old worker pause')
++        self.mail(0)
++
++    def test_event_shutdown_does_not_email(self):
++        job = self.claim()
++        with patch.object(worker, 'STOP', True), worker.job_claim(job):
++            worker.defer_job_for_provider(job, 'Worker wird beendet; angenommener Auftrag bleibt erhalten.')
++        self.mail(0)
++
++    def test_event_expired_claim_reports_timeout(self):
++        job = self.claim()
++        with tx() as con:
++            con.execute('UPDATE jobs SET lease_until=?,attempts=max_attempts WHERE id=?', ('2000-01-01T00:00:00+00:00', job['id']))
++        worker.reset_stale_jobs()
++        self.assertIn('processing_timeout', self.mail())
++
++    def test_event_pending_job_start_reports_provider_block(self):
++        self.seed(1)
++        with patch.object(worker, 'transcription_provider_status', return_value=BLOCK) as provider:
++            self.assertIsNone(worker.claim_job('blocked'))
++        self.assertEqual(1, provider.call_count)
++        self.assertIn('provider_authentication', self.mail())
++
++    def test_event_cooldown(self):
++        with patch.object(main, 'transcription_provider_status', return_value=BLOCK), TestClient(main.app) as client:
++            for _ in range(3):
++                self.assertEqual(503, self.post(client).status_code)
++        self.mail(1)
++
++    def test_event_disabled(self):
++        set_setting('alert_enabled', '0')
++        with patch.object(main, 'transcription_provider_status', return_value=BLOCK), TestClient(main.app) as client:
++            self.assertEqual(503, self.post(client).status_code)
++        self.mail(0)
++
++    def test_event_mail_failure_keeps_http_error_and_retries_on_next_event(self):
++        (self.root / 'fail-mail').touch()
++        with patch.object(main, 'transcription_provider_status', return_value=BLOCK), TestClient(main.app) as client:
++            self.assertEqual(503, self.post(client).status_code)
++            self.mail(0)
++            self.assertEqual(503, self.post(client).status_code)
++        self.mail(1)
++
++    def test_event_unexpected_submit_error(self):
++        with patch.object(main, 'validate_public_url', side_effect=RuntimeError('fixture failure')), TestClient(main.app, raise_server_exceptions=False) as client:
++            self.assertEqual(500, self.post(client).status_code)
++        body = self.mail()
++        self.assertIn('server_error', body)
++        self.assertIn('fixture failure', body)
++
++    def test_event_resource_collector_does_not_query_provider(self):
++        alerts.collect_alerts(cpu_total_percent=0, load_1m=0, mem_available_gib=100)
++        self.mail(0)
++
++
++if __name__ == '__main__':
+     parser = argparse.ArgumentParser()
+-    parser.add_argument("--output", type=Path, required=True)
+-    parser.add_argument("--case", choices=CASES)
++    parser.add_argument('--output', type=Path, required=True)
++    parser.add_argument('--case')
+     args = parser.parse_args()
+-    args.output.mkdir(parents=True, exist_ok=False)
+-    results = []
+-    for case in ([args.case] if args.case else CASES):
+-        try:
+-            result = run_case(args.output.resolve(), case)
+-        except Exception as error:
+-            result = {"case": case, "status": "failed", "error": str(error)}
+-        results.append(result)
+-        print(json.dumps(result), flush=True)
+-    report = {"command": sys.argv, "time_utc": datetime.now(timezone.utc).isoformat(),
+-        "cases": results, "production_jobs_created": 0}
+-    (args.output / "result.json").write_text(json.dumps(report, indent=2) + "\n")
+-    return int(any(result["status"] != "passed" for result in results))
+-
+-
+-if __name__ == "__main__":
+-    raise SystemExit(main())
++    OUTPUT = args.output.resolve()
++    OUTPUT.mkdir(parents=True, exist_ok=False)
++    names = [args.case] if args.case else [name for name in dir(EventAlertTests) if name.startswith('test_event_')]
++    suite = unittest.TestSuite(EventAlertTests(name) for name in names)
++    result = unittest.TextTestRunner(verbosity=2).run(suite)
++    (OUTPUT / 'result.json').write_text(json.dumps({'command': sys.argv, 'tests': result.testsRun,
++        'failures': len(result.failures), 'errors': len(result.errors), 'successful': result.wasSuccessful(),
++        'failed_tests': [str(test) for test, _ in result.failures + result.errors]}, indent=2) + '\n')
++    sys.exit(not result.wasSuccessful())

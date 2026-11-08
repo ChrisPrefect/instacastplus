@@ -15,6 +15,26 @@ preamble=r'''
 #import <Foundation/Foundation.h>
 #import <execinfo.h>
 #import <dlfcn.h>
+@interface AudioRouteStub:NSObject
+@property NSArray* outputs;
+@end
+@implementation AudioRouteStub @end
+#define AVAudioSession ICAudioSessionStub
+@interface ICAudioSessionStub:NSObject
+@property AudioRouteStub* currentRoute;
+@property float outputVolume;
++ (instancetype)sharedInstance;
+@end
+@implementation ICAudioSessionStub
++ (instancetype)sharedInstance {
+    static ICAudioSessionStub* s;
+    if(!s) {
+        s=[self new];s.currentRoute=[AudioRouteStub new];
+        s.currentRoute.outputs=@[@{@"portType":@"Speaker"}];s.outputVolume=0.25;
+    }
+    return s;
+}
+@end
 typedef NSInteger PlaybackStopTimeValue;
 enum { PlaybackStopTimeNoValue=0, PlaybackStopTime5min=5 };
 static NSUserDefaults* defaults;

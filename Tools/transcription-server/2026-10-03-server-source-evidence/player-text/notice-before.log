@@ -1,0 +1,11 @@
+pending verification: PASS
+publisher transcript: PASS
+verified generated transcript: PASS
+readable text explains pending timing without requiring a download: FAIL
+completed failures remain visible: FAIL
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/player_audio_notice_state_regression_test.py", line 77, in <module>
+    subprocess.run([str(tmp / "test")], check=True)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/instacast-notice-state-be_0ubp6/test']' returned non-zero exit status 1.

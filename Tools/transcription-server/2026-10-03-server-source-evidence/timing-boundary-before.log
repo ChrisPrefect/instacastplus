@@ -1,0 +1,11 @@
+FAIL: Previously proven audio is rehashed once after metadata-only snapshot change
+FAIL: Pending proof is not restarted by repeated UI reads
+FAIL: Matching bytes restore timing after metadata-only change
+FAIL: New anchor precedes observable proof publication
+FAIL: Revalidation restores only artifact permissions actually proven before invalidation
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/playback_autoskip_live_settings_runtime_test.py", line 304, in <module>
+    subprocess.run([str(path / "test")], check=True)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/instacast-skip-_xasdh3m/test']' returned non-zero exit status 1.

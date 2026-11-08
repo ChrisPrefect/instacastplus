@@ -3,6 +3,43 @@
 This repository uses [CLAUDE.md](./CLAUDE.md) as the primary project instruction file.
 Read it before changing code. Do not duplicate or reinterpret it loosely.
 
+## Lösungen bis zum geprüften Abschluss
+
+Ein laufender Reparaturauftrag umfasst Diagnose, Reproduktion, Ursachenbehebung
+und Prüfung des tatsächlichen Nutzerablaufs. Fragen wie „Gibt es weitere solche
+Fehler oder Fehlannahmen?“ erweitern diesen Auftrag; sie machen daraus keinen
+reinen Audit. Nur eine ausdrückliche Einschränkung auf Analyse oder ein
+Änderungsverbot rechtfertigt, bei Befunden stehen zu bleiben.
+
+Nicht abschließen mit „nachgewiesen, noch nicht behoben“, einer Befundliste oder
+einem Angebot zur späteren Behebung, solange auftragsbezogene Korrekturen oder
+notwendige Prüfungen mit vorhandener Autorisierung ausführbar sind. Das gilt auch
+nach einem Teilauftrag oder delegierten Review. Skills ändern diesen Umfang nicht.
+Bei langen Arbeiten den Stand sichern und weiterarbeiten. Nur konkrete, selbst
+nicht behebbare Blockaden benennen und die unverzichtbare fehlende Eingabe
+anfordern; unabhängige Arbeiten fortsetzen. Nachweise dienen der Lösung und
+ersetzen sie nicht. Abschlussmeldungen knapp auf behobenes Verhalten, tatsächliche
+Prüfung und gegebenenfalls belegte verbleibende Grenzen beschränken.
+
+## Dranbleiben bis Lösung oder vollständigem Blockadenachweis
+
+Keine Rückfragen stellen, nicht stoppen und die Aufgabe nicht an den Nutzer
+zurückgeben, solange noch ein autorisierter Diagnose-, Reparatur- oder Prüfweg
+existiert. Nach jedem Fehlschlag den belegten Stand sichern und selbstständig den
+nächsten technisch sinnvollen Weg ausführen.
+
+Vor einer Blockademeldung alle verfügbaren Werkzeuge, Logs, Datenquellen,
+Schnittstellen, UI-Wege, privilegierten Wege und Alternativen tatsächlich
+untersuchen. Eine Blockade ist erst belegt, wenn die konkrete externe Grenze und
+der reproduzierbare Fehler dokumentiert, alle eigenständig ausführbaren Wege
+ausgeschöpft und exakt die unverzichtbare fehlende Eingabe oder externe
+Zustandsänderung benannt sind. Bis dahin bleibt der Auftrag aktiv.
+
+Keine Erklärungen, Befundlisten, Pläne oder Angebote anstelle einer Lösung.
+Zwischenstände kurz und handlungsbezogen halten. Kontextkomprimierung,
+Toolfehler, lange Laufzeit, Komplexität und ein gescheiterter Ansatz sind keine
+Abschlussgründe.
+
 ## Selbstständig prüfen statt rückfragen
 
 Keine Rückfragen zu Dingen, die sich aus Code, App, Feed, Logs oder verfügbaren
@@ -11,18 +48,41 @@ die vorhandenen Ansichten anschauen. Insbesondere keine erfundenen UI-Varianten
 zur Auswahl stellen. Fehlende technische Details selbst untersuchen und belegte
 Ergebnisse nennen; nicht den Nutzer die Untersuchung übernehmen lassen.
 
+## Privilegierte und systemnahe Arbeiten
+
+Vor systemnahen Reparaturen auch `/Users/prefect/.codex/MEMORY.md` lesen. Alle
+vorhersehbaren Root-/Admin-Schritte vor der ersten Authentifizierung erfassen und
+über eine einzige wiederverwendbare privilegierte Sitzung ausführen. Kurzlebige
+Einzelprozesse dürfen keine wiederholten Passwortdialoge verursachen.
+
+Root-Zugriff, SIP beziehungsweise Dateisystemschutz, TCC/Datenschutz,
+Code-Signing-Entitlements und der zuständige Systemdienst sind getrennte
+Autoritätsgrenzen. Scheitert eine Methode, ist zunächst diese Methode widerlegt,
+nicht der Auftrag blockiert. Den Fehlschlag festhalten, nicht unverändert
+wiederholen und den tatsächlich zuständigen Dienst oder Lebenszyklus untersuchen.
+Keine sachfremden Berechtigungsdialoge über benachbarte Subsysteme auslösen.
+
+Bei jeder Zustandsreparatur persistierte kanonische Daten, sichtbare UI und den
+echten Nutzerablauf getrennt verifizieren. Caches durch gezielten Neustart der
+betroffenen App oder des Dienstes erneuern. Erst abschließen, wenn alle drei
+Ebenen übereinstimmen; Statusdateien und eigene Hilfsprozesse anschließend auf
+den tatsächlichen Abschlussstand bringen.
+
 ## Offensichtliche Folgearbeiten selbstständig abschließen
 
-Offensichtlich notwendige, lokal überprüfbare Folgearbeiten proaktiv erledigen,
+Offensichtlich notwendige, autorisierte Folgearbeiten proaktiv erledigen,
 ohne einen weiteren Auftrag abzuwarten. Dazu gehören veraltete Test-Erwartungen,
-bestätigte kleine Folgefehler und die dazugehörige Validierung. Solche Arbeiten
-nicht nur als offene Punkte melden, wenn Ursache und sichere Korrektur bereits
+bestätigte auftragsbezogene Folgefehler und die dazugehörige Validierung. Solche
+Arbeiten nicht nur als offene Punkte melden, wenn Ursache und sichere Korrektur bereits
 feststehen. Das gilt auch, wenn eine veraltete Erwartung durch parallele Änderungen
 entstanden ist: den aktuellen Stand prüfen, die notwendige Anpassung vornehmen
 und bestehende Änderungen anderer erhalten.
 
-Tests am beabsichtigten Verhalten ausrichten; Assertions nicht abschwächen oder
-entfernen, nur um einen grünen Lauf zu erhalten. Nach der Korrektur den betroffenen
+Testerwartungen aus Nutzeranforderung, tatsächlichem Ablauf und gültigem
+Datenvertrag ableiten. Bestehende Tests können falsche Annahmen festschreiben;
+diese belegen und korrigieren. Grüne Tests allein beweisen kein korrektes
+Nutzerverhalten. Assertions nicht abschwächen oder entfernen, nur um einen grünen
+Lauf zu erhalten. Nach der Korrektur den betroffenen
 Test und die nötigen angrenzenden Prüfungen ausführen. Bis zum überprüften Ergebnis
 weiterarbeiten; keine spekulativen Umbauten oder sachfremden Aufräumarbeiten.
 
@@ -70,8 +130,8 @@ isolated test passing is not an E2E result; report untested flows explicitly.
 For build verification, follow `CLAUDE.md`:
 
 - Do not run full builds automatically unless the change is large or build verification is specifically needed.
-- For small changes, prefer focused tests or `git diff --check`; the user can verify directly.
-- If build/test verification is needed but not executed, provide the exact commands.
+- For small changes, run focused tests or `git diff --check` as appropriate.
+- Execute necessary available checks yourself. If a concrete access or environment limitation prevents verification, state it with the exact remaining commands; do not substitute suggested commands for checks you can run.
 
 ## Scope Discipline
 

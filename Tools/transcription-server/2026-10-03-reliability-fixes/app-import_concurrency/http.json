@@ -1,0 +1,91 @@
+{
+  "phase": "ready",
+  "request": "4de71b40-6706-421e-9d53-447ac0186452",
+  "posts": [
+    {
+      "force": false,
+      "episode_url": "http://127.0.0.1:56152/fixture.wav",
+      "audio_source": "server",
+      "title": "Stadtbibliothek und Lesekreis",
+      "client_duration_seconds": 115,
+      "wait_seconds": 0,
+      "podcast_url": "http://127.0.0.1:56152/api/fixture.xml",
+      "client_request_id": "eab8032c-668e-4fab-af0d-8e6a0c713702"
+    },
+    {
+      "audio_source": "server",
+      "title": "Stadtbibliothek und Lesekreis",
+      "wait_seconds": 0,
+      "client_request_id": "4de71b40-6706-421e-9d53-447ac0186452",
+      "episode_url": "http://127.0.0.1:56152/fixture.wav",
+      "podcast_url": "http://127.0.0.1:56152/api/fixture.xml",
+      "client_duration_seconds": 115,
+      "force": false
+    }
+  ],
+  "events": [
+    [
+      "POST",
+      "/api/v1/episodes"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/eab8032c-668e-4fab-af0d-8e6a0c713702"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/eab8032c-668e-4fab-af0d-8e6a0c713702"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/1"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/2"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/3"
+    ],
+    [
+      "GET",
+      "/api/v1/artifacts/4"
+    ],
+    [
+      "POST",
+      "/api/v1/episodes"
+    ],
+    [
+      "DELETE",
+      "/api/v1/client-requests/4de71b40-6706-421e-9d53-447ac0186452"
+    ]
+  ],
+  "paused": false,
+  "connection_error": false,
+  "requests": {
+    "eab8032c-668e-4fab-af0d-8e6a0c713702": {
+      "force": false,
+      "episode_url": "http://127.0.0.1:56152/fixture.wav",
+      "audio_source": "server",
+      "title": "Stadtbibliothek und Lesekreis",
+      "client_duration_seconds": 115,
+      "wait_seconds": 0,
+      "podcast_url": "http://127.0.0.1:56152/api/fixture.xml",
+      "client_request_id": "eab8032c-668e-4fab-af0d-8e6a0c713702"
+    },
+    "4de71b40-6706-421e-9d53-447ac0186452": {
+      "audio_source": "server",
+      "title": "Stadtbibliothek und Lesekreis",
+      "wait_seconds": 0,
+      "client_request_id": "4de71b40-6706-421e-9d53-447ac0186452",
+      "episode_url": "http://127.0.0.1:56152/fixture.wav",
+      "podcast_url": "http://127.0.0.1:56152/api/fixture.xml",
+      "client_duration_seconds": 115,
+      "force": false
+    }
+  },
+  "deletes": [
+    "4de71b40-6706-421e-9d53-447ac0186452"
+  ]
+}

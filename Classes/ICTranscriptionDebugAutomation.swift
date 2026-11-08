@@ -15,6 +15,9 @@ import UIKit
     private static var didStartCommandProcessing = false
     private static var lastCommandIdentifier: String?
     private static let lastProcessedCommandIDKey = "ICTranscriptionDebugAutomationLastCommandID"
+    #if DEBUG && targetEnvironment(simulator)
+    private static var serverFlowTranscriptController: PlayerInfoViewController_v5?
+    #endif
 
     @objc static func startCommandProcessing() {
         guard !didStartCommandProcessing else { return }
@@ -255,8 +258,21 @@ import UIKit
                 try context.save()
                 UserDefaults.standard.set(true, forKey: kServerTranscriptionEnabled)
                 response["episodeHash"] = episode.objectHash
-                response["downloadStarted"] = CacheManager.shared()?.cacheEpisode(episode) ?? false
+                response["downloadStarted"] = parameters["download"] == "false" ? false : (CacheManager.shared()?.cacheEpisode(episode) ?? false)
             } catch { response = errorResponse(action: action, message: error.localizedDescription) }
+        case "serverFlowRemoveCache", "serverFlowCancel":
+            guard ServerTranscriptionManager.debugServerURL != nil,
+                  let episodeHash,
+                  let episode = (DatabaseManager.shared()?.episodes(withObjectHashes: [episodeHash]) as? [CDEpisode])?.first else {
+                response = errorResponse(action: action, message: "Fixture episode or test peer missing.")
+                break
+            }
+            if action == "serverFlowRemoveCache" {
+                CacheManager.shared()?.removeCache(for: episode, automatic: false)
+            } else {
+                ServerTranscriptionManager.shared.dequeueEpisodeHash(episodeHash)
+            }
+            response["requested"] = true
         case "serverFlowStart":
             guard ServerTranscriptionManager.debugServerURL != nil,
                   let episodeHash,
@@ -276,13 +292,91 @@ import UIKit
                 else { break }
             }
             TranscriptionQueueViewController.startServerTranscription(episode: episode, presenter: presenter)
-            let shown = presenter.navigationController?.topViewController ??
-                (presenter.presentedViewController as? UINavigationController)?.topViewController
-            response["statusScreenPresented"] = shown.map { NSStringFromClass(type(of: $0)) == "TranscriptionLogDetailViewController" } ?? false
+        case "serverFlowTranscript":
+            guard ServerTranscriptionManager.debugServerURL != nil,
+                  let episodeHash,
+                  let episode = (DatabaseManager.shared()?.episodes(withObjectHashes: [episodeHash]) as? [CDEpisode])?.first,
+                  let root = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                    .flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController else {
+                response = errorResponse(action: action, message: "Fixture episode or test peer missing.")
+                break
+            }
+            if serverFlowTranscriptController == nil {
+                AudioSession.shared()?.restorePlaybackEpisode(episode, queueUpCurrent: false, at: 0, autostart: false)
+                let playback = PlaybackViewController(episode: episode)!
+                var presenter = root
+                while true {
+                    if let presented = presenter.presentedViewController { presenter = presented }
+                    else if let navigation = presenter as? UINavigationController, let top = navigation.topViewController { presenter = top }
+                    else if let tabs = presenter as? UITabBarController, let selected = tabs.selectedViewController { presenter = selected }
+                    else { break }
+                }
+                presenter.present(playback, animated: false)
+                playback.topViewController?.loadViewIfNeeded()
+                serverFlowTranscriptController = playback.topViewController?.value(forKey: "infoViewController") as? PlayerInfoViewController_v5
+            }
+            if let controller = serverFlowTranscriptController {
+                controller.setTranscriptVisibleFromControl(true)
+                response["transcriptAvailable"] = controller.transcriptAvailable
+                response["transcriptVisible"] = controller.transcriptVisible
+                response["playerPresented"] = controller.viewIfLoaded?.window != nil
+                response["cueCount"] = (controller.value(forKey: "transcriptCues") as? NSArray)?.count ?? 0
+                response["text"] = (controller.value(forKey: "transcriptTextView") as? UITextView)?.text ?? ""
+                response["timingVerified"] = controller.value(forKey: "_transcriptTimingVerified") ?? false
+                response["notice"] = controller.value(forKey: "_audioIdentityNotice") ?? ""
+                let playbackManager = PlaybackManager.shared()
+                response["audioVerified"] = playbackManager?.transcriptAudioVerified ?? false
+                response["playbackFailed"] = playbackManager?.failed ?? false
+                response["playbackReady"] = playbackManager?.isReady ?? false
+                let audioSourceURL = playbackManager?.value(forKey: "audioVerificationSourceURL") as? URL
+                response["audioSourceURL"] = audioSourceURL?.path ?? ""
+                response["audioSnapshotAnchor"] = playbackManager?.value(forKey: "audioSnapshotAnchor") ?? ""
+                response["currentAudioSnapshot"] = TranscriptionEngine.artifactSnapshotIdentifier(at: audioSourceURL) ?? ""
+                response["verifiedTranscriptSnapshot"] = playbackManager?.verifiedTranscriptSnapshot ?? ""
+                response["currentTranscriptSnapshot"] = TranscriptionEngine.shared.transcriptSnapshotIdentifier(for: episodeHash) ?? ""
+                response["verifiedAnalysisSnapshot"] = playbackManager?.value(forKey: "verifiedAnalysisSnapshot") ?? ""
+                response["currentAnalysisSnapshot"] = TranscriptionEngine.artifactSnapshotIdentifier(at: ICTranscriptionPaths.analysisJSONURL(for: episodeHash)) ?? ""
+                let controls = controller.parent?.value(forKey: "controller") as? NSObject
+                response["playEnabled"] = (controls?.value(forKey: "playButton") as? UIButton)?.isEnabled ?? false
+            }
+        case "serverFlowRetryPlayback":
+            guard ServerTranscriptionManager.debugServerURL != nil,
+                  let controls = serverFlowTranscriptController?.parent?.value(forKey: "controller") as? NSObject else {
+                response = errorResponse(action: action, message: "The actual test player is not presented.")
+                break
+            }
+            controls.perform(NSSelectorFromString("togglePlay:"), with: nil)
+            response["retryStarted"] = true
         #endif
         case "status":
             response["queue"] = queue.debugQueueSnapshot()
             response["selectedChapterModel"] = modelDictionary(ICDownloadableModelStore.selectedModel(for: .textToChapters))
+            #if DEBUG && targetEnvironment(simulator)
+            if ServerTranscriptionManager.debugServerURL != nil {
+                var visible = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                    .flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController
+                while let controller = visible {
+                    if let presented = controller.presentedViewController { visible = presented }
+                    else if let navigation = controller as? UINavigationController, let top = navigation.topViewController { visible = top }
+                    else if let tabs = controller as? UITabBarController, let selected = tabs.selectedViewController { visible = selected }
+                    else { break }
+                }
+                response["statusScreenPresented"] = visible.map {
+                    NSStringFromClass(type(of: $0)) == "TranscriptionLogDetailViewController" && $0.viewIfLoaded?.window != nil
+                } ?? false
+                if response["statusScreenPresented"] as? Bool == true,
+                   let controller = visible as? UITableViewController,
+                   let table = controller.tableView, let dataSource = table.dataSource,
+                   table.numberOfSections > 2 {
+                    response["serverStatusProcess"] = (0..<table.numberOfRows(inSection: 2)).map { row in
+                        let cell = dataSource.tableView(table, cellForRowAt: IndexPath(row: row, section: 2))
+                        return ["title": cell.textLabel?.text ?? "", "detail": cell.detailTextLabel?.text ?? ""]
+                    }
+                    let titleCell = dataSource.tableView(table, cellForRowAt: IndexPath(row: 0, section: 0))
+                    response["serverStatusAnimating"] = (titleCell.accessoryView as? UIActivityIndicatorView)?.isAnimating ?? false
+                }
+            }
+            #endif
         case "modelStatus":
             response["voiceModels"] = modelList(role: .voiceToText)
             response["chapterModels"] = modelList(role: .textToChapters)

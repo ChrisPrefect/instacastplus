@@ -1,0 +1,26 @@
+/home/instacast/domains/transcript.instacast.ch/.venv/lib/python3.10/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_event_admission_authentication_uses_observed_error (__main__.EventAlertTests) ... ok
+test_event_admission_resource_failure (__main__.EventAlertTests) ... ok
+test_event_admission_worker_failure (__main__.EventAlertTests) ... ok
+test_event_cooldown (__main__.EventAlertTests) ... ok
+test_event_disabled (__main__.EventAlertTests) ... ok
+test_event_disk_write_failure (__main__.EventAlertTests) ... ok
+test_event_exception_without_message (__main__.EventAlertTests) ... ok
+test_event_expired_claim_reports_timeout (__main__.EventAlertTests) ... ok
+test_event_healthy_post_does_not_email (__main__.EventAlertTests) ... ok
+test_event_idle_and_get_do_not_check_or_email (__main__.EventAlertTests) ... ok
+test_event_job_retry_reports_actual_error (__main__.EventAlertTests) ... ok
+test_event_lost_claim_does_not_email (__main__.EventAlertTests) ... ok
+test_event_mail_failure_keeps_http_error_and_retries_on_next_event (__main__.EventAlertTests) ... ok
+test_event_pending_job_start_reports_provider_block (__main__.EventAlertTests) ... ok
+test_event_provider_pause_retains_job (__main__.EventAlertTests) ... ok
+test_event_resource_collector_does_not_query_provider (__main__.EventAlertTests) ... ok
+test_event_shutdown_does_not_email (__main__.EventAlertTests) ... ok
+test_event_terminal_job_failure (__main__.EventAlertTests) ... ok
+test_event_unexpected_submit_error (__main__.EventAlertTests) ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 7.737s
+
+OK

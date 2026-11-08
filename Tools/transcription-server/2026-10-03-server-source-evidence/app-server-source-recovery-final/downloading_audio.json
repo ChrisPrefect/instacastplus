@@ -1,0 +1,81 @@
+{
+  "action": "status",
+  "commandID": "eaddadff-4a78-48f1-a5dc-7ec037d63b49",
+  "ok": true,
+  "queue": [
+    {
+      "automaticallyScheduled": false,
+      "chapterOnly": false,
+      "completedAt": "",
+      "episodeHash": "a2417026b92184c2c232e6f0ebd5d0dc",
+      "episodeTitle": "Stadtbibliothek und Lesekreis",
+      "error": "",
+      "feedTitle": "Server flow fixture",
+      "nextRetryAt": "2026-10-03T11:00:19Z",
+      "progress": 0,
+      "requiresExplicitRetryAfterCrash": false,
+      "retryAttempt": 0,
+      "serverActivity": "running",
+      "serverActivityUpdatedAt": "2026-10-03T11:00:18Z",
+      "serverAdmissionConfirmed": true,
+      "serverAudioSource": "server",
+      "serverConnectionIssue": false,
+      "serverEstimatedPhaseRemainingSeconds": null,
+      "serverLastProcessingPhase": "downloading_audio",
+      "serverPhase": "downloading_audio",
+      "serverPhaseStartedAt": "2026-10-03T11:00:18Z",
+      "serverQueuePosition": null,
+      "serverWaitingForNetwork": false,
+      "serverWorkCompleted": 1837413,
+      "serverWorkTotal": 3674826,
+      "serverWorkUnit": "bytes",
+      "shouldGenerateAnalysis": true,
+      "status": 4,
+      "statusDetail": "Schritt 1 von 4 · Audio wird geladen",
+      "statusName": "transcribing",
+      "statusStartedAt": "2026-10-03T11:00:17Z",
+      "usesServerTranscription": true
+    }
+  ],
+  "selectedChapterModel": {
+    "deleteBlockedReason": "",
+    "downloaded": false,
+    "downloading": false,
+    "downloadSizeBytes": 2629991680,
+    "downloadSizeText": "2.63 GB",
+    "identifier": "gemma-4-e2b-it-q4-k",
+    "requiresDownload": true,
+    "role": 1,
+    "roleTitle": "Kapitel generieren",
+    "selected": true,
+    "shortTitle": "Gemma 4",
+    "sizeOnDiskBytes": 0,
+    "title": "Gemma 4 E2B-it"
+  },
+  "serverStatusAnimating": true,
+  "serverStatusProcess": [
+    {
+      "detail": "Auftrag vom Server angenommen",
+      "title": "Auftrag senden"
+    },
+    {
+      "detail": "Server lädt die Audiodatei",
+      "title": "Audiodatei auf dem Server laden"
+    },
+    {
+      "detail": "Noch nicht begonnen",
+      "title": "Transkript erstellen"
+    },
+    {
+      "detail": "Noch nicht begonnen",
+      "title": "Kapitel und Zusammenfassung erstellen"
+    },
+    {
+      "detail": "Noch nicht begonnen",
+      "title": "Ergebnis auf diesem Gerät speichern"
+    }
+  ],
+  "source": "commandFile",
+  "statusScreenPresented": true,
+  "timestamp": "2026-10-03T11:00:19Z"
+}

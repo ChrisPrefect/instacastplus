@@ -1,0 +1,17 @@
+{
+  "command": "python3 Tools/streaming_wav_playback_runtime_test.py",
+  "environment": "Native macOS AVFoundation/AVPlayer and HTTP/URLSession, complete production ICStreamingCacheLoader compiled using xcrun clang; temporary CacheManager/Core Data fixture boundaries",
+  "expected": "Identical PCM16 mono16kHz WAV becomes AVPlayerItemStatusReadyToPlay for local URL and production streaming with audio/wav and audio/x-wav; duration 114.835875 seconds",
+  "before": "Local ready; both streaming MIME variants fail AVFoundationErrorDomain -11828, NSOSStatusErrorDomain -12847",
+  "after": "Local and both production streaming variants ready, all durations 114.835875 seconds",
+  "logs": [
+    "wav-stream-before.log",
+    "wav-stream-after.log"
+  ],
+  "actual_app_red_evidence": "app-player-retry-before; final actual app retest run by root",
+  "source_sha256": {
+    "Classes/PlaybackManager.m": "e19398892ae6090edd0808158a933774f1d1d76c4443b5cc29b8bb7736214981",
+    "Tools/streaming_wav_playback_runtime_test.py": "2be2ed24c19fbb3d4a9dd5a95f12055bd64df3ae55757661e0d5d27756b5910c",
+    "Tools/fixtures/server-sponsor-e2e/fixture.wav": "92747209c31b54463fa69e40d7b29b15894a13ff00664e86ca8066112984b6d0"
+  }
+}

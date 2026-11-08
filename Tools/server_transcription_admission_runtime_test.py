@@ -22,6 +22,7 @@ def declaration(signature):
 
 
 signatures = [
+    "@objc var isProcessing:",
     "var hasPendingAutomaticItems:", "var earliestAutomaticWorkDate:", "var hasRetryableCancellations:",
     "@objc func dequeueEpisodeHash(", "@objc func retryEpisodeHash(", "@objc func cancelAll()",
     "@objc func resumeIfNeeded()", "@objc func retryQueueStorage()", "private func clientIdentifier()", "@objc func retryPendingCancellations()", "func whenQueuePersisted(",

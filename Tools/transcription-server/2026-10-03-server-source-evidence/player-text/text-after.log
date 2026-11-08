@@ -1,0 +1,16 @@
+pending audio proof permits current text: PASS
+unverified transcript audio permits current text: PASS
+matching audio and current transcript: PASS
+same cached transcript after episode switch: PASS
+audio replacement does not hide current text: PASS
+transcript replaced after proof: PASS
+new current text loads independently of old timing proof: PASS
+publisher transcript uses its separate source contract: PASS
+publisher WebVTT must allow tap and automatic follow without generated audio proof: PASS
+publisher transcript from previous episode must not seek: PASS
+missing transcript source must not seek: PASS
+untimed publisher text must not claim synchronized playback: PASS
+generated transcript still requires matching audio proof: PASS
+generated transcript with matching audio proof remains interactive: PASS
+actual cue application without audio proof, no follow timer: PASS
+stale parser callback cannot overwrite current displayed text: PASS

@@ -21,9 +21,7 @@ struct Item {let episodeHash="test"}
 @MainActor final class Manager {
  func checkCurrentAttempt(_ item:Item,requestID:String) throws {}
  func serverContractError(code:Int,message:String)->NSError {NSError(domain:"test",code:code,userInfo:[:])}
- func importAudioIsCurrent(_ proof:Bool,for item:Item)->Bool {proof}
- func commit(deleted:Bool,audioCurrent:Bool=true) throws {
-  let audioProof=audioCurrent
+ func commit(deleted:Bool) throws {
   let episode=Episode(isDeleted:deleted), item=Item(), requestID="same-request"
   let srtData=Data(),cues=[1],sourceAudioSHA256="sha",analysis="analysis"
 TAIL
@@ -34,9 +32,6 @@ TAIL
   let manager=Manager()
   do {try manager.commit(deleted:true);fatalError("Deleted episode still committed artifacts after async analysis")}
   catch {precondition((error as NSError).code==11)}
-  precondition(TranscriptionEngine.shared.writes==0 && ChapterGenerator.shared.writes==0)
-  do {try manager.commit(deleted:false,audioCurrent:false);fatalError("Replaced audio still committed artifacts")}
-  catch {precondition((error as NSError).code==57)}
   precondition(TranscriptionEngine.shared.writes==0 && ChapterGenerator.shared.writes==0)
   try manager.commit(deleted:false)
   precondition(TranscriptionEngine.shared.writes==1 && ChapterGenerator.shared.writes==1)

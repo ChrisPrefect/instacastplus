@@ -1,0 +1,22 @@
+{
+  "commands": [
+    "python3 Tools/server_transcription_admission_runtime_test.py",
+    "python3 Tools/server_transcript_source_binding_regression_test.py",
+    "python3 Tools/server_transcription_cancellation_runtime_test.py",
+    "python3 Tools/server_transcription_errors_runtime_test.py",
+    "python3 Tools/server_transcription_storage_runtime_test.py",
+    "python3 Tools/server_transcription_retry_interval_runtime_test.py",
+    "python3 Tools/server_poll_lifecycle_runtime_test.py",
+    "python3 Tools/playback_artifact_freshness_runtime_test.py",
+    "python3 Tools/transcription_audio_identity_runtime_test.py"
+  ],
+  "result": "passed",
+  "scope": "Production manager/queue behavior with controlled media+HTTP boundaries, plus actual audio identity and playback artifact freshness checks; App E2E retained separately by root",
+  "source_sha256": {
+    "Classes/ServerTranscriptionManager.swift": "3b2bba4a994b0eddc39b0548925817e9c334946a34b12fb70a205576526ef7da",
+    "Classes/TranscriptionQueue.swift": "a1a91dd7a6a7e061ddefbb492e3b26f5bc96bca8fcaf5697264fb6b064742ffe",
+    "Tools/fixtures/server_transcription_admission_cases.swift": "7782b882e77d9378e80dda10b0574ab5c84aecfb553bd4659d6ca380d6240b86",
+    "Tools/fixtures/server_transcription_cancellation_harness.swift": "9edee8ea8875582ea869015ac27f753a97ff03604c8ed46671f79681852f29f6",
+    "Tools/server_transcript_source_binding_regression_test.py": "4b7bd83c627e3dfcb35dddcdc11e7cb6f43c66006cd0af7a97aa7f881254f57d"
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "all_expected_behavior_passed" : false,
+  "kind" : "production-method boundary probe",
+  "results" : [
+    {
+      "case" : "healthy_pending_url_only_restart",
+      "expected" : "Same durable UUID and server source resume automatically; no rejection of healthy saved intent",
+      "expected_behavior_passed" : false,
+      "observed" : {
+        "after_admission" : "rejected",
+        "after_error" : "Not added: the app stopped before this request was submitted. Try again explicitly.",
+        "after_status" : "ICTranscriptionStatus(rawValue: 7)",
+        "after_status_is_failed" : true,
+        "before_state" : "queued\/pending",
+        "first_post_still_held" : true,
+        "get_events" : [
+          "7e49ed2c-b622-4028-ad46-46d96638a094"
+        ],
+        "http_events" : [
+          "POST:7e49ed2c-b622-4028-ad46-46d96638a094"
+        ],
+        "restored_source" : "server",
+        "restored_uuid" : "62f5a70f-c072-4662-b960-655610ff8616",
+        "saved_source" : "server",
+        "saved_uuid" : "62f5a70f-c072-4662-b960-655610ff8616",
+        "snapshot_write_error" : null,
+        "waiting_post_count" : 0
+      }
+    },
+    {
+      "case" : "accepted_client_source_cache_removed_before_ready",
+      "expected" : "A result matching the durable start SHA passes the source gate without a current cache file; request UUID remains unchanged",
+      "expected_behavior_passed" : false,
+      "observed" : {
+        "accepted" : "accepted",
+        "artifact_downloads_reached" : 0,
+        "device_cache_present" : false,
+        "error_code" : 55,
+        "error_domain" : "ICServerTranscription.Contract",
+        "error_message" : "Download the complete episode before retrieving its transcript.",
+        "final_uuid" : "dede35aa-853c-45fb-a018-26a5f4a727be",
+        "get_count" : 1,
+        "original_uuid" : "dede35aa-853c-45fb-a018-26a5f4a727be",
+        "post_count" : 1,
+        "queue_error_after_ready" : "Download the complete episode before retrieving its transcript.",
+        "queue_phase_after_ready" : "importing",
+        "queue_status_after_ready" : "ICTranscriptionStatus(rawValue: 7)",
+        "queue_status_is_failed" : true,
+        "server_result_sha256" : "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source" : "client",
+        "stored_start_sha256" : "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  ]
+}

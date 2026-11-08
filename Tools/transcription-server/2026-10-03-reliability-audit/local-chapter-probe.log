@@ -1,0 +1,4 @@
+2026-10-03 13:47:36.414 instacast-local-chapter-identity-review[37477:9975726] [ChapterGenerator] Saved 1 chapters for local
+actual_local_persisted_file={"chapters":[{"start":0,"title":"Locally generated","end":10,"isSponsor":false}]}
+same session: actual chaptersVerified=false, transcriptVerified=true; expected chaptersVerified=true for saved chapters from unchanged proven local source
+fresh generator after restart: actual chaptersVerified=false, transcriptVerified=true; expected chaptersVerified=true for saved chapters from unchanged proven local source

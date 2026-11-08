@@ -52,10 +52,13 @@ enum PendingWidgetActionStore {
 
 // MARK: - Playback Control Intents
 
+// Widget button actions are internal; Shortcuts exposes the app playback intents.
+
 struct PlayPauseIntent: AppIntent {
     static let title: LocalizedStringResource = "Play/Pause"
     static let description = IntentDescription("Toggle playback.")
     static var openAppWhenRun: Bool { false }
+    static var isDiscoverable: Bool { false }
 
     func perform() async throws -> some IntentResult {
         try PendingWidgetActionStore.enqueue(action: "playpause")
@@ -68,6 +71,7 @@ struct SkipForwardIntent: AppIntent {
     static let title: LocalizedStringResource = "Skip Forward"
     static let description = IntentDescription("Skip forward.")
     static var openAppWhenRun: Bool { false }
+    static var isDiscoverable: Bool { false }
 
     func perform() async throws -> some IntentResult {
         try PendingWidgetActionStore.enqueue(action: "skipforward")
@@ -80,6 +84,7 @@ struct SkipBackwardIntent: AppIntent {
     static let title: LocalizedStringResource = "Skip Backward"
     static let description = IntentDescription("Skip backward.")
     static var openAppWhenRun: Bool { false }
+    static var isDiscoverable: Bool { false }
 
     func perform() async throws -> some IntentResult {
         try PendingWidgetActionStore.enqueue(action: "skipbackward")
@@ -92,6 +97,7 @@ struct NextChapterIntent: AppIntent {
     static let title: LocalizedStringResource = "Next Chapter"
     static let description = IntentDescription("Go to next chapter.")
     static var openAppWhenRun: Bool { false }
+    static var isDiscoverable: Bool { false }
 
     func perform() async throws -> some IntentResult {
         try PendingWidgetActionStore.enqueue(action: "nextchapter")
@@ -104,6 +110,7 @@ struct PrevChapterIntent: AppIntent {
     static let title: LocalizedStringResource = "Previous Chapter"
     static let description = IntentDescription("Go to previous chapter.")
     static var openAppWhenRun: Bool { false }
+    static var isDiscoverable: Bool { false }
 
     func perform() async throws -> some IntentResult {
         try PendingWidgetActionStore.enqueue(action: "prevchapter")
@@ -116,6 +123,7 @@ struct NextEpisodeIntent: AppIntent {
     static let title: LocalizedStringResource = "Next Episode"
     static let description = IntentDescription("Play next episode.")
     static var openAppWhenRun: Bool { false }
+    static var isDiscoverable: Bool { false }
 
     func perform() async throws -> some IntentResult {
         try PendingWidgetActionStore.enqueue(action: "nextepisode")
@@ -128,6 +136,7 @@ struct PrevEpisodeIntent: AppIntent {
     static let title: LocalizedStringResource = "Previous Episode"
     static let description = IntentDescription("Play previous episode.")
     static var openAppWhenRun: Bool { false }
+    static var isDiscoverable: Bool { false }
 
     func perform() async throws -> some IntentResult {
         try PendingWidgetActionStore.enqueue(action: "previousepisode")
@@ -140,6 +149,7 @@ struct CycleSpeedIntent: AppIntent {
     static let title: LocalizedStringResource = "Cycle Speed"
     static let description = IntentDescription("Cycle through playback speeds.")
     static var openAppWhenRun: Bool { false }
+    static var isDiscoverable: Bool { false }
 
     func perform() async throws -> some IntentResult {
         try PendingWidgetActionStore.enqueue(action: "cyclespeed")
@@ -152,6 +162,7 @@ struct ToggleSleepTimerIntent: AppIntent {
     static let title: LocalizedStringResource = "Toggle Sleep Timer"
     static let description = IntentDescription("Start or cancel sleep timer.")
     static var openAppWhenRun: Bool { false }
+    static var isDiscoverable: Bool { false }
 
     func perform() async throws -> some IntentResult {
         try PendingWidgetActionStore.enqueue(action: "togglesleeptimer")

@@ -1,0 +1,43 @@
+{
+  "prepared_at": "2026-10-03T09:37:19.656728+00:00",
+  "status": "prepared and locally isolated-tested; not yet deployed",
+  "source": "fresh production snapshot 2026-10-03",
+  "migration": "init_db adds transcription_requests.audio_source VARCHAR(16) NOT NULL DEFAULT 'client'; retains all prior request hashes/state",
+  "files": [
+    {
+      "path": "app/db.py",
+      "before_sha256": "cdd682d48300e2b6789b5d38b8bb7ba0e617c6a1c492abff49d8c893f3ecf395",
+      "after_sha256": "396906469d9f10a8f71ee6ad1ab66b54fa78ea7ac9692c99f7a7e96ed5bad5e3"
+    },
+    {
+      "path": "app/main.py",
+      "before_sha256": "d5eea721cf101c1f17f2eb95851c85d2731880f1e37e7beec6ef90423f5aa3f5",
+      "after_sha256": "dc007fa3c3e531aa1db7d27f32f0eaddefce7f95d8c4a12e0b72d8bb9efd039d"
+    },
+    {
+      "path": "app/service.py",
+      "before_sha256": "2e6cefb5960ed73de835b9e49b9848f4e010b9d043592ca9ba3ad618085cd1a1",
+      "after_sha256": "1a212034140bc1b68e5a4f7ea904b56bada3f6e101356dc60076b0b54f54c44d"
+    },
+    {
+      "path": "tools/api_contract_v3_regression.py",
+      "before_sha256": "73d68c5e808d3960afb1978eb2cd587d6bf9452283a7797ed9e6738d7ab7a265",
+      "after_sha256": "fe82577a21c89d5213939e7d59f7b64ddb3185ede873431671ff0cdfc7ecb499"
+    },
+    {
+      "path": "tools/lifecycle_regression.py",
+      "before_sha256": "39d00f37fdacc38954cced4768f36a0525eb58a92a65f6a9dacff4a9f85e9ac7",
+      "after_sha256": "f2e61ce4239902eb0de8b919ab5bc5a5beb3188cfdf403557cd16cdaf3a4d8f9"
+    },
+    {
+      "path": "tools/queue_admission_mysql_regression.py",
+      "before_sha256": "ca2b6dfa1f2d6b40991ab58bcc0d755c266b56ff11f2e39a6a81ac177b4a901d",
+      "after_sha256": "48e9440998e278cb5c30cd678838359dacd3a54d22fd1d53e4360f19b5935ab3"
+    },
+    {
+      "path": "tools/server_audio_source_regression.py",
+      "before_sha256": null,
+      "after_sha256": "44a7f965bb3be7a69bf2ef5f9bef25400ca5ab041015bce4731154797cbfb8d0"
+    }
+  ]
+}

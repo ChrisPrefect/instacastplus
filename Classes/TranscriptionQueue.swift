@@ -143,7 +143,116 @@ private final class ICMetadataParserSendableBox: @unchecked Sendable {
     @objc let feedTitle: String
     @objc var audioURL: URL?
     @objc let language: String?
-    @objc var status: ICTranscriptionStatus
+    private var lifecycleStatus: ICTranscriptionStatus = .queued
+    private var restorationAllowed = true
+    private var lastRejectedEventKey: String?
+
+    private func diagnosticStateName(_ status: ICTranscriptionStatus) -> String {
+        switch status {
+        case .none: return "none"
+        case .queued: return "queued"
+        case .analyzingMusic: return "analyzingMusic"
+        case .downloadingModel: return "downloadingModel"
+        case .transcribing: return "transcribing"
+        case .generatingChapters: return "generatingChapters"
+        case .completed: return "completed"
+        case .failed: return "failed"
+        case .canceled: return "canceled"
+        @unknown default: return "unknown"
+        }
+    }
+
+    private func rejectTransition(to next: ICTranscriptionStatus, event: String, reason: String) -> Bool {
+        let key = "\(lifecycleStatus.rawValue):\(next.rawValue):\(event):\(reason)"
+        if lastRejectedEventKey != key {
+            lastRejectedEventKey = key
+            ICDiagnosticLogger.shared.logEvent("queue-transition", message: "Ungültiger Queue-Zustandswechsel verworfen", metadata: [
+                "episodeHash": episodeHash, "event": event, "reason": reason,
+                "fromState": diagnosticStateName(lifecycleStatus), "toState": diagnosticStateName(next),
+                "from": lifecycleStatus.rawValue, "to": next.rawValue,
+            ] as NSDictionary)
+        }
+        return false
+    }
+
+    /// Ordinary processing is forward-only. Suspension, retry and restoration
+    /// are separate owner events, never side effects of a progress callback.
+    @objc var status: ICTranscriptionStatus { lifecycleStatus }
+
+    @discardableResult
+    func transition(to next: ICTranscriptionStatus) -> Bool {
+        guard next != .none else { return rejectTransition(to: next, event: "advance", reason: "none-is-not-a-job-state") }
+        let allowed: Bool
+        switch lifecycleStatus {
+        case .queued:
+            allowed = [.queued, .analyzingMusic, .downloadingModel, .transcribing,
+                       .generatingChapters, .failed, .canceled].contains(next)
+        case .analyzingMusic:
+            allowed = [.analyzingMusic, .downloadingModel, .transcribing,
+                       .generatingChapters, .failed, .canceled].contains(next)
+        case .downloadingModel:
+            allowed = [.downloadingModel, .transcribing, .failed, .canceled].contains(next)
+        case .transcribing:
+            allowed = [.transcribing, .generatingChapters, .completed, .failed, .canceled].contains(next)
+        case .generatingChapters:
+            allowed = [.generatingChapters, .completed, .failed, .canceled].contains(next)
+        case .completed, .failed, .canceled:
+            allowed = next == lifecycleStatus
+        case .none:
+            allowed = false
+        @unknown default:
+            allowed = false
+        }
+        guard allowed else {
+            return rejectTransition(to: next, event: "advance", reason: "edge-not-allowed")
+        }
+        lastRejectedEventKey = nil
+        restorationAllowed = false
+        lifecycleStatus = next
+        return true
+    }
+
+    /// A checkpoint/network wait keeps the current attempt alive.
+    @discardableResult
+    func requeue() -> Bool {
+        guard ![ICTranscriptionStatus.none, .completed, .failed, .canceled].contains(lifecycleStatus) else {
+            return rejectTransition(to: .queued, event: "requeue", reason: "attempt-is-not-active")
+        }
+        lastRejectedEventKey = nil
+        restorationAllowed = false
+        lifecycleStatus = .queued
+        return true
+    }
+
+    /// Called by the explicit retry owner after retiring the previous run.
+    @discardableResult
+    func restart() -> Bool {
+        guard lifecycleStatus != .none else { return rejectTransition(to: .queued, event: "restart", reason: "none-is-not-a-job-state") }
+        lastRejectedEventKey = nil
+        restorationAllowed = false
+        lifecycleStatus = .queued
+        return true
+    }
+
+    /// Only a fresh, untouched item can adopt a persisted lifecycle snapshot.
+    @discardableResult
+    func restoreStatus(_ status: ICTranscriptionStatus) -> Bool {
+        guard restorationAllowed, status != .none else {
+            return rejectTransition(to: status, event: "restore", reason: "item-is-not-fresh-or-snapshot-is-invalid")
+        }
+        lastRejectedEventKey = nil
+        restorationAllowed = false
+        lifecycleStatus = status
+        return true
+    }
+
+    func acceptsProgress(for status: ICTranscriptionStatus) -> Bool {
+        guard lifecycleStatus == status,
+              [.analyzingMusic, .downloadingModel, .transcribing, .generatingChapters].contains(status) else {
+            return rejectTransition(to: status, event: "progress", reason: "phase-is-not-active")
+        }
+        return true
+    }
     @objc var progress: Float
     @objc var error: String?
     @objc var statusDetail: String?
@@ -163,9 +272,11 @@ private final class ICMetadataParserSendableBox: @unchecked Sendable {
     @objc var usesServerTranscription = false
     @objc var serverWaitingForNetwork = false
     @objc var serverPhase: String?
+    @objc var serverLastProcessingPhase: String?
     @objc var serverLastResponseAt: Date?
     @objc var serverConnectionIssue = false
     var serverWork: ICServerTranscriptionWork?
+    var serverAudioSource: ICServerAudioSource = .client
     @objc var serverActivity: String? { serverWork?.activity }
     @objc var serverActivityUpdatedAt: Date? { serverWork?.activityUpdatedAt }
     @objc var serverPhaseStartedAt: Date? { serverWork?.startedAt }
@@ -182,7 +293,6 @@ private final class ICMetadataParserSendableBox: @unchecked Sendable {
         self.feedTitle = feedTitle
         self.audioURL = audioURL
         self.language = language
-        self.status = .queued
         self.progress = 0
         self.error = nil
         self.statusDetail = nil
@@ -275,6 +385,12 @@ private struct PersistedQueue: Codable {
             feedTitle = try values.decode(String.self, forKey: .feedTitle)
             language = try values.decodeIfPresent(String.self, forKey: .language)
             statusRawValue = try values.decodeIfPresent(Int.self, forKey: .statusRawValue)
+            if let raw = statusRawValue {
+                guard let status = ICTranscriptionStatus(rawValue: raw), status != .none else {
+                    throw DecodingError.dataCorruptedError(forKey: .statusRawValue, in: values,
+                        debugDescription: "Invalid persisted transcription status")
+                }
+            }
             completedAt = try values.decodeIfPresent(Date.self, forKey: .completedAt)
             chapterOnly = try values.decodeIfPresent(Bool.self, forKey: .chapterOnly)
             error = try values.decodeIfPresent(String.self, forKey: .error)
@@ -480,6 +596,17 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     @objc func admitQueueItem(episodeHash: String, automatic: Bool) -> Bool {
         guard queueStorageError == nil, ServerTranscriptionManager.shared.queueStorageError == nil else {
             postQueueChangeNotification()
+            return false
+        }
+        guard !displayItems.contains(where: {
+            $0.episodeHash == episodeHash && $0.status != .completed && $0.status != .failed && $0.status != .canceled
+        }) else {
+            if !automatic {
+                NotificationCenter.default.post(name: NSNotification.Name("ICTranscriptionQueueCapacityDidChangeNotification"),
+                    object: nil, userInfo: ["automatic": false,
+                        "title": NSLocalizedString("Episode is already being processed", comment: ""),
+                        "message": NSLocalizedString("This episode already has an open transcription or chapter request. Wait for it to finish or cancel it before starting another.", comment: "")])
+            }
             return false
         }
         guard !canAddQueueItem else { return true }
@@ -1495,6 +1622,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             [
                 "episodeHash": item.episodeHash,
                 "serverPhase": item.serverPhase ?? "",
+                "serverLastProcessingPhase": item.serverLastProcessingPhase ?? "",
                 "serverAdmissionConfirmed": item.usesServerTranscription && ServerTranscriptionManager.shared.hasConfirmedAdmission(forEpisodeHash: item.episodeHash),
                 "serverActivity": item.serverActivity ?? "",
                 "serverConnectionIssue": item.serverConnectionIssue,
@@ -1507,6 +1635,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                 "serverEstimatedPhaseRemainingSeconds": item.serverEstimatedPhaseRemainingSeconds as Any? ?? NSNull(),
                 "serverQueuePosition": item.serverQueuePosition as Any? ?? NSNull(),
                 "usesServerTranscription": item.usesServerTranscription,
+                "serverAudioSource": item.serverAudioSource.rawValue,
                 "episodeTitle": item.episodeTitle,
                 "feedTitle": item.feedTitle,
                 "status": item.status.rawValue,
@@ -1626,13 +1755,13 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
     private enum GeneratedSemanticArtifacts {
         case analysis(EpisodeAnalysisResult)
-        case chapters([ICGeneratedChapter])
+        case chapters([ICGeneratedChapter], transcriptRevision: String, transcriptSnapshot: String, sourceAudioSHA256: String?)
 
         var chapters: [ICGeneratedChapter] {
             switch self {
             case .analysis(let result):
                 return result.chapters
-            case .chapters(let chapters):
+            case .chapters(let chapters, _, _, _):
                 return chapters
             }
         }
@@ -2075,6 +2204,8 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                                            automaticItem: ICTranscriptionQueueItem?,
                                            status: ((String) -> Void)?,
                                            progress: ((Float, Int, Int) -> Void)?) async throws -> GeneratedSemanticArtifacts {
+        let transcriptSnapshot = engine.transcriptSnapshotIdentifier(for: episodeHash)
+        let sourceAudioSHA256 = engine.transcriptSourceAudioSHA256(for: episodeHash)
         let existingChapters = try await existingGeneratedChapters(
             for: episodeHash,
             transcriptStart: cues.first?.start ?? 0,
@@ -2113,6 +2244,11 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                 userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Vorhandene Podcast-Kapitel können nur mit einem Remote-Kapitelmodell um belegte Sponsoren und eine Zusammenfassung ergänzt werden.", comment: "")]
             )
         }
+        guard let transcriptSnapshot else {
+            throw NSError(domain: "TranscriptionQueue.AnalysisRevision", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("The transcript changed while chapters were being generated. Generate the chapters again.", comment: "")])
+        }
+        let transcriptRevision = chapterGen.transcriptRevision(for: cues)
         let chapters = try await chapterGen.generateChaptersAsync(
             fromCues: cues,
             musicSegments: musicSegments,
@@ -2122,7 +2258,8 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             episodeTitle: episodeTitle,
             feedTitle: feedTitle
         )
-        return .chapters(chapters)
+        return .chapters(chapters, transcriptRevision: transcriptRevision,
+                         transcriptSnapshot: transcriptSnapshot, sourceAudioSHA256: sourceAudioSHA256)
     }
 
     private func verifyAnalysisTranscriptRevision(_ result: EpisodeAnalysisResult,
@@ -2144,8 +2281,9 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         case .analysis(let result):
             try await verifyAnalysisTranscriptRevision(result, episodeHash: episodeHash)
             try chapterGen.saveAnalysisResult(result, for: episodeHash)
-        case .chapters(let chapters):
-            try chapterGen.saveChaptersThrowing(chapters, for: episodeHash)
+        case .chapters(let chapters, let revision, let snapshot, let sourceAudioSHA256):
+            try chapterGen.saveChaptersThrowing(chapters, for: episodeHash, transcriptRevision: revision,
+                                               transcriptSnapshot: snapshot, sourceAudioSHA256: sourceAudioSHA256)
         }
     }
 
@@ -2200,7 +2338,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                                 detailText: detailedError
                             )
                             if !self.scheduleRetry(for: item, error: error, stage: "transcript-import") {
-                                item.status = .failed
+                                guard item.transition(to: .failed) else { return }
                                 item.statusDetail = nil
                                 item.statusStartedAt = nil
                                 item.nextRetryAt = nil
@@ -2270,9 +2408,9 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                     automaticItem: item,
                     status: detailUpdater,
                     progress: { progress, chunkIndex, totalChunks in
-                        self.recordProgressSample(for: item,
+                        guard self.recordProgressSample(for: item,
                                                   progress: progress,
-                                                  status: .generatingChapters)
+                                                  status: .generatingChapters) else { return }
                         self.postProgressNotification(episodeHash: episodeHash, progress: progress, status: .generatingChapters)
                     }
                 )
@@ -2320,7 +2458,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             if let semanticArtifacts, !semanticArtifacts.chapters.isEmpty {
                 do {
                     try await self.saveSemanticArtifacts(semanticArtifacts, for: episodeHash)
-                    item.status = .completed
+                    guard item.transition(to: .completed) else { return }
                     item.progress = 1.0
                     item.statusDetail = nil
                     item.statusStartedAt = nil
@@ -2351,7 +2489,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             }
             if let finalError,
                !self.scheduleRetry(for: item, error: finalError, stage: "chapter-generation") {
-                item.status = .failed
+                guard item.transition(to: .failed) else { return }
                 item.statusDetail = nil
                 item.statusStartedAt = nil
                 item.nextRetryAt = nil
@@ -2393,9 +2531,9 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             return false
         }
 
+        guard item.requeue() else { return false }
         item.chapterOnly = false
         item.audioURL = resolveAudioURL(for: episode)
-        item.status = .queued
         item.progress = 0
         item.statusDetail = NSLocalizedString("Podcast-Transkript hat keine verlässlichen Zeitmarken. Die Audiodatei wird transkribiert.", comment: "")
         item.statusStartedAt = nil
@@ -3072,7 +3210,8 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                 !canAutoResumeRemoteChapterJobAfterUnexpectedTermination($0)
             } ?? false
             if previousEndedUnexpectedly || shouldQuarantineGuardedItem,
-               let item = guardedItem {
+               let item = guardedItem,
+               ![ICTranscriptionStatus.completed, .failed, .canceled].contains(item.status) {
                 NSLog("[TranscriptionQueue] Crash guard active — last run was killed before completing")
                 ICDiagnosticLogger.shared.logEvent("queue", message: "Crash-Guard aktiv", metadata: [
                     "queueCount": items.count,
@@ -3085,7 +3224,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                 var didMarkInterruptedItem = false
                 var didPrepareAutoResumeItem = false
                 if canAutoResumeRemoteChapterJobAfterUnexpectedTermination(item) {
-                    item.status = .queued
+                    item.requeue()
                     item.progress = 0
                     item.statusDetail = nil
                     item.statusStartedAt = nil
@@ -3112,7 +3251,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                                                           message: "Vorheriger Durchlauf wurde abgebrochen (App-Beendigung oder Crash)", detailText: nil)
                         didMarkInterruptedItem = true
                     }
-                    item.status = .queued
+                    item.requeue()
                     item.progress = 0
                     item.statusDetail = nil
                     item.statusStartedAt = nil
@@ -3146,7 +3285,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         for item in items {
             if item.status == .transcribing || item.status == .analyzingMusic || item.status == .downloadingModel || item.status == .generatingChapters {
                 NSLog("[TranscriptionQueue] Resetting stuck item %@ from status %ld to queued", item.episodeHash, item.status.rawValue)
-                item.status = .queued
+                item.requeue()
                 item.progress = 0
                 item.statusDetail = nil
                 item.statusStartedAt = nil
@@ -3154,7 +3293,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             }
             if engine.hasCheckpoint(for: item.episodeHash) {
                 NSLog("[TranscriptionQueue] Found interrupted transcription for %@, resuming", item.episodeHash)
-                item.status = .queued
+                item.requeue()
             }
         }
 
@@ -3271,7 +3410,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         } else {
             item.chapterOnly = false
         }
-        item.status = .queued
+        item.restart()
         item.requiresExplicitRetryAfterCrash = false
         item.progress = 0
         item.progressBaseline = 0
@@ -3592,7 +3731,8 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                                error: Error,
                                stage: String,
                                now: Date = Date()) -> Bool {
-        guard item.automaticallyScheduled else {
+        guard item.automaticallyScheduled,
+              ![ICTranscriptionStatus.completed, .failed, .canceled].contains(item.status) else {
             return false
         }
 
@@ -3637,7 +3777,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         let retryDate = now.addingTimeInterval(delay)
         let errorMessage = Self.detailedErrorMessage(for: error)
 
-        item.status = .queued
+        guard item.requeue() else { return false }
         item.requiresExplicitRetryAfterCrash = false
         item.progress = 0
         item.statusDetail = String(
@@ -3862,7 +4002,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             currentTask = nil
             isProcessing = false
             clearCrashGuard()
-            item.status = .queued
+            item.requeue()
             item.statusDetail = NSLocalizedString("Rechenprofil wird für die Hintergrundverarbeitung gewechselt.", comment: "")
             item.statusStartedAt = nil
             item.progressBaselineStartedAt = nil
@@ -4088,6 +4228,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     }
 
     private func finishBackgroundPause(for item: ICTranscriptionQueueItem, reason: String, error: Error? = nil) {
+        guard item.requeue() else { return }
         backgroundPausedEpisodeHashes.insert(item.episodeHash)
         let pauseDetail = NSLocalizedString("Verarbeitung im Hintergrund pausiert. Wird mit verfügbarer Rechenzeit automatisch fortgesetzt.", comment: "")
         invalidateProcessingRun()
@@ -4098,7 +4239,6 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             item.chapterOnly = true
             item.audioURL = nil
         }
-        item.status = .queued
         item.statusDetail = pauseDetail
         item.statusStartedAt = nil
         item.progressBaselineStartedAt = nil
@@ -4261,7 +4401,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
                 if candidate.chapterOnly {
                     if let reason = runtimeIntent.analysisUnavailableReason {
-                        candidate.status = .failed
+                        guard candidate.transition(to: .failed) else { continue }
                         candidate.statusDetail = nil
                         candidate.statusStartedAt = nil
                         candidate.error = reason
@@ -4280,7 +4420,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                 } else {
                     if let reason = runtimeIntent.analysisUnavailableReason,
                        !runtimeIntent.transcribe {
-                        candidate.status = .failed
+                        guard candidate.transition(to: .failed) else { continue }
                         candidate.statusDetail = nil
                         candidate.statusStartedAt = nil
                         candidate.error = reason
@@ -4301,7 +4441,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
             if candidate.chapterOnly {
                 guard hasChapterGenerationTranscript(episodeHash: candidate.episodeHash) else {
-                    candidate.status = .failed
+                    guard candidate.transition(to: .failed) else { continue }
                     candidate.statusDetail = nil
                     candidate.statusStartedAt = nil
                     candidate.error = NSLocalizedString("Transkript konnte nicht geladen werden.", comment: "")
@@ -4311,7 +4451,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                 }
                 guard ICDownloadableModelStore.selectedChapterModelIsReady(),
                       ICDownloadableModelStore.selectedChapterModelCanGenerate() else {
-                    candidate.status = .failed
+                    guard candidate.transition(to: .failed) else { continue }
                     candidate.statusDetail = nil
                     candidate.statusStartedAt = nil
                     candidate.error = ICDownloadableModelStore.selectedChapterModelUnavailableReason()
@@ -4356,7 +4496,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                     userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Audiodatei nicht verfügbar.", comment: "")]
                 )
                 if !scheduleRetry(for: candidate, error: downloadError, stage: "episode-download-start") {
-                    candidate.status = .failed
+                    guard candidate.transition(to: .failed) else { continue }
                     candidate.statusDetail = nil
                     candidate.statusStartedAt = nil
                     candidate.nextRetryAt = nil
@@ -4369,7 +4509,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
             // Check failure counter for OOM loop protection
             if let failures = loadCheckpointFailures(for: candidate.episodeHash), failures >= 6 {
-                candidate.status = .failed
+                guard candidate.transition(to: .failed) else { continue }
                 candidate.statusDetail = nil
                 candidate.statusStartedAt = nil
                 candidate.error = NSLocalizedString("Transkription auf diesem Gerät nicht möglich.", comment: "")
@@ -4379,7 +4519,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
             // Check if WhisperKit model is downloaded
             if engine.engineType == .whisperKit && !WhisperKitBackend.shared.isModelDownloadedSync() {
-                candidate.status = .failed
+                guard candidate.transition(to: .failed) else { continue }
                 candidate.statusDetail = nil
                 candidate.statusStartedAt = nil
                 candidate.error = NSLocalizedString("Sprachmodell nicht installiert. Bitte in Einstellungen > Transkription herunterladen.", comment: "")
@@ -4545,7 +4685,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                         TranscriptionLogger.shared.append(episodeHash: episodeHash, phase: "error",
                                                           message: "Modell-Ladefehler", detailText: errMsg)
                         if !self.scheduleRetry(for: item, error: error, stage: "speech-model-load") {
-                            item.status = .failed
+                            guard item.transition(to: .failed) else { return }
                             item.statusDetail = nil
                             item.statusStartedAt = nil
                             item.nextRetryAt = nil
@@ -4618,9 +4758,9 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                         NSLog("[TranscriptionQueue] Progress received: %.1f%% status=%ld", progress * 100, status.rawValue)
                         DispatchQueue.main.async {
                             guard self?.processingRunIsCurrent(runID) == true else { return }
-                            self?.recordProgressSample(for: item,
+                            guard self?.recordProgressSample(for: item,
                                                        progress: progress,
-                                                       status: status)
+                                                       status: status) == true else { return }
                             self?.postProgressNotification(episodeHash: episodeHash, progress: progress, status: status)
                         }
                     },
@@ -4660,7 +4800,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                     TranscriptionLogger.shared.append(episodeHash: episodeHash, phase: "error",
                                                       message: "Transkriptions-Fehler", detailText: errMsg)
                     if !self.scheduleRetry(for: item, error: error, stage: "transcription") {
-                        item.status = .failed
+                        guard item.transition(to: .failed) else { return }
                         item.statusDetail = nil
                         item.statusStartedAt = nil
                         item.nextRetryAt = nil
@@ -4690,7 +4830,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                         return
                     }
                     if item.status != .failed {
-                        item.status = .failed
+                        guard item.transition(to: .failed) else { return }
                         item.statusDetail = nil
                         item.statusStartedAt = nil
                         item.error = NSLocalizedString("Transkription fehlgeschlagen.", comment: "")
@@ -4871,9 +5011,9 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                         status: detailUpdater,
                         progress: { [weak self] progress, chunkIndex, totalChunks in
                             guard self?.processingRunIsCurrent(runID) == true else { return }
-                            self?.recordProgressSample(for: item,
+                            guard self?.recordProgressSample(for: item,
                                                        progress: progress,
-                                                       status: .generatingChapters)
+                                                       status: .generatingChapters) == true else { return }
                             self?.postProgressNotification(episodeHash: episodeHash, progress: progress, status: .generatingChapters)
                         }
                     )
@@ -5004,7 +5144,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                         self.processNext()
                         return
                     }
-                    item.status = .failed
+                    guard item.transition(to: .failed) else { return }
                     item.progress = 1.0
                     item.error = [headline, detail].filter { !$0.isEmpty }.joined(separator: "\n")
                     item.statusDetail = nil
@@ -5024,7 +5164,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                     self.processNext()
                     return
                 }
-                item.status = .completed
+                guard item.transition(to: .completed) else { return }
                 item.progress = 1.0
                 item.statusDetail = nil
                 item.statusStartedAt = nil
@@ -5212,7 +5352,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         if let item = items.first(where: { $0.episodeHash == episodeHash && $0.status == .queued }) {
             let shouldRetry = error.map { scheduleRetry(for: item, error: $0, stage: "episode-download") } ?? false
             if !shouldRetry {
-                item.status = .failed
+                guard item.transition(to: .failed) else { return }
                 item.statusDetail = nil
                 item.statusStartedAt = nil
                 item.nextRetryAt = nil
@@ -5283,7 +5423,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             engine.cancelTranscription()
             analyzer.cancelAnalysis()
             isProcessing = false
-            item.status = .queued
+            item.requeue()
             item.progress = 0
             item.statusDetail = nil
             item.statusStartedAt = nil
@@ -5482,7 +5622,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                     audioURL: nil,
                     language: pItem.language
                 )
-                item.status = .failed
+                item.restoreStatus(.failed)
                 item.progress = 0
                 item.completedAt = failedAt
                 item.chapterOnly = pItem.chapterOnly == true
@@ -5502,7 +5642,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                     audioURL: nil,
                     language: pItem.language
                 )
-                item.status = .completed
+                item.restoreStatus(.completed)
                 item.progress = 1.0
                 item.completedAt = completedAt
                 item.chapterOnly = pItem.chapterOnly == true
@@ -5539,7 +5679,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                     language: pItem.language
                 )
                 item.chapterOnly = true
-                item.status = .queued
+                item.requeue()
                 restorePersistedIntent(pItem, to: item)
                 items.append(item)
                 continue
@@ -5566,7 +5706,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                     language: pItem.language
                 )
                 item.chapterOnly = true
-                item.status = .queued
+                item.requeue()
                 restorePersistedIntent(pItem, to: item)
                 items.append(item)
                 ICDiagnosticLogger.shared.logEvent("queue", message: "Persistierten Job nach fertigem SRT in Analysephase wiederhergestellt", metadata: [
@@ -5584,7 +5724,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                 audioURL: nil, // Will be resolved when processing starts
                 language: pItem.language
             )
-            item.status = .queued
+            item.requeue()
             restorePersistedIntent(pItem, to: item)
             items.append(item)
         }
@@ -5629,7 +5769,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                            status: ICTranscriptionStatus,
                            detail: String?) {
         let didChangeStatus = item.status != status
-        item.status = status
+        guard item.transition(to: status) else { return }
         item.progress = 0
         item.progressBaseline = 0
         item.progressBaselineStartedAt = nil
@@ -5656,13 +5796,15 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
     private func recordProgressSample(for item: ICTranscriptionQueueItem,
                                       progress: Float,
-                                      status: ICTranscriptionStatus) {
-        if item.status != status || item.progressBaselineStartedAt == nil {
+                                      status: ICTranscriptionStatus) -> Bool {
+        // A callback reports an already-entered phase; it cannot enter/revive one.
+        guard item.acceptsProgress(for: status) else { return false }
+        if item.progressBaselineStartedAt == nil {
             item.progressBaseline = progress
             item.progressBaselineStartedAt = Date()
         }
-        item.status = status
         item.progress = progress
+        return true
     }
 
     private func updateStatusDetail(for episodeHash: String, detail: String) {

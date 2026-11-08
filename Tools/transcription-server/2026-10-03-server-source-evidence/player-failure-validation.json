@@ -1,0 +1,20 @@
+{
+  "environment": "macOS, Foundation Objective-C recording resources; production failed AV item branch, shared cleanup/close, AudioSession.togglePlay",
+  "commands": [
+    "python3 Tools/playback_media_failure_runtime_test.py",
+    "python3 Tools/playback_autoskip_live_settings_runtime_test.py",
+    "python3 Tools/playback_replayed_skip_runtime_test.py"
+  ],
+  "inputs": "Failed AVPlayerItem with retained streaming HTTP 503 error, both startup and previously ready playback; intentional close/repeat close",
+  "before": "12 failed behavior assertions in player-failure-before.log; actual app evidence app-player-before/transcript-view.json and player-runtime.log",
+  "after": "all three runtime commands passed",
+  "e2e_scope": "Does not replace final App E2E for readable transcript and explicit Play after stream failure; root runs current app independently",
+  "source_sha256": {
+    "Classes/PlaybackManager.h": "bd4229060fdcad3b424053528be38a37e259699d1f9deec51fda6e3ec5b7bee4",
+    "Classes/PlaybackManager.m": "88e62cfe6c994ef48adb42338a25431f7c64384e02d23fddcf659c0b4b7a68e7",
+    "Classes/AudioSession.m": "8b9facec3ff6ab206c0c7d2cbc31ffe939c26c46311d5a67cae6941ee9f1a734",
+    "Tools/playback_media_failure_runtime_test.py": "628e509037162bfb8cece199139cb95286d848df3c99f4d56eb97fb8032f2a68",
+    "Tools/playback_autoskip_live_settings_runtime_test.py": "ead57f6029b90236c98adc93a147c528014db401073264336a28f722407f7b1d",
+    "Tools/playback_replayed_skip_runtime_test.py": "83bd2058be29bed3dd80e81b3e198f56ae39e75c5e94ee4c16cd1de3896f5f3d"
+  }
+}

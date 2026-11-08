@@ -14,7 +14,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--device', default='675CC86D-C1EA-41D7-A244-0318E0EE1121')
 parser.add_argument('--output', type=Path, required=True)
 parser.add_argument('--locale', default='de', choices=['de', 'en'])
-parser.add_argument('--scenario', default='running', choices=['offline', 'sending', 'running', 'retrying', 'failed', 'import', 'completed', 'queued', 'paused', 'recovering', 'stale', 'unknown_total', 'offline_accepted', 'canceled', 'admin_paused', 'queued_retry'])
+parser.add_argument('--scenario', default='running', choices=['offline', 'sending', 'running', 'retrying', 'failed', 'import', 'completed', 'queued', 'paused', 'paused_after_transcribing', 'recovering', 'stale', 'unknown_total', 'offline_accepted', 'canceled', 'admin_paused', 'queued_retry', 'awaiting_import'])
 parser.add_argument('--width', type=int, default=393)
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
@@ -32,7 +32,7 @@ typedef NS_ENUM(NSInteger,ICTranscriptionStatus) { ICTranscriptionStatusNone, IC
 @interface ICTranscriptionQueueItem:NSObject
 @property ICTranscriptionStatus status;
 @property BOOL usesServerTranscription,serverWaitingForNetwork,requiresExplicitRetryAfterCrash,serverConnectionIssue;
-@property NSString *episodeHash,*episodeTitle,*feedTitle,*statusDetail,*error,*serverPhase;
+@property NSString *episodeHash,*episodeTitle,*feedTitle,*statusDetail,*error,*serverPhase,*serverLastProcessingPhase;
 @property NSDate *nextRetryAt,*serverLastResponseAt,*serverActivityUpdatedAt,*serverPhaseStartedAt;
 @property NSString *serverActivity,*serverWorkUnit;
 @property NSNumber *serverWorkCompleted,*serverWorkTotal,*serverEstimatedPhaseRemainingSeconds,*serverQueuePosition;
@@ -90,10 +90,12 @@ CONTROLLER
  if([scenario isEqual:@"canceled"]) {item.status=ICTranscriptionStatusCanceled;item.nextRetryAt=nil;}
  if([scenario isEqual:@"retrying"]) {item.serverConnectionIssue=YES;item.statusDetail=NSLocalizedString(@"Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant.",nil);}
  if([scenario isEqual:@"failed"]||[scenario isEqual:@"import"]) {item.status=ICTranscriptionStatusFailed;item.nextRetryAt=nil;item.serverPhase=[scenario isEqual:@"import"]?@"importing":@"failed";item.error=NSLocalizedString(@"Das Server-Ergebnis ist unvollständig oder enthält doppelte Artefakte.",nil);}
+ if([scenario isEqual:@"awaiting_import"]) {item.serverPhase=@"awaiting_import";item.serverActivity=@"complete";item.statusDetail=NSLocalizedString(@"The server result is ready. Waiting to retrieve it.",nil);}
  if([scenario isEqual:@"queued_retry"]) {item.serverActivity=@"queued";item.serverQueuePosition=@3;}
  if([scenario isEqual:@"admin_paused"]) {item.serverActivity=@"paused";}
  if([scenario isEqual:@"queued"]) {item.serverPhase=@"queued";item.serverActivity=@"queued";item.serverQueuePosition=@3;}
  if([scenario isEqual:@"paused"]) {item.serverPhase=@"paused";item.serverActivity=@"paused";item.statusDetail=NSLocalizedString(@"Your request is saved on the server. Processing will continue automatically when the service is available again.",nil);}
+ if([scenario isEqual:@"paused_after_transcribing"]) {item.serverPhase=@"paused";item.serverLastProcessingPhase=@"transcribing";item.serverActivity=nil;item.serverActivityUpdatedAt=nil;item.statusDetail=NSLocalizedString(@"Your request is saved on the server. Processing will continue automatically when the service is available again.",nil);}
  if([scenario isEqual:@"recovering"]) {item.serverActivity=@"recovering";}
  if([scenario isEqual:@"running"]) {item.serverWorkCompleted=@300;item.serverWorkTotal=@1200;item.serverWorkUnit=@"audio_seconds";item.serverEstimatedPhaseRemainingSeconds=@360;}
  if([scenario isEqual:@"completed"]) {item.status=ICTranscriptionStatusCompleted;item.nextRetryAt=nil;}
@@ -117,11 +119,15 @@ CONTROLLER
  if([scenario isEqual:@"stale"])informative=informative && [visibleText containsString:NSLocalizedString(@"Checking server activity",nil)];
  if([scenario isEqual:@"unknown_total"])informative=informative && [visibleText containsString:[NSString stringWithFormat:NSLocalizedString(@"Audio downloaded: %@",nil),[NSByteCountFormatter stringFromByteCount:2048 countStyle:NSByteCountFormatterCountStyleFile]]];
  if([scenario isEqual:@"running"])informative=informative && [visibleText containsString:NSLocalizedString(@"Server is creating the transcript",nil)] && [visibleText containsString:@"5:00"] && [visibleText containsString:@"20:00"];
+ NSMutableArray *timeline=[NSMutableArray array];
+ for(NSInteger row=0;row<5;row++) {UITableViewCell *cell=[vc tableView:vc.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:row inSection:2]];[timeline addObject:@{@"title":cell.textLabel.text?:@"",@"detail":cell.detailTextLabel.text?:@""}];}
+ if([scenario isEqual:@"awaiting_import"])informative=informative && [visibleText containsString:NSLocalizedString(@"Waiting to retrieve results",nil)] && [timeline[3][@"detail"] isEqual:NSLocalizedString(@"Completed",nil)] && [timeline[4][@"detail"] isEqual:NSLocalizedString(@"Waiting to retrieve results",nil)] && !activity;
+ if([scenario isEqual:@"paused_after_transcribing"])informative=informative && [timeline[1][@"detail"] isEqual:NSLocalizedString(@"Completed",nil)] && [timeline[2][@"detail"] isEqual:NSLocalizedString(@"Processing paused",nil)] && [timeline[3][@"detail"] isEqual:NSLocalizedString(@"Not started",nil)] && !activity;
  for(NSDictionary *node in nodes){title|=[node[@"id"] isEqual:@"ICServerStatusTitle"];next|=[node[@"id"] isEqual:@"ICServerNextAction"];process|=[node[@"id"] isEqual:@"ICServerProcess"];if([node[@"text"] containsString:@"Previous diagnostic event"])historyHidden=NO;}
  NSURL *dir=[NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
  UIImage *image=[[[UIGraphicsImageRenderer alloc] initWithBounds:self.window.bounds] imageWithActions:^(UIGraphicsImageRendererContext *ctx){[self.window drawViewHierarchyInRect:self.window.bounds afterScreenUpdates:YES];}];
  [UIImagePNGRepresentation(image) writeToURL:[dir URLByAppendingPathComponent:@"screen.png"] atomically:YES];
- [[NSJSONSerialization dataWithJSONObject:@{@"passed":@(title&&next&&process&&historyHidden&&informative),@"title":@(title),@"nextAction":@(next),@"process":@(process),@"historyHidden":@(historyHidden),@"nodes":nodes,@"activity":@(activity),@"confirmed":@(confirmed),@"informative":@(informative)} options:NSJSONWritingPrettyPrinted error:nil] writeToURL:[dir URLByAppendingPathComponent:@"result.json"] atomically:YES];
+ [[NSJSONSerialization dataWithJSONObject:@{@"passed":@(title&&next&&process&&historyHidden&&informative),@"title":@(title),@"nextAction":@(next),@"process":@(process),@"historyHidden":@(historyHidden),@"nodes":nodes,@"timeline":timeline,@"activity":@(activity),@"confirmed":@(confirmed),@"informative":@(informative)} options:NSJSONWritingPrettyPrinted error:nil] writeToURL:[dir URLByAppendingPathComponent:@"result.json"] atomically:YES];
  };
 }
 @end

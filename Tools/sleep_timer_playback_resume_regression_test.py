@@ -35,12 +35,14 @@ audio_methods = [method(audio, s) for s in [
     '- (void)startSleepTimerIfNeeded', '- (void)pauseSleepTimer',
     '- (void)_scheduleSleepTimerWithDuration:',
     '- (void)resetSleepTimerForActivity:',
+    '- (void)resetSleepTimerForActivity:(NSString*)reason metadata:',
     '- (NSTimeInterval) timerRemainingTime',
 ]]
 player_methods = [method(player, s) for s in [
     '- (void) play\n', '- (void) pause\n', '- (void) playPause\n',
     '- (MPRemoteCommandHandlerStatus) _playEvent:', '- (MPRemoteCommandHandlerStatus) _pauseEvent:', '- (BOOL) isPaused\n',
     '- (BOOL) isPodcastPlaying\n', '- (void) _sendUpdateNotification\n',
+    '- (BOOL)_transitionPlaybackWithEvent:(ICPlaybackEvent)event\n', '- (BOOL)isReady\n',
 ]]
 player_stub = r'''
 // AVFoundation/CoreMedia, cache and persistence are minimal local substitutes.
@@ -49,10 +51,12 @@ player_stub = r'''
 #define TARGET_OS_IPHONE 1
 typedef struct { int64_t value; int32_t timescale; } CMTime;
 typedef NSInteger MPRemoteCommandHandlerStatus;
-enum { MPRemoteCommandHandlerStatusSuccess=0, RunningState=1, ShouldRunState=2, InitializedState=3 };
+enum { MPRemoteCommandHandlerStatusSuccess=0 };
+// PLAYBACK_LIFECYCLE
 @interface MPRemoteCommandEvent:NSObject @end
 @implementation MPRemoteCommandEvent @end
 @interface ItemStub:NSObject
+@property NSInteger status;
 - (CMTime)currentTime;
 @end
 @implementation ItemStub
@@ -82,6 +86,8 @@ NSString* PlaybackManagerDidUpdateNotification=@"MPPlaybackManagerDidUpdateNotif
 @property (readonly,getter=isPodcastPlaying) BOOL podcastPlaying;
 @property double time;
 @property BOOL hasBeenPlayingWhenInterrupted;
+@property (readonly,getter=isReady) BOOL ready;
+@property BOOL failed;
 @property NSInteger state;
 @property PlayerStub* player;
 @property NSDate* seekingPositionChangeDate;
@@ -112,7 +118,9 @@ NSString* PlaybackManagerDidUpdateNotification=@"MPPlaybackManagerDidUpdateNotif
 PLAYER_METHODS
 @end
 '''.replace('PLAYER_METHODS', '\n'.join(player_methods))
-preamble = values['preamble'].replace('- (void)stopPlaybackTimer:(NSTimer*)timer;', '- (void)startSleepTimerIfNeeded;\n- (void)pauseSleepTimer;\n- (void)stopPlaybackTimer:(NSTimer*)timer;')
+start = player.index('typedef NS_ENUM(NSInteger, ICPlaybackState)')
+player_stub = player_stub.replace('// PLAYBACK_LIFECYCLE', player[start:player.index('\n#if TARGET_OS_IPHONE', start)])
+preamble = values['preamble'].replace('- (void)stopPlaybackTimer:(NSTimer*)timer;', '- (void)startSleepTimerIfNeeded;\n- (void)pauseSleepTimer;\n- (void)stopPlaybackTimer:(NSTimer*)timer;\n- (void)resetSleepTimerForActivity:(NSString*)reason metadata:(NSDictionary*)metadata;')
 start = preamble.index('@interface PlaybackManager:')
 end = preamble.index('@interface ICSharePlayCoordinator:')
 player_implementation = player_stub[player_stub.index('@implementation PlaybackManager'):]
@@ -121,6 +129,10 @@ preamble = preamble[:start] + player_declarations + preamble[end:]
 controls = (root / 'Classes/PlaybackControlsViewController.m').read_text()
 controls_probe = '''
 #define PlayHapticFeedback(value) ((void)0)
+@interface AudioSession (MediaRetryBoundary) - (void)togglePlay; @end
+@implementation AudioSession (MediaRetryBoundary)
+- (void)togglePlay { abort(); } // Ready playback in this suite must never reopen media.
+@end
 @interface PlaybackControlsViewController:NSObject @end
 @implementation PlaybackControlsViewController
 ''' + method(controls, '- (void) togglePlay:(id)sender') + '\n@end\n'
@@ -163,6 +175,7 @@ int main(int argc, const char** argv){@autoreleasepool{
  if([mode hasPrefix:@"already-paused"]) {
      s.stopDate=[NSDate dateWithTimeIntervalSinceNow:0.2];
      p.player.rate=0;
+     p.state=PausedState; // The real AVPlayer rate observer records this transition.
      if([mode isEqual:@"already-paused-remote"]) [p _pauseEvent:nil];
      else [p pause];
      CHECK(p.paused && !s.stopDate && !s.playbackTimer);

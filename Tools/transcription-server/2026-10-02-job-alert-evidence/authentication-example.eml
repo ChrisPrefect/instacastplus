@@ -1,0 +1,17 @@
+To: info@instacast.ch
+From: Instacast Transcript <noreply@transcript.instacast.ch>
+Subject: Instacast Transcript Alert: provider_authentication
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Auftragsannahme (/api/v1/episodes)
+Fehlercode: provider_authentication
+Die Server-Transkription ist momentan nicht verf=C3=BCgbar.
+Die Anmeldung beim KI-Anbieter fehlt oder wurde abgelehnt. Bitte das KI-Konto=
+ im Dienstkonto instacast auf dem Server erneut anmelden.
+
+Host: hetzner.iteconomy.ch
+Zeit UTC: 2026-10-02T11:48:12+00:00
+Admin: https://transcript.instacast.ch/admin
+Health: https://transcript.instacast.ch/health

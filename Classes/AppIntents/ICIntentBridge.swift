@@ -42,22 +42,23 @@ struct ICEpisodeInfo: Sendable, Equatable, Identifiable {
 struct ICListInfo: Sendable, Equatable, Identifiable {
     let id: String          // list.uid
     let name: String
-    let count: Int
 }
 
 @MainActor
 enum ICIntentBridge {
 
-    /// `+[PlaybackManager playbackManager]` is imported by Swift as an initializer;
-    /// `PlaybackManager()` returns the shared instance (it does not allocate a new one).
-    private static var pm: PlaybackManager { PlaybackManager() }
+    private static var pm: PlaybackManager { PlaybackManager.shared() }
 
     // MARK: - Transport
 
     /// Resume playback. If nothing is loaded, continue the most recently played episode.
     static func play() {
         if pm.playingEpisode != nil {
-            if pm.isPaused { pm.play() }
+            if pm.failed && !pm.isReady {
+                AudioSession.shared()?.togglePlay()
+            } else if pm.isPaused {
+                pm.play()
+            }
         } else if let episode = mostRecentlyPlayedEpisode() {
             if let session = AudioSession.shared() {
                 session.playEpisode(episode, queueUpCurrent: false, at: 0, autostart: true, preservingPlaybackSource: session.episode?.isEqual(episode) == true)
@@ -72,7 +73,11 @@ enum ICIntentBridge {
     /// Toggle play/pause; if nothing is loaded, continue the most recently played episode.
     static func playPause() {
         if pm.playingEpisode != nil {
-            pm.playPause()
+            if pm.failed && !pm.isReady {
+                AudioSession.shared()?.togglePlay()
+            } else {
+                pm.playPause()
+            }
         } else if let episode = mostRecentlyPlayedEpisode() {
             if let session = AudioSession.shared() {
                 session.playEpisode(episode, queueUpCurrent: false, at: 0, autostart: true, preservingPlaybackSource: session.episode?.isEqual(episode) == true)
@@ -131,6 +136,22 @@ enum ICIntentBridge {
         (AudioSession.shared()?.timerRemainingTime ?? 0) > 0
     }
 
+    static func sleepTimerRemainingTime() -> Double {
+        max(0, AudioSession.shared()?.timerRemainingTime ?? 0)
+    }
+
+    static func setAutomaticSleepTimer(enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: ScreenTimerAlwaysActive)
+        if enabled {
+            AudioSession.shared()?.startSleepTimerIfNeeded()
+        }
+    }
+
+    static func currentEpisode() -> (episode: ICEpisodeInfo, position: Double)? {
+        guard let episode = pm.playingEpisode, let info = episodeInfo(from: episode) else { return nil }
+        return (info, pm.time)
+    }
+
     // MARK: - Episode flags (current episode)
 
     @discardableResult
@@ -178,8 +199,10 @@ enum ICIntentBridge {
     @discardableResult
     static func playList(withID id: String) -> ICEpisodeInfo? {
         guard let list = list(forID: id),
-              let first = list.sortedEpisodes?.first as? CDEpisode else { return nil }
-        AudioSession.shared()?.playEpisode(first)
+              let first = list.sortedEpisodes(withLimit: 1)?.first as? CDEpisode,
+              let session = AudioSession.shared() else { return nil }
+        session.notePlaybackSourceEpisodeList(list as? CDEpisodeList)
+        session.playEpisode(first)
         return episodeInfo(from: first)
     }
 
@@ -381,6 +404,6 @@ enum ICIntentBridge {
 
     private static func listInfo(from list: CDList) -> ICListInfo? {
         guard let uid = list.uid else { return nil }
-        return ICListInfo(id: uid, name: list.name ?? "", count: Int(list.numberOfEpisodes))
+        return ICListInfo(id: uid, name: list.name ?? "")
     }
 }

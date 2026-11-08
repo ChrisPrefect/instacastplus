@@ -1,0 +1,69 @@
+{
+  "validation": "production-method runtime boundary tests; full app E2E separately owned by root",
+  "source_sha256": {
+    "Classes/ServerTranscriptionManager.swift": "d11e1c460593f01206e9fa38c8cba195fb6ea0710933aa94284f8f14810d8e3a",
+    "Tools/server_transcription_independent_control_runtime_test.py": "bdcef091f54a311e24554e1a2c37a5cf788c482bf1ffae04994e75926b0480a0",
+    "Tools/fixtures/server_transcription_independent_control_cases.swift": "82205fdbf9c43720a778afd328ec2a9f89a37cdf669087610a82cf9ee35bab2a",
+    "Tools/fixtures/server_transcription_cancellation_harness.swift": "01f2f1702dd53724d68d0314041cb36661f87a5ae026ca3c6519943b2944e785",
+    "Tools/fixtures/server_transcription_admission_cases.swift": "e3530a6441c42740fc85e88bbfb06817ad6ca4f996c41db7b25cbbe533fd3ace",
+    "Tools/server_transcription_admission_runtime_test.py": "ed390872a429e8b273a1ea537a2af3942a2c028c61761002187c8ee981a03e5d",
+    "Tools/server_transcription_cancellation_runtime_test.py": "e35b9efaebbf55be2d6d6f743f70eeb58f50dfe32edba2a48931af34e7334465",
+    "Tools/server_transcription_errors_runtime_test.py": "5676ac0d38eaad082b3c8a68527789e8e65a751d85d9215c9ae08a251eab2801",
+    "Tools/server_poll_lifecycle_runtime_test.py": "ebcef436ae600b3201868e82f8b1ce5514fb86739223d5bb4fd232b50dd384da",
+    "Tools/server_transcription_import_episode_deletion_runtime_test.py": "491d3fc4b88410831704d404db0694ad87044e2b55893675d7f4a50e42b22065"
+  },
+  "commands": [
+    {
+      "command": "python3 Tools/server_transcription_independent_control_runtime_test.py",
+      "exit_code": 0,
+      "log": "independent-after.log"
+    },
+    {
+      "command": "python3 Tools/server_transcription_admission_runtime_test.py",
+      "exit_code": 0,
+      "log": "final-server_transcription_admission_runtime_test.py.log"
+    },
+    {
+      "command": "python3 Tools/server_transcription_cancellation_runtime_test.py",
+      "exit_code": 0,
+      "log": "final-server_transcription_cancellation_runtime_test.py.log"
+    },
+    {
+      "command": "python3 Tools/server_transcription_errors_runtime_test.py",
+      "exit_code": 0,
+      "log": "final-server_transcription_errors_runtime_test.py.log"
+    },
+    {
+      "command": "python3 Tools/server_poll_lifecycle_runtime_test.py",
+      "exit_code": 0,
+      "log": "final-server_poll_lifecycle_runtime_test.py.log"
+    },
+    {
+      "command": "python3 Tools/server_transcription_storage_runtime_test.py",
+      "exit_code": 0,
+      "log": "final-server_transcription_storage_runtime_test.py.log"
+    },
+    {
+      "command": "python3 Tools/server_transcription_retry_interval_runtime_test.py",
+      "exit_code": 0,
+      "log": "final-server_transcription_retry_interval_runtime_test.py.log"
+    },
+    {
+      "command": "python3 Tools/server_transcription_import_episode_deletion_runtime_test.py",
+      "exit_code": 0,
+      "log": "final-server_transcription_import_episode_deletion_runtime_test.py.log"
+    }
+  ],
+  "diff_check": {
+    "command": "git diff --check -- Classes/ServerTranscriptionManager.swift Tools/server_transcription_independent_control_runtime_test.py Tools/fixtures/server_transcription_independent_control_cases.swift Tools/fixtures/server_transcription_cancellation_harness.swift Tools/fixtures/server_transcription_admission_cases.swift Tools/server_transcription_admission_runtime_test.py Tools/server_transcription_cancellation_runtime_test.py Tools/server_transcription_errors_runtime_test.py Tools/server_poll_lifecycle_runtime_test.py Tools/server_transcription_import_episode_deletion_runtime_test.py",
+    "exit_code": 0
+  },
+  "before_evidence": [
+    "evidence/result.json",
+    "independent-before.log",
+    "explicit-source-before.log",
+    "import-wake-before.log",
+    "delete-control-before.log",
+    "import-wake-count-before.log"
+  ]
+}

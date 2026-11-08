@@ -2939,14 +2939,28 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [self _updateTranscriptSyncTimerState];
 }
 
+- (void)setBottomScrollInset:(CGFloat)bottomScrollInset
+{
+    if (_bottomScrollInset == bottomScrollInset) {
+        return;
+    }
+    _bottomScrollInset = bottomScrollInset;
+    [self.viewIfLoaded setNeedsLayout];
+}
+
 - (void) viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
 
-    if (_didWillAppear) {
-        UIEdgeInsets safeAreaInsets = self.view.safeAreaInsets;
-        UIEdgeInsets edgeInsets = UIEdgeInsetsMake(safeAreaInsets.top, 0, self.bottomScrollInset, 0);
+    // The controls can resize after appearance; keep their covered area scrollable.
+    UIEdgeInsets safeAreaInsets = self.view.safeAreaInsets;
+    UIEdgeInsets edgeInsets = UIEdgeInsetsMake(safeAreaInsets.top, 0, self.bottomScrollInset, 0);
+    if (!UIEdgeInsetsEqualToEdgeInsets(self.tableView.contentInset, edgeInsets)) {
         self.tableView.contentInset = edgeInsets;
+    }
+    if (!UIEdgeInsetsEqualToEdgeInsets(self.tableView.scrollIndicatorInsets, edgeInsets)) {
         self.tableView.scrollIndicatorInsets = edgeInsets;
+    }
+    if (_didWillAppear) {
         self.tableView.contentOffset = CGPointMake(0, -safeAreaInsets.top);
     }
 
@@ -3854,22 +3868,20 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if (![descriptor[@"isGenerated"] boolValue]) return YES;
     NSString *snapshot = descriptor[@"transcriptSnapshot"];
     return [self _generatedTranscriptMayLoadForEpisodeHash:episodeHash] &&
-        [snapshot isEqualToString:[PlaybackManager playbackManager].verifiedTranscriptSnapshot];
+        [snapshot isEqualToString:[[TranscriptionEngine shared] transcriptSnapshotIdentifierFor:episodeHash]];
 }
 
 - (BOOL)_generatedTranscriptMayLoadForEpisodeHash:(NSString*)episodeHash
 {
     PlaybackManager *pman = [PlaybackManager playbackManager];
     return episodeHash.length > 0 && [episodeHash isEqualToString:pman.playingEpisode.objectHash] &&
-        [pman generatedArtifactTimingIsCurrent] && pman.transcriptAudioVerified &&
-        pman.verifiedTranscriptSnapshot.length > 0 &&
-        [pman.verifiedTranscriptSnapshot isEqualToString:[[TranscriptionEngine shared] transcriptSnapshotIdentifierFor:episodeHash]];
+        [[TranscriptionEngine shared] transcriptSnapshotIdentifierFor:episodeHash].length > 0;
 }
 
 - (BOOL)_transcriptTimingVerified
 {
     PlaybackManager *pman = [PlaybackManager playbackManager];
-    if (!self.selectedTranscriptDescriptor || self.transcriptCues.count == 0 ||
+    if (!pman.ready || !self.selectedTranscriptDescriptor || self.transcriptCues.count == 0 ||
         self.transcriptLoadedEpisodeHash.length == 0 ||
         ![self.transcriptLoadedEpisodeHash isEqualToString:pman.playingEpisode.objectHash]) return NO;
 
@@ -3878,19 +3890,21 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if (![self.selectedTranscriptDescriptor[@"isGenerated"] boolValue]) {
         return ![self.transcriptCues.firstObject[@"untimed"] boolValue];
     }
-    return [self _transcriptDescriptorIsCurrent:self.selectedTranscriptDescriptor episodeHash:self.transcriptLoadedEpisodeHash];
+    return [pman generatedArtifactTimingIsCurrent] && pman.transcriptAudioVerified &&
+        pman.verifiedTranscriptSnapshot.length > 0 &&
+        [self.selectedTranscriptDescriptor[@"transcriptSnapshot"] isEqualToString:pman.verifiedTranscriptSnapshot] &&
+        [self _transcriptDescriptorIsCurrent:self.selectedTranscriptDescriptor episodeHash:self.transcriptLoadedEpisodeHash];
 }
 
 - (NSString*)_audioIdentityNotice
 {
     PlaybackManager *pman = [PlaybackManager playbackManager];
-    if (!pman.generatedAudioVerificationCompleted) return nil;
-    if (pman.generatedChapterTimelineUnverified) {
+    if (pman.generatedAudioVerificationCompleted && pman.generatedChapterTimelineUnverified) {
         return NSLocalizedString(@"Chapters could not be loaded.", nil);
     }
     if ([self.selectedTranscriptDescriptor[@"isGenerated"] boolValue] &&
         self.transcriptCues.count > 0 && ![self _transcriptTimingVerified]) {
-        return NSLocalizedString(@"Jumping to transcript passages is unavailable.", nil);
+        return NSLocalizedString(@"You can read the transcript. Jumping to passages is unavailable until its timing is verified for this audio.", nil);
     }
     return nil;
 }

@@ -1,0 +1,1 @@
+PASS: corrupt/unreadable snapshot no-clobber, complete recovery, owner migration/defaults loss/unknown-owner block, first-install owner durability, metadata retirement

@@ -75,14 +75,14 @@ Laufzeitprüfungen ergänzen den Simulator-Nachweis; sie ersetzen ihn nicht.
 
 ## Aufbewahrte Artefakte
 
-- [Vorher: Soll/Ist-Vergleiche](/Users/Chris/Developer/instacastplus/build/chapter-resume/before-visible/checks.json)
-- [Nachher: Soll/Ist-Vergleiche](/Users/Chris/Developer/instacastplus/build/chapter-resume/after/checks.json)
-- [Umgebung und Binary-Hashes](/Users/Chris/Developer/instacastplus/build/chapter-resume/after/environment.json)
-- [Befehle und Toolausgaben](/Users/Chris/Developer/instacastplus/build/chapter-resume/after/commands.log)
-- [Alle Eingaben und Player-/Speicherzustände](/Users/Chris/Developer/instacastplus/build/chapter-resume/after/observations.jsonl)
-- [Diagnoseereignisse der App](/Users/Chris/Developer/instacastplus/build/chapter-resume/after/Logs/Diagnostics.jsonl)
-- [Kapitelansicht vorher](/Users/Chris/Developer/instacastplus/build/chapter-resume/before-visible/completed-chapter-app.png)
-- [Kapitelansicht nachher](/Users/Chris/Developer/instacastplus/build/chapter-resume/after/completed-chapter-app.png)
+- [Vorher: Soll/Ist-Vergleiche](/Users/prefect/Developer/instacastplus/build/chapter-resume/before-visible/checks.json)
+- [Nachher: Soll/Ist-Vergleiche](/Users/prefect/Developer/instacastplus/build/chapter-resume/after/checks.json)
+- [Umgebung und Binary-Hashes](/Users/prefect/Developer/instacastplus/build/chapter-resume/after/environment.json)
+- [Befehle und Toolausgaben](/Users/prefect/Developer/instacastplus/build/chapter-resume/after/commands.log)
+- [Alle Eingaben und Player-/Speicherzustände](/Users/prefect/Developer/instacastplus/build/chapter-resume/after/observations.jsonl)
+- [Diagnoseereignisse der App](/Users/prefect/Developer/instacastplus/build/chapter-resume/after/Logs/Diagnostics.jsonl)
+- [Kapitelansicht vorher](/Users/prefect/Developer/instacastplus/build/chapter-resume/before-visible/completed-chapter-app.png)
+- [Kapitelansicht nachher](/Users/prefect/Developer/instacastplus/build/chapter-resume/after/completed-chapter-app.png)
 
 Audio-Fixture und weitere Screenshots liegen jeweils im selben Nachweisordner.
 Der Vorher-Lauf verwendet die vor der Kapitelkorrektur kopierte App unter

@@ -1696,10 +1696,10 @@
 "Play the newest unplayed episode of a podcast." = "Play the newest unplayed episode of a podcast.";
 "Play a specific episode." = "Play a specific episode.";
 "Minutes" = "Minutes";
-"Set playback speed to \\(\\.$speed)" = "Set playback speed to \\(\\.$speed)";
-"Set a sleep timer for \\(\\.$minutes) minutes" = "Set a sleep timer for \\(\\.$minutes) minutes";
-"Play \\(\\.$podcast)" = "Play \\(\\.$podcast)";
-"Play \\(\\.$episode)" = "Play \\(\\.$episode)";
+"Set playback speed to ${speed}" = "Set playback speed to ${speed}";
+"Set a sleep timer for ${minutes} minutes" = "Set a sleep timer for ${minutes} minutes";
+"Play ${podcast}" = "Play ${podcast}";
+"Play ${episode}" = "Play ${episode}";
 "Playback speed set to %@×" = "Playback speed set to %@×";
 "Sleep timer set for %d minutes." = "Sleep timer set for %d minutes.";
 "Marked “%@” as played." = "Marked “%@” as played.";
@@ -1992,7 +1992,9 @@
 "Server transcription could not be completed. Try again later." = "Server transcription could not be completed. Try again later.";
 
 "Chapters could not be loaded." = "Chapters could not be loaded.";
+"Playback unavailable" = "Playback unavailable";
 "Jumping to transcript passages is unavailable." = "Jumping to transcript passages is unavailable.";
+"You can read the transcript. Jumping to passages is unavailable until its timing is verified for this audio." = "You can read the transcript. Jumping to passages is unavailable until its timing is verified for this audio.";
 
 "The saved transcription queue is damaged or incompatible. Existing data has not been replaced." = "The saved transcription queue is damaged or incompatible. Existing data has not been replaced.";
 
@@ -2027,6 +2029,7 @@
 "Checking audio file." = "Checking audio file.";
 "The audio file could not be verified. Download the episode again." = "The audio file could not be verified. Download the episode again.";
 "The audio file has changed. Start a new transcription request." = "The audio file has changed. Start a new transcription request.";
+"The audio file has changed since this request started. Start transcription again." = "The audio file has changed since this request started. Start transcription again.";
 "This episode was delivered in a different audio version. Server transcription is unavailable for this download." = "This episode was delivered in a different audio version. Server transcription is unavailable for this download.";
 
 "Start transcription again so the audio file can be verified." = "Start transcription again so the audio file can be verified.";
@@ -2147,3 +2150,37 @@
 
 "The transcription service is temporarily unavailable." = "The transcription service is temporarily unavailable.";
 "Your request is paused on the server and remains saved." = "Your request is paused on the server and remains saved.";
+
+"Episode is already being processed" = "Episode is already being processed";
+
+"This episode already has an open transcription or chapter request. Wait for it to finish or cancel it before starting another." = "This episode already has an open transcription or chapter request. Wait for it to finish or cancel it before starting another.";
+
+"Waiting to retrieve results" = "Waiting to retrieve results";
+
+"The server result is ready. Waiting to retrieve it." = "The server result is ready. Waiting to retrieve it.";
+
+"The server result is ready. It will be retrieved automatically after the current result has been saved." = "The server result is ready. It will be retrieved automatically after the current result has been saved.";
+
+"The saved request is waiting until queue changes can be saved." = "The saved request is waiting until queue changes can be saved.";
+
+"The transcript changed while chapters were being generated. Generate the chapters again." = "The transcript changed while chapters were being generated. Generate the chapters again.";
+
+"Saved chapters belong to a different transcript version." = "Saved chapters belong to a different transcript version.";
+
+/* Shortcuts: lists, current episode and automatic sleep timer */
+"Play List" = "Play List";
+"Play the first episode in the selected list's order and use its continuous playback setting." = "Play the first episode in the selected list's order and use its continuous playback setting.";
+"Play list ${list}" = "Play list ${list}";
+"The list is empty or no longer available." = "The list is empty or no longer available.";
+"Current Episode" = "Current Episode";
+"Playback Position (Seconds)" = "Playback Position (Seconds)";
+"Get Current Episode" = "Get Current Episode";
+"Get the current episode's title, podcast and playback position in seconds, including when paused. Returns no value if no episode is loaded." = "Get the current episode's title, podcast and playback position in seconds, including when paused. Returns no value if no episode is loaded.";
+"Get Sleep Timer Remaining Time" = "Get Sleep Timer Remaining Time";
+"Get the sleep timer's remaining seconds, including when paused. Returns 0 when no timer is active." = "Get the sleep timer's remaining seconds, including when paused. Returns 0 when no timer is active.";
+"Remaining Time (Seconds)" = "Remaining Time (Seconds)";
+"Set Automatic Sleep Timer" = "Set Automatic Sleep Timer";
+"Automatically start a sleep timer when playback starts. Enabling also starts a missing timer during playback. An existing timer keeps its remaining time." = "Automatically start a sleep timer when playback starts. Enabling also starts a missing timer during playback. An existing timer keeps its remaining time.";
+"Set automatic sleep timer to ${enabled}" = "Set automatic sleep timer to ${enabled}";
+"Enabled" = "Enabled";
+"List" = "List";

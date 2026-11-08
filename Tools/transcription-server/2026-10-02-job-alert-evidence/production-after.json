@@ -1,0 +1,64 @@
+{
+  "time_utc": "2026-10-02T11:51:40.754877+00:00",
+  "services": {
+    "api": {
+      "MainPID": "685082",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "worker": {
+      "MainPID": "685083",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "worker-2": {
+      "MainPID": "0",
+      "NRestarts": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead",
+      "UnitFileState": "enabled"
+    },
+    "monitor": {
+      "MainPID": "0",
+      "NRestarts": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead",
+      "UnitFileState": "disabled"
+    }
+  },
+  "sha256": {
+    "app/alerts.py": "3c84e0a106347188d67cebeb2ba7bf9827f8bffbb1733339ba1cc29ed9a4ea1c",
+    "app/main.py": "d5eea721cf101c1f17f2eb95851c85d2731880f1e37e7beec6ef90423f5aa3f5",
+    "app/worker.py": "7517a24ef65f06587424a30a98211acf6116a44bf503515f9117f13331c0380c",
+    "tools/queue_admission_regression.py": "8651d9920ede65b01e3893ee045235e809ff6c59803c396250ce3f6fd1936cdd",
+    "tools/transcription_alert_process_test.py": "9973fd249e0237f14675a33f8651efe049eaba3c2d1f1424930e66922c05d523"
+  },
+  "data": {
+    "job_counts": [
+      {
+        "status": "canceled",
+        "count": 78
+      },
+      {
+        "status": "done",
+        "count": 2340
+      },
+      {
+        "status": "failed",
+        "count": 1
+      }
+    ],
+    "jobs_sha256": "66b24ef27a9b24a72a02858b10253a544a76e183175553a345448cd0ba11d249",
+    "alert_settings": {
+      "enabled": true,
+      "email": "info@instacast.ch",
+      "cooldown_seconds": 3600,
+      "ai_remaining_ratio": 0.1
+    },
+    "last_mail_error": ""
+  }
+}

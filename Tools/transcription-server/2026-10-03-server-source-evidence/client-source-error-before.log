@@ -1,0 +1,16 @@
+FAIL: server episode mismatch must explain the correct audio source
+FAIL: server http mismatch must explain the correct audio source
+FAIL: A terminal source mismatch must allow a new request, not recheck its rejected UUID
+FAIL: Explicit retry after http mismatch must create a new UUID
+FAIL: Explicit retry after a source failure must allow the failed server job to restart
+FAIL: client http mismatch must explain the correct audio source
+FAIL: A terminal source mismatch must allow a new request, not recheck its rejected UUID
+FAIL: Explicit retry after http mismatch must create a new UUID
+FAIL: Explicit retry after a source failure must allow the failed server job to restart
+Swift/ErrorType.swift:254: Fatal error: Error raised at top level: Error Domain=ErrorContract Code=1 "(null)"
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/server_transcription_errors_runtime_test.py", line 55, in <module>
+    subprocess.run([str(executable)], check=True, timeout=30)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-cancellation-test-raf48_ij/run']' died with <Signals.SIGTRAP: 5>.

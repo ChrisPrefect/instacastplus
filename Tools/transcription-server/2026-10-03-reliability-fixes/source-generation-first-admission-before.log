@@ -1,0 +1,32 @@
+/home/instacast/domains/transcript.instacast.ch/.venv/lib/python3.10/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_first_admission_race_keeps_different_hashes_separate (__main__.SourceGenerationTests) ... FAIL
+test_podcast_discovery_returns_current_generation_once (__main__.SourceGenerationTests) ... FAIL
+
+======================================================================
+FAIL: test_first_admission_race_keeps_different_hashes_separate (__main__.SourceGenerationTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/source_generation_regression.py", line 82, in test_first_admission_race_keeps_different_hashes_separate
+    self.assertNotEqual(responses[0].json()['episode']['id'],responses[1].json()['episode']['id'])
+AssertionError: 1 == 1
+
+======================================================================
+FAIL: test_podcast_discovery_returns_current_generation_once (__main__.SourceGenerationTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/source_generation_regression.py", line 90, in test_podcast_discovery_returns_current_generation_once
+    self.assertEqual([new],main.get_podcast(podcast,1)['episode_ids'])
+AssertionError: Lists differ: [2] != [2, 1]
+
+Second list contains 1 additional elements.
+First extra element 1:
+1
+
+- [2]
++ [2, 1]
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.816s
+
+FAILED (failures=2)

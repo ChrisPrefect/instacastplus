@@ -1,0 +1,18 @@
+FAIL: Media failure must preserve selected episode and AudioSession for reading
+FAIL: Media failure must expose a paused failed state, not loading
+FAIL: Media failure must expose the concrete HTTP error, not discard it behind AVFoundation
+FAIL: Media failure must update visible state without sending DidEnd
+FAIL: An unready failed stream must not overwrite saved position with invalid media time
+FAIL: Explicit Play must reopen the retained episode through AudioSession
+FAIL: Intentional close must clear the obsolete failure state
+FAIL: Media failure must preserve selected episode and AudioSession for reading
+FAIL: Media failure must expose the concrete HTTP error, not discard it behind AVFoundation
+FAIL: Media failure must update visible state without sending DidEnd
+FAIL: Explicit Play must reopen the retained episode through AudioSession
+FAIL: Intentional close must clear the obsolete failure state
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/playback_media_failure_runtime_test.py", line 246, in <module>
+    subprocess.run([str(binary)],check=True)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/playback-media-failure-idotmxup/run']' returned non-zero exit status 1.

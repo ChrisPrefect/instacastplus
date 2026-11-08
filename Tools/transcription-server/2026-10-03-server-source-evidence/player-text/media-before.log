@@ -1,0 +1,14 @@
+episode content loads before media readiness: FAIL
+pending media without transcript keeps loading indication: PASS
+readable text is not covered by pending-media overlay: FAIL
+media failure has no loading overlay: FAIL
+concrete media error stays visible: FAIL
+repeated failed updates do not repeat the error: FAIL
+media-ready transition refreshes dependent player content: FAIL
+ready playback continues updating controls: PASS
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/player_media_failure_state_runtime_test.py", line 115, in <module>
+    subprocess.run([str(tmp / "test")], check=True)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/instacast-player-failure-kroxhce2/test']' returned non-zero exit status 1.

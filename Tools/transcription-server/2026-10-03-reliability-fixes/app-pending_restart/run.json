@@ -1,0 +1,19 @@
+{
+  "command": [
+    "Tools/server_transcription_app_flow_test.py",
+    "--device",
+    "79C6B540-E8DC-4E2A-8171-25BB70F7E5D1",
+    "--app",
+    "build/ServerStatusDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app",
+    "--scenario",
+    "pending_restart",
+    "--output",
+    "Tools/transcription-server/2026-10-03-reliability-fixes/app-pending_restart"
+  ],
+  "started_at": "2026-10-03T12:28:34.890767+00:00",
+  "device": "79C6B540-E8DC-4E2A-8171-25BB70F7E5D1",
+  "app": "/Users/prefect/Developer/instacastplus/build/ServerStatusDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app",
+  "binary_uuid": "UUID: 60F00567-1772-3FB7-8F2B-B961FDB3845C (arm64) build/ServerStatusDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app/InstacastPlus.debug.dylib",
+  "fixture": "/Users/prefect/Developer/instacastplus/Tools/fixtures/server-sponsor-e2e/fixture.wav",
+  "inference": "Retained real fixture results replayed over controlled HTTP"
+}

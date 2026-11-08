@@ -1,0 +1,31 @@
+{
+  "checked_at": "2026-10-03T09:42:55.270880+00:00",
+  "files_verified": 7,
+  "health_http_status": 200,
+  "health": {
+    "ok": true,
+    "queued_jobs": 0,
+    "running_jobs": 0,
+    "episodes": 110,
+    "transcription_workers": {
+      "transcript-instacast-worker.service": true,
+      "transcript-instacast-worker-2.service": false
+    },
+    "service_status": null
+  },
+  "schema_revision": "2026-10-03.1",
+  "request_source_modes": [
+    {
+      "audio_source": "client",
+      "n": 86
+    }
+  ],
+  "job_states_unchanged": true,
+  "production_test_jobs_created": false,
+  "existing_episode_status": "canceled",
+  "units": {
+    "transcript-instacast-api.service": "active",
+    "transcript-instacast-worker.service": "active",
+    "transcript-instacast-worker-2.service": "inactive"
+  }
+}

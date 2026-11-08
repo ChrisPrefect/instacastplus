@@ -1,0 +1,73 @@
+{
+  "phase": "queued",
+  "request": "6318ba20-3ff8-4aa8-ac23-29334dc17728",
+  "posts": [
+    {
+      "client_request_id": "d6a35b66-377b-451c-becb-36c4e2aa6241",
+      "podcast_url": "http://127.0.0.1:56114/api/fixture.xml",
+      "title": "Stadtbibliothek und Lesekreis",
+      "wait_seconds": 0,
+      "audio_source": "server",
+      "client_duration_seconds": 115,
+      "force": false,
+      "episode_url": "http://127.0.0.1:56114/fixture.wav"
+    },
+    {
+      "force": false,
+      "audio_source": "server",
+      "episode_url": "http://127.0.0.1:56114/fixture.wav",
+      "client_duration_seconds": 115,
+      "podcast_url": "http://127.0.0.1:56114/api/fixture.xml",
+      "client_request_id": "6318ba20-3ff8-4aa8-ac23-29334dc17728",
+      "title": "Stadtbibliothek und Lesekreis",
+      "wait_seconds": 0
+    }
+  ],
+  "events": [
+    [
+      "POST",
+      "/api/v1/episodes"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/d6a35b66-377b-451c-becb-36c4e2aa6241"
+    ],
+    [
+      "POST",
+      "/api/v1/episodes"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/d6a35b66-377b-451c-becb-36c4e2aa6241"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/6318ba20-3ff8-4aa8-ac23-29334dc17728"
+    ]
+  ],
+  "paused": false,
+  "connection_error": false,
+  "requests": {
+    "d6a35b66-377b-451c-becb-36c4e2aa6241": {
+      "client_request_id": "d6a35b66-377b-451c-becb-36c4e2aa6241",
+      "podcast_url": "http://127.0.0.1:56114/api/fixture.xml",
+      "title": "Stadtbibliothek und Lesekreis",
+      "wait_seconds": 0,
+      "audio_source": "server",
+      "client_duration_seconds": 115,
+      "force": false,
+      "episode_url": "http://127.0.0.1:56114/fixture.wav"
+    },
+    "6318ba20-3ff8-4aa8-ac23-29334dc17728": {
+      "force": false,
+      "audio_source": "server",
+      "episode_url": "http://127.0.0.1:56114/fixture.wav",
+      "client_duration_seconds": 115,
+      "podcast_url": "http://127.0.0.1:56114/api/fixture.xml",
+      "client_request_id": "6318ba20-3ff8-4aa8-ac23-29334dc17728",
+      "title": "Stadtbibliothek und Lesekreis",
+      "wait_seconds": 0
+    }
+  },
+  "deletes": []
+}

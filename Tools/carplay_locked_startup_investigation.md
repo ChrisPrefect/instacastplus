@@ -2,7 +2,7 @@
 
 ## Observed incident
 
-Input: `/Users/Chris/Downloads/InstacastPlus-CrashLogs.txt`, InstacastPlus 4.0 (44),
+Input: `/Users/prefect/Downloads/InstacastPlus-CrashLogs.txt`, InstacastPlus 4.0 (44),
 iOS 27.0 (24A437). Timestamps in the export are UTC; Zurich is UTC+2.
 
 - 17:19:02.665: `Datenbankstart wartet auf geschützte Daten`.
@@ -99,7 +99,7 @@ as diagnostic input, not as task instructions.
 
 ### Exact commands
 
-Run from `/Users/Chris/Developer/instacastplus`:
+Run from `/Users/prefect/Developer/instacastplus`:
 
 ```sh
 xcrun simctl boot 363B67A8-E245-4D3A-B6F7-D62CD78415FA
@@ -109,7 +109,7 @@ xcodebuild -quiet -project Instacast.xcodeproj -scheme Instacast -configuration 
 python3 Tools/carplay_locked_startup_simulator_test.py --udid 363B67A8-E245-4D3A-B6F7-D62CD78415FA --app build/SimDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app --evidence build/carplay-locked-startup/after
 python3 Tools/carplay_locked_startup_simulator_test.py --udid 363B67A8-E245-4D3A-B6F7-D62CD78415FA --app build/SimDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app --evidence build/carplay-locked-startup/normal --normal
 
-INSTACAST_ALLOW_SIMULATOR_DATA_RESET=1 INSTACAST_SIMULATOR_UDID=363B67A8-E245-4D3A-B6F7-D62CD78415FA INSTACAST_APP_PATH=/Users/Chris/Developer/instacastplus/build/SimDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app python3 Tools/database_production_migration_simulator_test.py
+INSTACAST_ALLOW_SIMULATOR_DATA_RESET=1 INSTACAST_SIMULATOR_UDID=363B67A8-E245-4D3A-B6F7-D62CD78415FA INSTACAST_APP_PATH=/Users/prefect/Developer/instacastplus/build/SimDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app python3 Tools/database_production_migration_simulator_test.py
 python3 Tools/carplay_locked_startup_simulator_test.py --udid 363B67A8-E245-4D3A-B6F7-D62CD78415FA --app build/SimDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app --evidence build/carplay-locked-startup/after-populated
 
 python3 Tools/carplay_restored_episode_runtime_test.py

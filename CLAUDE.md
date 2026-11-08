@@ -9,7 +9,11 @@ Diese Datei enthält nur Dinge, die man dem Code NICHT ansieht: Fallen, die scho
 - **Nur der Stand auf der lokalen Platte zählt**, inklusive uncommitteter und ungetrackter Dateien. Git und GitHub sind Backup und niemals ein Beleg dafür, welcher Code in einem Build steckt.
 - **Chris arbeitet parallel am selben Repo**, auch an pbxproj, Info.plists und Build-Nummer. Jede Datei deshalb unmittelbar vor der Analyse und nochmals vor der Änderung neu einlesen. Fremde Änderungen im Working Tree nie zurückdrehen, nur benennen.
 - Vor einem Archiv den Plattenstand inventarisieren und nach dem Archiv vor dem Upload erneut prüfen. Hat sich etwas geändert, ist das Archiv veraltet und muss neu gebaut werden.
-- Erst messen, dann fixen: DebugLog einbauen, Chris testen lassen, Logs auswerten. Keine Vermutungs-Fixes, keine Workarounds, keine `dispatch_after`-Kaschierung, und niemals Daten oder Verhalten umbiegen, damit ein Symptom verschwindet.
+- Erst messen, dann fixen: Ablauf selbst reproduzieren, vorhandene Logs auswerten und bei Bedarf gezielt instrumentieren. Chris nur für tatsächlich unzugängliche Geräte oder Eingaben einbeziehen. Keine Vermutungs-Fixes, keine Workarounds, keine `dispatch_after`-Kaschierung, und niemals Daten oder Verhalten umbiegen, damit ein Symptom verschwindet.
+- **Bestätigte auftragsbezogene Probleme beheben und prüfen, nicht nur berichten.** Auch die Frage nach weiteren Fehlern setzt den laufenden Reparaturauftrag fort. Die Abschlussregel in `AGENTS.md` gilt ebenso für Folgefehler, delegierte Reviews und lange Aufgaben; notwendige ausführbare Prüfungen selbst erledigen.
+- **Dranbleiben bis zum Ergebnis.** Keine Rückfragen, kein Stoppen und keine Aufgabenrückgabe, solange noch ein autorisierter Diagnose-, Reparatur- oder Prüfweg existiert. Nach einem Fehlschlag den Stand sichern und den nächsten belegten Weg ausführen.
+- **Blockade vollständig beweisen.** Vor einer Blockademeldung alle verfügbaren Werkzeuge, Logs, Datenquellen, Schnittstellen, UI- und privilegierten Wege sowie sinnvolle Alternativen tatsächlich ausschöpfen. Erst eine konkrete externe Grenze mit reproduzierbarem Fehler und exakt benannter unverzichtbarer fehlender Eingabe beendet den Auftrag als blockiert.
+- **Lösungen statt Erklärungen liefern.** Keine Befundlisten, Pläne, Statusdiskussionen oder Angebote als Ersatz für behobenes und real geprüftes Verhalten. Zwischenstände kurz und handlungsbezogen halten.
 - Nichts eigenmächtig umbauen, was über den Auftrag hinausgeht; bei Unklarheit nachfragen.
 - Eine scheinbar tote Datei vor dem Löschen repo-weit prüfen. Die Regressionstests in `Tools/` pinnen Dateien, die im App-Code unreferenziert aussehen (z.B. `Resources-iPad/`, `InstacastMac.entitlements`).
 - Builds und Simulatoren sind jederzeit ohne Rückfrage erlaubt; bei kleinen Änderungen trotzdem lieber gezielt testen als voll bauen.
@@ -34,7 +38,7 @@ Die iOS-App nie mit `CODE_SIGNING_ALLOWED=NO` für den Simulator bauen: Das entf
 
 ## TestFlight
 
-ASC API Key `7QUKV6MHZ2`, Issuer `69a6de70-cba8-47e3-e053-5b8c7c11a4d1`, Datei `/Users/Chris/Developer/AuthKey_7QUKV6MHZ2.p8`.
+ASC API Key `7QUKV6MHZ2`, Issuer `69a6de70-cba8-47e3-e053-5b8c7c11a4d1`, Datei `/Users/prefect/Developer/AuthKey_7QUKV6MHZ2.p8`.
 
 ```bash
 agvtool new-version -all <build>
@@ -63,6 +67,8 @@ plutil -p <archive>/Products/Applications/InstacastPlus.app/Watch/InstacastWatch
 - Ein Profil enthält seine Zertifikate unveränderlich. Ein ablaufendes Cert erzwingt deshalb immer auch neue Profile, nicht nur ein neues Cert. Enthält ein Profil mehrere Certs, erbt es das spätere Ablaufdatum.
 - Ein `signingCertificate`-Eintrag in einer ExportOptions-Plist überlebt keinen Zertifikatswechsel. Entweder aktuellen SHA1 eintragen oder `signingStyle = automatic` verwenden (`build/TestFlight/ExportOptionsUpload-manual.plist`).
 - Per API erzeugte Certs laufen auf die Identität des API-Keys (`Apple Development: Created via API (7QUKV6MHZ2)`). Xcode bevorzugt sie bei automatischem Signing, und danach muss jedes von Xcode verwaltete Profil einmal mit `-allowProvisioningUpdates` aufgefrischt werden, sonst bricht der Build mit „doesn't include signing certificate".
+
+**M2-Mac (02.11.2026):** Hier fehlte der private Distributionsschlüssel; Cloud Signing ist für den Account nicht freigegeben. Für Exporte deshalb `build/TestFlight/ExportOptionsUpload-manual.plist` verwenden: Zertifikat `2PHTWBB7V2` (bis 02.11.2027) und vier neue Profile `… App Store M2 2026-11-02`, einschließlich Siri und Group Activities. Die Signier-Keychain und ihre geschützten Zugangsdaten liegen unter `~/.appstoreconnect/signing/2026-11-02/`; private Schlüssel und Passwortdateien niemals ausgeben. Die Keychain muss für den Export entsperrt sein. Das ältere Distributionszertifikat wurde nicht widerrufen.
 
 ## Fallen im Kern
 
@@ -168,7 +174,7 @@ Ausserdem: kein Vollcount pro Liste (der gezählte Wert ist die Anzahl tatsächl
 
 ## Transkription
 
-- **End-to-End ist die Prüfeinheit (Vorgabe 06.09.).** Vor Änderungen den vollständigen Nutzerablauf und seine Zustandsübergänge prüfen: vollständige lokale Audiodatei → unveränderlicher Nutzerauftrag mit Audiohash → Serverdownload → Hashvergleich vor ASR → Verarbeitung → quellgebundener Import → Anzeige und Sprünge. Abweichende Dateien dürfen keine kostenpflichtige Verarbeitung für diesen Auftrag auslösen. Gemeinsame Serverarbeit muss passende und abweichende Nutzeraufträge getrennt behandeln. Abbruch, Dateiaustausch, Offlinephasen, Neustart und verlorene Antworten an jedem asynchronen Übergang berücksichtigen. Ein bestandener Importtest oder Build ist kein End-to-End-Nachweis; Abschluss braucht Tests der Übergänge und die tatsächlich geprüfte Geräte-/Serverdarstellung. Offene Teile ausdrücklich als offen benennen.
+- **End-to-End ist die Prüfeinheit.** Servertranskription braucht keinen Download auf dem Gerät (Vorgabe 03.10.): Folgen-URL → dauerhaft gespeicherter Auftrag → bestätigte Annahme → Serverdownload → Verarbeitung → quellgebundener Import → lesbarer Text. `audio_source=server` bindet den Auftrag beim ersten Serverdownload an dessen SHA. Bereits vorhandene vollständige Geräteaudio kann einen `client`-Auftrag mit unveränderlichem SHA erzeugen; nur für diesen Modus ist der Hashvergleich vor ASR Voraussetzung. Quellenmodus und SHA dürfen unter derselben UUID nie wechseln. Gemeinsame Serverarbeit muss passende und abweichende Nutzeraufträge getrennt behandeln. Lesen benötigt keine lokale Audioprüfung; generierte Zeitsprünge und Auto-Skip benötigen die nachweislich passende abgespielte Audioquelle. Abbruch, Dateiaustausch, Offlinephasen, Neustart und verlorene Antworten an jedem asynchronen Übergang prüfen, ausdrücklich auch Start und Ergebnisabruf ohne Geräteaudio. Ein bestandener Importtest oder Build ist kein End-to-End-Nachweis; Abschluss braucht Tests der Übergänge und die tatsächlich geprüfte Geräte-/Serverdarstellung. Offene Teile ausdrücklich als offen benennen.
 - **Playergesten hängen nicht vom Transkriptstatus ab.** Cover-Aufziehen, Scrollen, Schließen und Wiedergabesteuerung müssen während Download, Hashprüfung, Parsing, Import und Fehlerzuständen bedienbar bleiben. Keine synchrone Datei-/Analysearbeit in Gesten-, Layout- oder Darstellungspfaden; Hänger mit dem tatsächlichen UI-Pfad reproduzieren und messen.
 - Serverzugriff, produktive Pfade, Queue-Limits und Prüfungen: `Tools/transcription-server.md`. Zugangsdaten liegen nur im Git-ignorierten `.codex/private/`; vor Serveränderungen immer den aktuellen Produktivstand prüfen.
 - **Die Queue ist zweigeteilt** in lokale und Server-Aufträge; jeder abgeleitete Zustand (Sidebar-Eintrag, Badge, Toolbar) muss `displayItems` lesen, sonst sind reine Server-Aufträge und deren Fehler unerreichbar. Ein abgeschlossener oder fehlgeschlagener Eintrag bedeutet keinen Besitz der Episode: abgelehnt werden darf nur bei laufendem Auftrag, und die Ablehnung braucht UI-Feedback.

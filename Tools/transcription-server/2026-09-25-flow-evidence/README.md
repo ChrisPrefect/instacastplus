@@ -90,7 +90,7 @@ Audio-zu-KI-Durchlauf und kein automatisierter Fingertipp-Test.
 
 ## Wiederholbare Befehle
 
-Arbeitsverzeichnis: `/Users/Chris/Developer/instacastplus`. Umgebung: macOS 27 arm64,
+Arbeitsverzeichnis: `/Users/prefect/Developer/instacastplus`. Umgebung: macOS 27 arm64,
 Xcode mit iOS-27-SDK. Fixture: `Tools/fixtures/server-sponsor-e2e/fixture.wav` und die
 vier benachbarten Artefakte.
 

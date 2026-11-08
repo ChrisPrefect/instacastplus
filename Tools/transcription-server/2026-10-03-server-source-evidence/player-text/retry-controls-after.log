@@ -1,0 +1,7 @@
+pending media does not permit duplicate play: PASS
+failed selected media allows explicit Play retry: PASS
+failed Play uses existing episode reopen action: PASS
+failed media cannot seek or skip: PASS
+failure without selected episode cannot retry: PASS
+ready transport remains enabled: PASS
+ready Pause retains direct transport action: PASS

@@ -90,6 +90,9 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 - (void)_removePendingAutoDownloadFeedUIDs:(NSArray<NSString*>*)feedUIDs;
 - (BOOL)_autoDownloadsBlockedDuringUnsubscribeCleanupForFeedObjectID:(NSManagedObjectID*)feedObjectID;
 - (void)_resumeAfterUnsubscribeCleanupProtectionChange;
+- (void)_refreshFeed:(CDFeed*)feed etagHandling:(BOOL)etagHandling
+    durationMetadataRefreshNeeded:(NSNumber*)durationMetadataRefreshNeeded
+    completion:(ICSubscriptionManagerRefreshCompletionBlock)completion;
 
 #if TARGET_OS_IPHONE
 @property (nonatomic) UIBackgroundTaskIdentifier backgroundIdentifier;
@@ -945,6 +948,7 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
     [App retainNetworkActivity];
 
     ICFeedParser* parser = [[ICFeedParser alloc] init];
+    parser.qualityOfService = NSQualityOfServiceUtility;
     parser.url = url;
     parser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
     parser.timeout = 8;
@@ -1417,10 +1421,12 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
         };
     }
 
+    NSSet<NSManagedObjectID*>* durationRefreshFeedIDs = [self _feedObjectIDsNeedingDurationMetadataRefresh:eligibleFeeds];
     for(CDFeed* feed in eligibleFeeds)
     {
-        [self refreshFeed:feed
+        [self _refreshFeed:feed
              etagHandling:etagHandling
+             durationMetadataRefreshNeeded:@([durationRefreshFeedIDs containsObject:feed.objectID])
                completion:batchCompletion];
     }
     
@@ -1514,6 +1520,38 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
 // Marks that this feed already got its one full duration-metadata parse.
 static NSString* const kFeedPropertyDurationRefreshAttempted = @"durationMetadataRefreshAttempted";
 
+- (NSSet<NSManagedObjectID*>*)_feedObjectIDsNeedingDurationMetadataRefresh:(NSArray<CDFeed*>*)feeds
+{
+    NSMutableArray<CDFeed*>* candidates = [NSMutableArray array];
+    for (CDFeed* feed in feeds) {
+        if (![feed boolForKey:kFeedPropertyDurationRefreshAttempted]) [candidates addObject:feed];
+    }
+    NSMutableSet<NSManagedObjectID*>* result = [NSMutableSet set];
+    if (candidates.count == 0) return result;
+
+    // One read per refresh batch, rather than one synchronous SQL count per
+    // podcast. Managed-object results preserve pending inserts/edits/deletions;
+    // a dictionary/grouped fetch would silently omit those unsaved changes.
+    NSManagedObjectContext* context = candidates.firstObject.managedObjectContext;
+    NSFetchRequest* request = [NSFetchRequest fetchRequestWithEntityName:@"Episode"];
+    request.predicate = [NSPredicate predicateWithFormat:@"feed IN %@ AND archived == NO AND consumed == NO AND position <= 0 AND duration <= 0", candidates];
+    request.includesSubentities = NO;
+    request.propertiesToFetch = @[@"feed"];
+    request.returnsObjectsAsFaults = NO;
+    request.fetchBatchSize = 128;
+    NSError* error = nil;
+    NSArray<CDEpisode*>* episodes = [context executeFetchRequest:request error:&error];
+    if (error) {
+        [[ICDiagnosticLogger shared] logEvent:@"feed-refresh-profile" message:@"Dauer-Metadaten konnten nicht gelesen werden"
+                                     metadata:@{@"feedCount": @(candidates.count), @"error": error.localizedDescription ?: @""}];
+    }
+    for (CDEpisode* episode in episodes) {
+        CDFeed* feed = [episode valueForKey:@"feed"];
+        if (feed.objectID) [result addObject:feed.objectID];
+    }
+    return result;
+}
+
 - (BOOL)_feedNeedsDurationMetadataRefresh:(CDFeed*)feed
 {
     // At most ONE full (etag-less) parse per feed, ever: if the feed didn't deliver
@@ -1537,6 +1575,13 @@ static NSString* const kFeedPropertyDurationRefreshAttempted = @"durationMetadat
 }
 
 - (void) refreshFeed:(CDFeed*)feed etagHandling:(BOOL)etagHandling completion:(ICSubscriptionManagerRefreshCompletionBlock)completion
+{
+    [self _refreshFeed:feed etagHandling:etagHandling durationMetadataRefreshNeeded:nil completion:completion];
+}
+
+- (void)_refreshFeed:(CDFeed*)feed etagHandling:(BOOL)etagHandling
+    durationMetadataRefreshNeeded:(NSNumber*)durationMetadataRefreshNeeded
+    completion:(ICSubscriptionManagerRefreshCompletionBlock)completion
 {
     if (!feed || [self _isSynchronizationPausedForFeed:feed]) {
         if (completion) {
@@ -1581,7 +1626,8 @@ static NSString* const kFeedPropertyDurationRefreshAttempted = @"durationMetadat
         [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerWillParseFeedNotification object:self userInfo:@{@"url" : feed.sourceURL}];
     }
     
-    BOOL needsDurationMetadataRefresh = [self _feedNeedsDurationMetadataRefresh:feed];
+    BOOL needsDurationMetadataRefresh = durationMetadataRefreshNeeded
+        ? durationMetadataRefreshNeeded.boolValue : [self _feedNeedsDurationMetadataRefresh:feed];
     ICFeedParser* feedParser = [ICFeedParser feedParser];
     if (etagHandling && !needsDurationMetadataRefresh) {
         feedParser.etag = feed.etag;
@@ -3315,14 +3361,23 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
     dispatch_group_t group = dispatch_group_create();
     NSMutableArray<NSError*>* importErrors = [NSMutableArray array];
 
-    [DMANAGER beginInterruptSaving];
+    // Each subscription must become durable before its remaining episodes can
+    // load. Deferring every save also makes each fetch scan all pending objects.
 
     NSUInteger totalCount = urls.count;
     __block NSUInteger completedCount = 0;
 
-    for (NSURL *url in urls) {
+    for (__unused NSURL *url in urls) {
         dispatch_group_enter(group);
+    }
 
+    // Do not enqueue thousands of main-context commits together: GCD drains
+    // them without returning to the run loop. Start the next parse only after
+    // the previous durable subscription and progress callback have completed.
+    __block NSUInteger nextURLIndex = 0;
+    __block void (^importNext)(void);
+    importNext = ^{
+        NSURL* url = urls[nextURLIndex++];
         [self subscribeFeedWithOpmlURLNew:url options:kSubscribeOptionNone completion:^(CDFeed *feed, NSError *error) {
             if (error) {
                 ErrLog(@"Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription);
@@ -3330,8 +3385,24 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
                     [importErrors addObject:error];
                 }
             }
-            [self updateProgress:&completedCount total:totalCount progress:progress group:group];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completedCount++;
+                if (progress) progress((float)completedCount / totalCount);
+                dispatch_group_leave(group);
+                if (nextURLIndex < totalCount) {
+                    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                        dispatch_async(dispatch_get_main_queue(), importNext);
+                    });
+                } else {
+                    importNext = nil;
+                }
+            });
         }];
+    };
+    if (totalCount > 0) {
+        dispatch_async(dispatch_get_main_queue(), importNext);
+    } else {
+        importNext = nil;
     }
 
     dispatch_group_notify(group, dispatch_get_main_queue(), ^{
@@ -3347,7 +3418,7 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
         [self finalizeImportWithCompletion:completion
                                   progress:progress
                                      error:importError
-                    savingWasInterrupted:YES];
+                    savingWasInterrupted:NO];
     });
 }
 

@@ -1,6 +1,6 @@
 # S1 backend reliability implementation
 
-Source: `/Users/Chris/Developer/instacastplus/.codex/private/server-src`. Testing: `/tmp/instacast-admission-regression` on the server, using disposable SQLite directories and disposable MariaDB databases. No production writes, jobs, deployments, ASR inference, or provider calls were performed by this packet.
+Source: `/Users/prefect/Developer/instacastplus/.codex/private/server-src`. Testing: `/tmp/instacast-admission-regression` on the server, using disposable SQLite directories and disposable MariaDB databases. No production writes, jobs, deployments, ASR inference, or provider calls were performed by this packet.
 
 ## Final behavior and cause
 

@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-03",
+  "symptom": "A confirmed transcription stage appeared not begun after a service pause without work metadata.",
+  "actual_ui_evidence": "player-text/pause-timeline-before/result.json + screen.png; final/transcribing.png -> final/paused.png",
+  "root_cause": "The service pause overlay replaced serverPhase and cleared work, losing the last validated server processing phase.",
+  "fix": "Persist serverLastProcessingPhase independently of presentation pause; assign only known validated server phases; restore known previous snapshots; clear when allocating a new request UUID.",
+  "regression_command": "python3 Tools/server_transcription_admission_runtime_test.py",
+  "red": "pause-phase-manager-before.log: 3 behavior failures",
+  "green": "pause-phase-manager-after.log",
+  "nearby_commands_passed": [
+    "python3 Tools/server_transcription_cancellation_runtime_test.py",
+    "python3 Tools/server_transcription_storage_runtime_test.py",
+    "python3 Tools/server_transcription_errors_runtime_test.py"
+  ],
+  "validation_scope": "The manager tests execute actual protocol application, model accessors, atomic persistence and restore. Root runs full App E2E and status_ux executes actual UIKit renderer."
+}

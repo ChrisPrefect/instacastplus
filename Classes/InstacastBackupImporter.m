@@ -1365,7 +1365,7 @@ static void runOnMain(void (^block)(void)) {
             // Apply backup metadata on main thread
             runOnMain(^{
                 subscribedFeed.parked = podcast.parked;
-                subscribedFeed.rank = podcast.rank;
+                if (podcast.hasRank) subscribedFeed.rank = podcast.rank;
                 if (podcast.username.length > 0) subscribedFeed.username = podcast.username;
                 if (podcast.password.length > 0) subscribedFeed.password = podcast.password;
                 terminalError = ICBackupSaveMainContext();
@@ -2116,7 +2116,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
                 CDFeed *feed = feedsByURL[feedURL];
                 if (!feed) continue;
 
-                if (podcast.rank > 0 && feed.rank != podcast.rank) {
+                if (podcast.hasRank && feed.rank != podcast.rank) {
                     feed.rank = podcast.rank;
                 }
                 if (feed.parked != podcast.parked) {

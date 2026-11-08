@@ -8,7 +8,7 @@
     status = "Server is creating the transcript";
 }
 Traceback (most recent call last):
-  File "/Users/Chris/Developer/instacastplus/Tools/server_transcription_presentation_runtime_test.py", line 117, in <module>
+  File "/Users/prefect/Developer/instacastplus/Tools/server_transcription_presentation_runtime_test.py", line 117, in <module>
     subprocess.run([str(path/'test')],check=True)
   File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
     raise CalledProcessError(retcode, process.args,

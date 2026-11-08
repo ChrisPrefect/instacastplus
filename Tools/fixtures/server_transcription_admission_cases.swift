@@ -2,6 +2,34 @@
   UserDefaults.standard.set(true,forKey:kServerTranscriptionEnabled)
   var failures: [String] = []
   func expect(_ condition:Bool,_ message:String) { if !condition { failures.append(message) } }
+  // A durable server-source request never acquires a later device download's identity.
+  let serverSourcePeer=FakeServer();serverSourcePeer.loseAck=true
+  let serverSourceFile=dir.appendingPathComponent("server-source.json")
+  let seedSource=Harness(server:serverSourcePeer,file:serverSourceFile);let seedItem=seedSource.add()
+  seedItem.nextRetryAt=Date().addingTimeInterval(60);seedSource.start();await seedSource.durable();seedSource.retryWakeTask?.cancel()
+  var sourceSnapshot=try JSONSerialization.jsonObject(with:Data(contentsOf:serverSourceFile)) as! [String:Any]
+  var sourceItems=sourceSnapshot["items"] as! [[String:Any]]
+  sourceItems[0]["audioSource"]="server";sourceItems[0]["admissionState"]="prepared";sourceItems[0].removeValue(forKey:"nextRetryAt")
+  sourceSnapshot["items"]=sourceItems;try JSONSerialization.data(withJSONObject:sourceSnapshot).write(to:serverSourceFile)
+  CacheManager.instance.cached=false
+  let serverSource=Harness(server:serverSourcePeer,file:serverSourceFile);serverSource.loadPersistedQueue()
+  let serverSourceItem=serverSource.items[0];let sourceID=serverSource.clientRequestIDByItem[ObjectIdentifier(serverSourceItem)]!
+  serverSource.resumeIfNeeded();await serverSource.durable();serverSource.retryWakeTask?.cancel()
+  expect(serverSourcePeer.postBodies.count == 1,"An uncached server-source request must reach POST without a local download")
+  expect(serverSourceItem.status == .queued,"A lost server-source acknowledgement must remain reconcilable")
+  CacheManager.instance.cached=true
+  serverSourcePeer.registrations.removeValue(forKey:sourceID)
+  let resumedSource=Harness(server:serverSourcePeer,file:serverSourceFile);resumedSource.loadPersistedQueue()
+  let resumedSourceItem=resumedSource.items[0];resumedSource.setDue(resumedSourceItem);await resumedSource.durable();resumedSource.retryWakeTask?.cancel()
+  expect(serverSourcePeer.postBodies.count == 2 && serverSourcePeer.postBodies.allSatisfy { $0["audio_source"] as? String == "server" && $0["client_audio_sha256"] == nil },"Restart and a later local file must not change the saved server-source contract")
+  expect(serverSourcePeer.postBodies.allSatisfy { $0["client_request_id"] as? String == sourceID },"Reconciliation must preserve the server-source UUID")
+  for mismatch in [false,true] {
+   serverSourcePeer.receiptAudioSourceOverride=mismatch ? "client" : nil;serverSourcePeer.omitAudioSource = !mismatch
+   resumedSourceItem.restart();resumedSourceItem.requiresExplicitRetryAfterCrash=false
+   resumedSource.setDue(resumedSourceItem);await resumedSource.durable();resumedSource.retryWakeTask?.cancel()
+   expect(resumedSourceItem.requiresExplicitRetryAfterCrash,"A missing or changed source receipt cannot confirm a server-source request")
+  }
+  serverSourcePeer.receiptAudioSourceOverride=nil;serverSourcePeer.omitAudioSource=false
   for (index, phase) in ["downloading_audio", "transcribing", "analyzing", "finalizing"].enumerated() {
    let manager = Harness(server:FakeServer(),file:dir.appendingPathComponent("phase-\(index).json"))
    let item = manager.add(accepted:true); item.progress = 0.5
@@ -59,6 +87,30 @@
   let pausedEnvelope=try JSONDecoder().decode(ICServerEpisodeEnvelope.self,from:JSONSerialization.data(withJSONObject:["api_version":"v1","episode":["id":42,"status":"running","phase":"transcribing","warnings":[],"artifacts":[],"work":pausedWork],"service_status":["available":false,"code":"provider_unavailable"],"retry_after_seconds":30]))
   await measured.apply(pausedEnvelope,to:measuredItem,requestID:nil)
   expect(measuredItem.responds(to:NSSelectorFromString("serverActivity")) && measuredItem.value(forKey:"serverActivity") as? String == "paused","An accepted service pause must expose paused activity, never an old running claim")
+  let lastPhaseSelector=NSSelectorFromString("serverLastProcessingPhase")
+  func lastPhase(_ item:ICTranscriptionQueueItem)->String? {
+   item.responds(to:lastPhaseSelector) ? item.value(forKey:"serverLastProcessingPhase") as? String : nil
+  }
+  let legacyPause=try JSONDecoder().decode(ICServerEpisodeEnvelope.self,from:JSONSerialization.data(withJSONObject:["api_version":"v1","episode":["id":42,"status":"running","phase":"transcribing","warnings":[],"artifacts":[]],"service_status":["available":false,"code":"provider_unavailable"],"retry_after_seconds":30]))
+  await measured.apply(legacyPause,to:measuredItem,requestID:nil)
+  expect(measuredItem.serverPhase == "paused" && measuredItem.serverWork == nil,"Legacy service pause must remain inactive without fabricated work")
+  expect(lastPhase(measuredItem) == "transcribing","Service pause must retain the last confirmed processing phase")
+  measured.persistQueue();await measured.durable();measured.retryWakeTask?.cancel()
+  let pausedRestored=Harness(server:FakeServer(),file:measured.queueFileURL);pausedRestored.loadPersistedQueue()
+  expect(lastPhase(pausedRestored.items[0]) == "transcribing","Last confirmed processing phase must survive paused app restart")
+  let previousPhaseID=pausedRestored.clientRequestIDByItem[ObjectIdentifier(pausedRestored.items[0])]
+  pausedRestored.networkUnavailable=true;pausedRestored.retryEpisodeHash(pausedRestored.items[0].episodeHash)
+  expect(pausedRestored.clientRequestIDByItem[ObjectIdentifier(pausedRestored.items[0])] != previousPhaseID && lastPhase(pausedRestored.items[0]) == nil,"A new request UUID must not inherit prior processing progress")
+  await pausedRestored.durable();pausedRestored.retryWakeTask?.cancel()
+  var oldPhaseState=try JSONSerialization.jsonObject(with:Data(contentsOf:measured.queueFileURL)) as! [String:Any]
+  var oldPhaseItems=oldPhaseState["items"] as! [[String:Any]]
+  oldPhaseItems[0].removeValue(forKey:"lastProcessingPhase");oldPhaseItems[0]["serverPhase"]="analyzing";oldPhaseState["items"]=oldPhaseItems
+  let oldPhaseFile=dir.appendingPathComponent("legacy-phase.json");try JSONSerialization.data(withJSONObject:oldPhaseState).write(to:oldPhaseFile)
+  let oldPhaseRestored=Harness(server:FakeServer(),file:oldPhaseFile);oldPhaseRestored.loadPersistedQueue()
+  expect(lastPhase(oldPhaseRestored.items[0]) == "analyzing","Known stored legacy phase is authoritative history for later pause")
+  oldPhaseItems[0]["lastProcessingPhase"]="unrecognized-stage";oldPhaseItems[0]["serverPhase"]="paused";oldPhaseState["items"]=oldPhaseItems;try JSONSerialization.data(withJSONObject:oldPhaseState).write(to:oldPhaseFile)
+  let invalidPhaseRestored=Harness(server:FakeServer(),file:oldPhaseFile);invalidPhaseRestored.loadPersistedQueue()
+  expect(lastPhase(invalidPhaseRestored.items[0]) == nil,"Unrecognized persisted phase cannot fabricate processing history")
   await measured.apply(try envelope(work:currentWork),to:measuredItem,requestID:nil)
   measured.fail(measuredItem,message:"fixture failure")
   expect(number(measuredItem,"serverWorkCompleted") == nil,"A terminal failure must clear active phase progress")
@@ -93,21 +145,21 @@
   let diskServer=FakeServer();let diskFile=dir.appendingPathComponent("disk-failure.json")
   SnapshotWriter.shared.failMarkerWrite(at:diskFile)
   let disk=Harness(server:diskServer,file:diskFile);let diskItem=disk.add();disk.start();await disk.durable()
-  expect(diskServer.events.isEmpty,"Failed pre-POST snapshot must never send HTTP")
-  expect(diskItem.status == .failed && diskItem.nextRetryAt == nil,"Failed pre-POST snapshot must reject and release app slot")
-  expect(diskItem.error?.contains("saved") == true,"Pre-POST persistence failure needs an accurate not-added explanation")
+  expect(diskServer.postBodies.count == 1,"A recovered atomic write must resume the saved intent once")
+  expect(diskItem.status == .queued && disk.queuePersistenceError == nil,"Recovered storage must not reject the saved request")
+  expect(diskServer.postBodies.first?["client_request_id"] as? String == disk.clientRequestIDByItem[ObjectIdentifier(diskItem)],"Storage recovery must keep the original UUID")
   disk.retryWakeTask?.cancel()
   let fullDiskServer=FakeServer();let fullDiskFile=dir.appendingPathComponent("persistent-disk-failure.json")
   SnapshotWriter.shared.failMarkerWrite(at:fullDiskFile,persistently:true)
   let fullDisk=Harness(server:fullDiskServer,file:fullDiskFile);let fullDiskItem=fullDisk.add();fullDiskItem.automaticallyScheduled=true;fullDisk.start();await fullDisk.durable()
   let onDisk=try JSONDecoder().decode(ICPersistedServerTranscriptionQueue.self,from:Data(contentsOf:fullDiskFile))
   expect(onDisk.items[0].admissionState == .pending,"Disk-full proof must leave only never-submitted intent on disk")
-  expect(fullDiskItem.status == .failed && fullDiskServer.events.isEmpty,"Disk-full rejection must not send HTTP")
+  expect(fullDiskItem.status == .queued && fullDisk.queuePersistenceError != nil && fullDiskServer.events.isEmpty,"Unwritable storage must retain saved intent without sending HTTP")
   SnapshotWriter.shared.allowWrites()
   let diskRelaunch=Harness(server:fullDiskServer,file:fullDiskFile);diskRelaunch.loadPersistedQueue();let restoredPending=diskRelaunch.items[0]
-  expect(restoredPending.status == .failed && restoredPending.nextRetryAt == nil,"Restored pending intent must require explicit retry")
+  expect(restoredPending.status == .queued && restoredPending.nextRetryAt == nil,"Restored saved pending intent must remain resumable")
   diskRelaunch.resumeIfNeeded();await diskRelaunch.durable()
-  expect(fullDiskServer.events.isEmpty,"Restored never-submitted automatic intent must not silently POST")
+  expect(fullDiskServer.postBodies.count == 1 && fullDiskServer.postBodies.first?["client_request_id"] as? String == fullDisk.clientRequestIDByItem[ObjectIdentifier(fullDiskItem)],"After storage recovery the authorized saved intent must resume once with the same UUID")
   fullDisk.retryWakeTask?.cancel();diskRelaunch.retryWakeTask?.cancel()
   let apiError = try JSONDecoder().decode(ICServerAPIErrorEnvelope.self, from: Data(#"{"api_version":"v1","error":{"code":"queue_full","message":"full","retryable":true,"admitted":false}}"#.utf8))
   expect(apiError.error.admitted == false,"Wire error must preserve authoritative admission refusal")
@@ -182,7 +234,7 @@
   let restoredCancel=Harness(server:cancelServer,file:cancelFile);restoredCancel.loadPersistedQueue();cancelServer.online=true;restoredCancel.retryPendingCancellations();await restoredCancel.durable()
   expect(cancelServer.tombstones.contains(cancelID) && restoredCancel.cancellations.isEmpty && restoredCancel.items.isEmpty,"Unconfirmed cancellation must survive offline restart")
   let pausedServer=FakeServer();pausedServer.pollErrorCode="provider_unavailable"
-  let paused=Harness(server:pausedServer,file:dir.appendingPathComponent("provider-paused.json"));let pausedItem=paused.add(accepted:true);pausedItem.status = .transcribing;pausedItem.progress=0.4
+  let paused=Harness(server:pausedServer,file:dir.appendingPathComponent("provider-paused.json"));let pausedItem=paused.add(accepted:true);pausedItem.transition(to: .transcribing);pausedItem.progress=0.4
   paused.start();await paused.durable()
   expect(pausedItem.status == .transcribing && pausedItem.progress==0.4 && paused.serverIDByItem[ObjectIdentifier(pausedItem)]==42,"Accepted provider outage must preserve job ownership/progress")
   expect((pausedItem.nextRetryAt?.timeIntervalSinceNow ?? 0)>290,"Accepted provider outage must respect server retry hint")
@@ -196,5 +248,5 @@
   expect(oldItem.nextRetryAt != nil,"Accepted offline job must keep polling")
   old.retryWakeTask?.cancel()
   if !failures.isEmpty { FileHandle.standardError.write(Data((failures.joined(separator:"\n")+"\n").utf8));fatalError("Admission contract failures: \(failures.count)") }
-  print("PASS: pre-POST disk-full rejection + pending restore without auto-POST, definite refusals, offline before POST, confirmed-only feedback, truthful queued state, lost/malformed POST + restart + GET404 same UUID, offline unconfirmed cancellation, accepted provider pause, long offline job")
+  print("PASS: pre-POST disk-full durability gate + same-UUID pending restore, definite refusals, offline before POST, confirmed-only feedback, truthful queued state, lost/malformed POST + restart + GET404 same UUID, offline unconfirmed cancellation, accepted provider pause, long offline job")
  }

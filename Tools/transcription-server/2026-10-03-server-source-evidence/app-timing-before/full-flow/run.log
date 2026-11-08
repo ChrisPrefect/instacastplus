@@ -1,0 +1,37 @@
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-timing-before/full-flow/queued.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-timing-before/full-flow/downloading_audio.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-timing-before/full-flow/transcribing.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-timing-before/full-flow/restored.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-timing-before/full-flow/paused.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-timing-before/full-flow/connection-interrupted.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-timing-before/full-flow/analyzing.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-timing-before/full-flow/finalizing.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-timing-before/full-flow/ready.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-timing-before/full-flow/transcript-reading.png
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-timing-before/full-flow/playback-retry.png
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/server_transcription_app_flow_test.py", line 274, in <module>
+    assert retried['audioVerified'] and retried['timingVerified'], 'The unchanged, fully cached source must enable transcript timing after playback retry'
+AssertionError: The unchanged, fully cached source must enable transcript timing after playback retry

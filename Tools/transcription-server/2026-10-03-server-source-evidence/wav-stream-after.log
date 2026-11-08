@@ -1,0 +1,4 @@
+mode=local status=1 duration=114.835875 error=(null)
+mode=audio/wav status=1 duration=114.835875 error=(null)
+mode=audio/x-wav status=1 duration=114.835875 error=(null)
+Production WAV streaming and local AVFoundation controls passed

@@ -52,6 +52,7 @@ static NSString* ICServerTranscriptionTitle(ICTranscriptionQueueItem* item) {
         @"analyzing": NSLocalizedString(@"Server is creating chapters and summary", nil),
         @"finalizing": NSLocalizedString(@"Server is preparing results", nil),
         @"ready": NSLocalizedString(@"Retrieving results", nil),
+        @"awaiting_import": NSLocalizedString(@"Waiting to retrieve results", nil),
         @"importing": NSLocalizedString(@"Saving results on this device", nil)
     };
     return titles[item.serverPhase ?: @""] ?: NSLocalizedString(@"Preparing request", nil);
@@ -65,6 +66,7 @@ static NSString* ICServerTranscriptionNextAction(ICTranscriptionQueueItem* item)
         ? NSLocalizedString(@"The server result remains available. Retry retrieving it without transcribing again.", nil)
         : NSLocalizedString(@"You can try this transcription again.", nil);
     if (item.serverWaitingForNetwork) return NSLocalizedString(@"Continues automatically when the app reconnects. Opening the app checks the connection immediately.", nil);
+    if ([item.serverPhase isEqualToString:@"awaiting_import"]) return NSLocalizedString(@"The server result is ready. It will be retrieved automatically after the current result has been saved.", nil);
     if ([item.serverPhase isEqualToString:@"paused"]) return NSLocalizedString(@"Processing will resume automatically when the service is available again.", nil);
     if (item.serverConnectionIssue || [item.serverActivity isEqualToString:@"paused"] || [item.serverActivity isEqualToString:@"recovering"] || [item.serverActivity isEqualToString:@"retrying"] || ([item.serverActivity isEqualToString:@"running"] && !ICServerWorkerActivityIsCurrent(item))) {
         NSString* action = NSLocalizedString(@"Your request is saved. Its status will be checked again automatically.", nil);
@@ -333,8 +335,9 @@ static NSString* ICServerTranscriptionStatusText(ICTranscriptionQueueItem* item)
         cell.accessibilityIdentifier = @"ICServerProcess";
         NSArray* titles = @[NSLocalizedString(@"Send request", nil), NSLocalizedString(@"Download audio on the server", nil), NSLocalizedString(@"Create transcript", nil), NSLocalizedString(@"Create chapters and summary", nil), NSLocalizedString(@"Save result on this device", nil)];
         BOOL accepted = [[ServerTranscriptionManager shared] hasConfirmedAdmissionForEpisodeHash:_currentItem.episodeHash];
-        NSDictionary* stages = @{@"queued": @1, @"downloading_audio": @1, @"transcribing": @2, @"analyzing": @3, @"finalizing": @3, @"ready": @4, @"importing": @4};
-        NSInteger current = _currentItem.status == ICTranscriptionStatusCompleted ? 5 : (stages[_currentItem.serverPhase ?: @""] ? [stages[_currentItem.serverPhase] integerValue] : (accepted ? 1 : 0));
+        NSDictionary* stages = @{@"queued": @1, @"downloading_audio": @1, @"transcribing": @2, @"analyzing": @3, @"finalizing": @3, @"ready": @4, @"awaiting_import": @4, @"importing": @4};
+        NSString* processPhase = [_currentItem.serverPhase isEqualToString:@"paused"] ? _currentItem.serverLastProcessingPhase : _currentItem.serverPhase;
+        NSInteger current = _currentItem.status == ICTranscriptionStatusCompleted ? 5 : (stages[processPhase ?: @""] ? [stages[processPhase] integerValue] : (accepted ? 1 : 0));
         BOOL done = indexPath.row < current;
         BOOL stopped = _currentItem.status == ICTranscriptionStatusFailed || _currentItem.status == ICTranscriptionStatusCanceled || _currentItem.requiresExplicitRetryAfterCrash;
         cell.textLabel.text = titles[indexPath.row];

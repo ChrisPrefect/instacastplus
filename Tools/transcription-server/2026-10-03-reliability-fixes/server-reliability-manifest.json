@@ -1,0 +1,28 @@
+{
+  "schema_revision": "2026-10-03.2",
+  "baseline": "Live SHA-256 comparison immediately before edits, 2026-10-03",
+  "stage_tar": "/Users/prefect/Developer/instacastplus/.codex/private/server-reliability-20261003-stage.tar.gz",
+  "stage_tar_sha256": "e576d1e1d8e958536b4e08e8d725294b0d4d4e0adc0912080905f2bc53bd2ed6",
+  "files": [
+    {
+      "path": "app/db.py",
+      "before_sha256": "396906469d9f10a8f71ee6ad1ab66b54fa78ea7ac9692c99f7a7e96ed5bad5e3",
+      "after_sha256": "edc9699a5a6dc97122acff6a50e35de14b93a4af8b50bf5ad8f64d60d75f2299"
+    },
+    {
+      "path": "app/main.py",
+      "before_sha256": "dc007fa3c3e531aa1db7d27f32f0eaddefce7f95d8c4a12e0b72d8bb9efd039d",
+      "after_sha256": "2598a20f600f801e319023499ac28dbf7e4b82c0a06c878d3ebe9b9fb08bbaae"
+    },
+    {
+      "path": "app/service.py",
+      "before_sha256": "1a212034140bc1b68e5a4f7ea904b56bada3f6e101356dc60076b0b54f54c44d",
+      "after_sha256": "1a45bfd6712516a72ce26568747842d9d5185c0cf01434035a4390f8e202ef8f"
+    },
+    {
+      "path": "app/worker.py",
+      "before_sha256": "7517a24ef65f06587424a30a98211acf6116a44bf503515f9117f13331c0380c",
+      "after_sha256": "c6474d9589ed4d5ee8c41379b0c684031533a394e0ba6d287f5aea01b779f66b"
+    }
+  ]
+}

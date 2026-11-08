@@ -1,0 +1,52 @@
+/home/instacast/domains/transcript.instacast.ch/.venv/lib/python3.10/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_crash_before_duration_keeps_first_download_for_new_claim (__main__.SourceRecoveryTests) ... ERROR
+test_failed_audio_checkpoint_does_not_bind_unrecoverable_source (__main__.SourceRecoveryTests) ... FAIL
+test_full_http_200_and_206_are_complete (__main__.SourceRecoveryTests) ... ok
+test_partial_or_invalid_range_never_becomes_source (__main__.SourceRecoveryTests) ... 
+======================================================================
+ERROR: test_crash_before_duration_keeps_first_download_for_new_claim (__main__.SourceRecoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/source_recovery_regression.py", line 79, in test_crash_before_duration_keeps_first_download_for_new_claim
+    with self.assertRaises(ASRReached):worker.run_transcribe(resumed,{'source':'api_episode'})
+  File "/tmp/instacast-server-source-20261003/app/worker.py", line 6889, in run_transcribe
+    raise TranscriptionJobError("audio_source_mismatch",
+app.service.TranscriptionJobError: {"code":"audio_source_mismatch","message":"Die heruntergeladene Folge unterscheidet sich von der Server-Datei. Die Transkription ist für diese Version nicht verfügbar.","retryable":false}
+
+======================================================================
+FAIL: test_failed_audio_checkpoint_does_not_bind_unrecoverable_source (__main__.SourceRecoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/source_recovery_regression.py", line 92, in test_failed_audio_checkpoint_does_not_bind_unrecoverable_source
+    self.assertIsNone(self.request_row()['audio_sha256'])
+AssertionError: '20eaebffe1816e0ffa6f7f854f5ef4ea80d5349faaf0ce1fec1b713e7fde58fa' is not None
+
+======================================================================
+FAIL: test_partial_or_invalid_range_never_becomes_source (__main__.SourceRecoveryTests) (mode='partial')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/source_recovery_regression.py", line 64, in test_partial_or_invalid_range_never_becomes_source
+    with self.assertRaises((RuntimeError,OSError)):worker.download_audio(self.url,target)
+AssertionError: (<class 'RuntimeError'>, <class 'OSError'>) not raised
+
+======================================================================
+FAIL: test_partial_or_invalid_range_never_becomes_source (__main__.SourceRecoveryTests) (mode='malformed')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/source_recovery_regression.py", line 64, in test_partial_or_invalid_range_never_becomes_source
+    with self.assertRaises((RuntimeError,OSError)):worker.download_audio(self.url,target)
+AssertionError: (<class 'RuntimeError'>, <class 'OSError'>) not raised
+
+======================================================================
+FAIL: test_partial_or_invalid_range_never_becomes_source (__main__.SourceRecoveryTests) (mode='badsize')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/source_recovery_regression.py", line 64, in test_partial_or_invalid_range_never_becomes_source
+    with self.assertRaises((RuntimeError,OSError)):worker.download_audio(self.url,target)
+AssertionError: (<class 'RuntimeError'>, <class 'OSError'>) not raised
+
+----------------------------------------------------------------------
+Ran 4 tests in 5.729s
+
+FAILED (failures=4, errors=1)

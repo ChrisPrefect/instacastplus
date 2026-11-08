@@ -248,6 +248,7 @@ static NSError *ICXMLImportLimitError(ICXMLImportErrorCode code)
         _currentPodcast.feedURL = attrs[@"url"];
         _currentPodcast.title = attrs[@"title"];
         NSString *rankStr = attrs[@"rank"];
+        _currentPodcast.hasRank = rankStr != nil;
         if (rankStr) _currentPodcast.rank = (int32_t)[rankStr integerValue];
         _currentPodcast.parked = [attrs[@"parked"] isEqualToString:@"true"];
         _currentPodcast.username = attrs[@"username"];

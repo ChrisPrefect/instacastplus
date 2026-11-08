@@ -37,3 +37,7 @@
 #import "PlayerSpeedButton.h"
 
 #import "TranscriptionQueueViewController.h"
+#if DEBUG && TARGET_OS_SIMULATOR
+#import "PlayerInfoViewController_v5.h"
+#import "PlaybackViewController.h"
+#endif

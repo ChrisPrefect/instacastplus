@@ -1,0 +1,426 @@
+--- a/app/db.py
++++ b/app/db.py
+@@ -208,7 +208,8 @@
+ CREATE TABLE IF NOT EXISTS episodes (
+     id INTEGER PRIMARY KEY,
+     podcast_id INTEGER REFERENCES podcasts(id) ON DELETE SET NULL,
+-    episode_url TEXT NOT NULL UNIQUE,
++    episode_url TEXT NOT NULL,
++    source_generation INTEGER NOT NULL DEFAULT 0,
+     guid TEXT,
+     title TEXT NOT NULL,
+     slug TEXT NOT NULL,
+@@ -682,6 +683,7 @@
+     with connect() as con:
+         con.executescript(SQLITE_SCHEMA)
+         ensure_state_columns(con)
++        ensure_sqlite_source_generations(con)
+         ensure_column(con, "jobs", "claim_token", "TEXT")
+         ensure_column(con, "jobs", "checkpoint_claim_token", "TEXT")
+         ensure_column(con, "episodes", "last_client_audio_bytes", "INTEGER")
+@@ -704,6 +706,7 @@
+ 
+ 
+ def ensure_state_columns(con: Any) -> None:
++    ensure_column(con, "episodes", "source_generation", "INTEGER NOT NULL DEFAULT 0")
+     ensure_column(con, "transcription_requests", "audio_source", "VARCHAR(16) NOT NULL DEFAULT 'client'")
+     for table, column in (("episodes","terminal_error"),("episodes","latest_source_url"),
+                           ("jobs","source_url"),("jobs","next_attempt_at"),
+@@ -723,11 +726,42 @@
+                                      ("podcasts","feed_url","uniq_podcasts_feed_url")):
+         digest_column = column + "_sha256"
+         ensure_column(con,table,digest_column,f"CHAR(64) GENERATED ALWAYS AS (SHA2({column},256)) STORED")
+-        index = "uniq_" + table + "_full_url"
++        index = "uniq_episodes_source_generation" if table == "episodes" else "uniq_" + table + "_full_url"
+         if not con.execute(f"SHOW INDEX FROM {table} WHERE Key_name=?",(index,)).fetchone():
+-            con.execute(f"CREATE UNIQUE INDEX {index} ON {table}({digest_column})")
++            columns = digest_column + ",source_generation" if table == "episodes" else digest_column
++            con.execute(f"CREATE UNIQUE INDEX {index} ON {table}({columns})")
+         if con.execute(f"SHOW INDEX FROM {table} WHERE Key_name=?",(old_index,)).fetchone():
+             con.execute(f"ALTER TABLE {table} DROP INDEX {old_index}")
++        if table == "episodes" and con.execute("SHOW INDEX FROM episodes WHERE Key_name='uniq_episodes_full_url'").fetchone():
++            con.execute("ALTER TABLE episodes DROP INDEX uniq_episodes_full_url")
++
++
++def ensure_sqlite_source_generations(con: Any) -> None:
++    # SQLite cannot drop an inline UNIQUE constraint. Rebuild only that table,
++    # preserving IDs, referencing tables, explicit indexes and triggers atomically.
++    con.execute("PRAGMA foreign_keys=OFF")
++    con.execute("BEGIN IMMEDIATE")
++    try:
++        schema = con.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='episodes'").fetchone()["sql"]
++        if re.search(r"episode_url\s+TEXT\s+NOT\s+NULL\s+UNIQUE", schema, re.I):
++            definitions = con.execute("SELECT sql FROM sqlite_master WHERE tbl_name='episodes' AND type IN ('index','trigger') AND sql IS NOT NULL").fetchall()
++            replacement = re.sub(r"episode_url\s+TEXT\s+NOT\s+NULL\s+UNIQUE", "episode_url TEXT NOT NULL", schema, count=1, flags=re.I)
++            replacement = re.sub(r"CREATE TABLE\s+episodes", "CREATE TABLE episodes_source_generation_migration", replacement, count=1, flags=re.I)
++            con.execute(replacement)
++            con.execute("INSERT INTO episodes_source_generation_migration SELECT * FROM episodes")
++            con.execute("DROP TABLE episodes")
++            con.execute("ALTER TABLE episodes_source_generation_migration RENAME TO episodes")
++            for row in definitions:
++                con.execute(row["sql"])
++        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS uniq_episodes_source_generation ON episodes(episode_url,source_generation)")
++        if con.execute("PRAGMA foreign_key_check").fetchone():
++            raise RuntimeError("Source generation migration violates existing references.")
++        con.execute("COMMIT")
++    except Exception:
++        con.execute("ROLLBACK")
++        raise
++    finally:
++        con.execute("PRAGMA foreign_keys=ON")
+ 
+ 
+ VALID_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+--- a/app/main.py
++++ b/app/main.py
+@@ -48,6 +48,8 @@
+     REQUIRED_CLIENT_ARTIFACT_KINDS,
+     artifact_file_sha256,
+     ensure_episode,
++    find_episode_by_url,
++    update_episode,
+     ensure_podcast,
+     enqueue_job,
+     episode_status,
+@@ -533,21 +535,11 @@
+ 
+ 
+ def find_episode_row_by_url(con: Any, episode_url: str) -> Any:
+-    row = con.execute("SELECT * FROM episodes WHERE " + exact_url_predicate("episode_url"), (episode_url,)).fetchone()
+-    if row:
+-        return row
+-    return con.execute(
+-        """
+-        SELECT episodes.*
+-        FROM episode_aliases
+-        JOIN episodes ON episodes.id=episode_aliases.episode_id
+-        WHERE """ + exact_url_predicate("episode_aliases.url"),
+-        (episode_url,),
+-    ).fetchone()
+-
+-
+-def reusable_episode_row(con: Any, episode_url: str) -> Any:
+-    row = find_episode_row_by_url(con, episode_url)
++    return find_episode_by_url(con, episode_url)
++
++
++def reusable_episode_row(con: Any, episode_url: str, episode: Any = None) -> Any:
++    row = episode if episode is not None else find_episode_row_by_url(con, episode_url)
+     if not row:
+         return None
+     if row["status"] in {
+@@ -760,7 +752,7 @@
+     return {
+         "api_version": "v1",
+         "$schema": "https://json-schema.org/draft/2020-12/schema",
+-        "schema_revision": "2026-10-03.1",
++        "schema_revision": "2026-10-03.2",
+         "base_url": f"{config.PUBLIC_BASE_URL.rstrip('/')}/api/v1",
+         "request_lifecycle_contract": {
+             "identity": "Full SHA-256 client identity plus durable request UUID; request URLs have an immutable SHA-256 fingerprint.",
+@@ -963,7 +955,7 @@
+                     "client_audio_bytes": {"type": ["integer", "null"], "minimum": 0},
+                     "client_audio_etag": {"type": ["string", "null"]},
+                     "wait_seconds": {"type": "integer", "minimum": 0, "maximum": 25},
+-                    "force": {"type": "boolean", "description": "True only for an explicit new request UUID restarting a canceled/deleted/failed episode; ready shared results are preserved."},
++                    "force": {"type": "boolean", "description": "An explicit new request UUID selects a new source generation or rejoins compatible active work. Previous UUIDs and ready artifacts stay bound to their original generation. Administrative force without a UUID remains restricted."},
+                     "audio_source": {"enum": ["client", "server"], "default": "client", "description": "Immutable source selection for this UUID. Server mode downloads only on the server."},
+                     "client_audio_sha256": {"type":["string","null"],"pattern":"^[0-9a-f]{64}$","description":"Required in client mode and absent/null in server mode. Compared after server download, before ASR."},
+                     "client_request_id": {"type": ["string", "null"], "format": "uuid", "description": "Persist before POST; replay the same UUID after a lost response."},
+@@ -1498,6 +1490,43 @@
+         raise HTTPException(status_code=422, detail={"code":"invalid_request", "message":"Invalid client request UUID.", "retryable":False})
+ 
+ 
++def select_request_generation(con: Any, payload: EpisodeRequest, latest: Any) -> Any:
++    """Select under the admission lock; existing UUIDs never call this again."""
++    candidates = con.execute("SELECT * FROM episodes WHERE " + exact_url_predicate("episode_url") +
++                             " ORDER BY source_generation DESC, id DESC", (latest["episode_url"],)).fetchall()
++    requested_hash = payload.client_audio_sha256 if payload.audio_source == "client" else None
++    if requested_hash:
++        for candidate in candidates:
++            if (candidate["status"] == "ready" and candidate["audio_sha256"] == requested_hash
++                    and has_required_client_artifacts(con, int(candidate["id"]))):
++                return candidate
++    incompatible_pending = False
++    for candidate in candidates:
++        job = con.execute("""SELECT verified_audio_sha256 FROM jobs WHERE episode_id=? AND job_type='transcribe'
++            AND status IN ('queued','running','paused') ORDER BY id DESC LIMIT 1""", (candidate["id"],)).fetchone()
++        if not job:
++            continue
++        if requested_hash:
++            expected_hashes = {row["audio_sha256"] for row in con.execute("""SELECT DISTINCT audio_sha256
++                FROM transcription_requests WHERE episode_id=? AND state='active' AND audio_sha256 IS NOT NULL""",
++                (candidate["id"],)).fetchall()}
++            known_hashes = {job["verified_audio_sha256"]} if job["verified_audio_sha256"] else expected_hashes
++            if known_hashes and requested_hash not in known_hashes:
++                incompatible_pending = True
++                continue
++        return candidate
++    changed_source = bool(requested_hash and (incompatible_pending or
++        (latest["audio_sha256"] and latest["audio_sha256"] != requested_hash)))
++    if not payload.force and not changed_source:
++        return latest
++    episode_id = ensure_episode(con, latest["episode_url"], podcast_id=latest["podcast_id"],
++        title=payload.title, guid=latest["guid"], published_at=latest["published_at"],
++        client_duration_seconds=payload.client_duration_seconds, client_audio_bytes=payload.client_audio_bytes,
++        client_audio_etag=payload.client_audio_etag, source_generation=int(latest["source_generation"]) + 1)
++    con.execute("UPDATE episodes SET latest_source_url=? WHERE id=?", (payload.episode_url,episode_id))
++    return con.execute("SELECT * FROM episodes WHERE id=?", (episode_id,)).fetchone()
++
++
+ @app.get("/api/v1/client-requests/{request_id}")
+ def get_client_request(request_id: str, request: Request, token_id: int = Depends(require_api_token)) -> JSONResponse:
+     client_hash = hash_token(request_client_id(request))
+@@ -1569,10 +1598,7 @@
+             store_client_request(con, client_hash, request_id, None, "unconfirmed", url_hash)
+             con.execute("UPDATE transcription_requests SET audio_sha256=?,audio_source=? WHERE client_hash=? AND request_id=?",
+                         (payload.client_audio_sha256,payload.audio_source,client_hash,request_id))
+-        explicit_restart = bool(request_id and payload.force and existing and existing["status"] in {"canceled","deleted","failed"})
+-        reuse_shared = bool(request_id and existing and (active_transcribe_job(con, int(existing["id"])) or (existing["status"] == "ready" and has_required_client_artifacts(con, int(existing["id"])))))
+-    if payload.force and reuse_shared:
+-        payload = payload.model_copy(update={"force":False})
++        explicit_restart = bool(request_id and payload.force)
+     reject_terminal_request(prior_receipt)
+     if prior_receipt and prior_receipt.get("episode_id") is not None:
+         return client_request_response(prior_receipt)
+@@ -1580,7 +1606,7 @@
+         raise HTTPException(status_code=403, detail="force is disabled for API clients")
+ 
+     reused_episode_id = None
+-    if not payload.force:
++    if request_id or not payload.force:
+         with queue_admission_transaction() as con:
+             if request_id:
+                 current_request = request_record(con, client_hash, request_id)
+@@ -1589,16 +1615,13 @@
+                     return client_request_response(dict(current_request))
+             existing = find_episode_row_by_url(con, payload.episode_url)
+             if existing:
+-                if existing["status"] in {"canceled","deleted"}:
++                if existing["status"] in {"canceled","deleted"} and not payload.force:
+                     reject_terminal_request({"state":existing["status"]})
+-                reused_episode_id = ensure_episode(
+-                    con,
+-                    payload.episode_url,
+-                    title=payload.title,
+-                    client_duration_seconds=payload.client_duration_seconds,
+-                    client_audio_bytes=payload.client_audio_bytes,
+-                    client_audio_etag=payload.client_audio_etag,
+-                )
++                if request_id:
++                    existing = select_request_generation(con, payload, existing)
++                reused_episode_id = int(existing["id"])
++                update_episode(con, reused_episode_id, None, payload.title, None, None,
++                    payload.client_duration_seconds, payload.client_audio_bytes, payload.client_audio_etag, now_iso())
+                 existing = con.execute("SELECT * FROM episodes WHERE id=?", (reused_episode_id,)).fetchone()
+                 if existing["detected_duration_seconds"] is not None:
+                     update_duration_warning(
+@@ -1612,7 +1635,7 @@
+                         existing["audio_etag"],
+                     )
+                     existing = con.execute("SELECT * FROM episodes WHERE id=?", (reused_episode_id,)).fetchone()
+-                reusable = reusable_episode_row(con, payload.episode_url)
++                reusable = reusable_episode_row(con, payload.episode_url, existing)
+                 if reusable is None or active_transcribe_job(con, reused_episode_id):
+                     ensure_client_queue_capacity(con, client_label, reused_episode_id, hash_token(client_uuid))
+                 if reusable is None:
+@@ -1692,6 +1715,11 @@
+             client_audio_etag=payload.client_audio_etag,
+         )
+         episode = con.execute("SELECT * FROM episodes WHERE id=?", (episode_id,)).fetchone()
++        if request_id and episode["status"] != "new":
++            # Another submission may have created the first generation after
++            # this request's preceding lookup. Select again under this lock.
++            episode = select_request_generation(con, payload, episode)
++            episode_id = int(episode["id"])
+         if episode["detected_duration_seconds"] is not None:
+             update_duration_warning(
+                 con,
+@@ -1708,7 +1736,7 @@
+             reject_terminal_request({"state":episode["status"]})
+         has_client_artifacts = has_required_client_artifacts(con, episode_id)
+         active_job = active_transcribe_job(con, episode_id)
+-        should_enqueue = not active_job and (payload.force or episode["status"] not in {"ready","failed"} or (episode["status"] == "ready" and not has_client_artifacts))
++        should_enqueue = not active_job and ((payload.force and not request_id) or episode["status"] not in {"ready","failed"} or (episode["status"] == "ready" and not has_client_artifacts))
+         if should_enqueue or active_job:
+             ensure_client_queue_capacity(con, client_label, episode_id, hash_token(client_uuid))
+         if should_enqueue:
+@@ -1871,7 +1899,10 @@
+         if not podcast:
+             raise HTTPException(status_code=404, detail="podcast not found")
+         episode_rows = con.execute(
+-            "SELECT id FROM episodes WHERE podcast_id=? ORDER BY published_at DESC, id DESC LIMIT 100",
++            """SELECT id FROM episodes WHERE podcast_id=? AND NOT EXISTS (
++                SELECT 1 FROM episodes newer WHERE newer.episode_url=episodes.episode_url
++                AND newer.source_generation>episodes.source_generation)
++                ORDER BY published_at DESC, id DESC LIMIT 100""",
+             (podcast_id,),
+         ).fetchall()
+     episode_ids = [int(row["id"]) for row in episode_rows]
+@@ -1904,12 +1935,7 @@
+ def get_episode_by_url(episode_url: str, token_id: int = Depends(require_api_token), request: Request = None) -> dict[str, Any]:
+     episode_url = validate_lookup_episode_url(episode_url)
+     with connect() as con:
+-        row = con.execute("SELECT id FROM episodes WHERE " + exact_url_predicate("episode_url"), (episode_url,)).fetchone()
+-        if not row:
+-            row = con.execute(
+-                "SELECT episode_id AS id FROM episode_aliases WHERE " + exact_url_predicate("url"),
+-                (episode_url,),
+-            ).fetchone()
++        row = find_episode_row_by_url(con, episode_url)
+     if not row:
+         raise HTTPException(status_code=404, detail={"code":"episode_not_found","message":"Episode not found.","retryable":False})
+     if request is not None:
+--- a/app/service.py
++++ b/app/service.py
+@@ -325,10 +325,10 @@
+     con.execute("""UPDATE jobs SET status='canceled',claim_token=NULL,locked_by=NULL,lease_until=NULL,
+                 finished_at=?,updated_at=? WHERE episode_id=? AND status IN ('queued','running','paused','failed')""",
+                 (now, now, episode_id))
+-    episode = con.execute("SELECT episode_url FROM episodes WHERE id=?", (episode_id,)).fetchone()
+-    url_hash = hashlib.sha256(episode["episode_url"].encode()).hexdigest() if episode else None
+-    con.execute("UPDATE transcription_requests SET state=?,episode_id=COALESCE(episode_id,?),updated_at=? WHERE (episode_id=? OR (episode_id IS NULL AND url_hash=?)) AND state IN ('active','unconfirmed')",
+-                (state, episode_id, now, episode_id, url_hash))
++    # A URL can have several generations. Unbound UUIDs do not yet belong to
++    # this episode and retain their own cancellation/reconciliation contract.
++    con.execute("UPDATE transcription_requests SET state=?,updated_at=? WHERE episode_id=? AND state IN ('active','unconfirmed')",
++                (state, now, episode_id))
+     con.execute("UPDATE episodes SET status=?,updated_at=? WHERE id=? AND status!='ready'",
+                 (state, now, episode_id))
+ 
+@@ -434,6 +434,20 @@
+     return value[:200] or None
+ 
+ 
++def find_episode_by_url(con: Any, episode_url: str) -> Any:
++    row = con.execute("SELECT * FROM episodes WHERE " + exact_url_predicate("episode_url") +
++                      " ORDER BY source_generation DESC, id DESC LIMIT 1", (episode_url,)).fetchone()
++    if row:
++        return row
++    alias = con.execute("""SELECT episodes.episode_url FROM episode_aliases
++        JOIN episodes ON episodes.id=episode_aliases.episode_id WHERE """ +
++        exact_url_predicate("episode_aliases.url"), (episode_url,)).fetchone()
++    if alias:
++        return con.execute("SELECT * FROM episodes WHERE " + exact_url_predicate("episode_url") +
++                           " ORDER BY source_generation DESC, id DESC LIMIT 1", (alias["episode_url"],)).fetchone()
++    return None
++
++
+ def ensure_episode(
+     con: sqlite3.Connection,
+     episode_url: str,
+@@ -444,11 +458,12 @@
+     client_duration_seconds: float | None = None,
+     client_audio_bytes: int | None = None,
+     client_audio_etag: str | None = None,
++    source_generation: int | None = None,
+ ) -> int:
+     now = now_iso()
+-    if podcast_id and guid:
++    if source_generation is None and podcast_id and guid:
+         row = con.execute(
+-            "SELECT id, request_count FROM episodes WHERE podcast_id=? AND guid=? ORDER BY id LIMIT 1",
++            "SELECT id, request_count FROM episodes WHERE podcast_id=? AND guid=? ORDER BY source_generation DESC, id DESC LIMIT 1",
+             (podcast_id, guid),
+         ).fetchone()
+         if row:
+@@ -468,16 +483,7 @@
+             add_episode_alias(con, int(row["id"]), episode_url, "feed")
+             return int(row["id"])
+ 
+-    row = con.execute("SELECT id, request_count FROM episodes WHERE " + exact_url_predicate("episode_url"), (episode_url,)).fetchone()
+-    if not row:
+-        row = con.execute(
+-            """
+-            SELECT episodes.id, episodes.request_count
+-            FROM episode_aliases
+-            JOIN episodes ON episodes.id=episode_aliases.episode_id
+-            WHERE """ + exact_url_predicate("episode_aliases.url"),
+-            (episode_url,),
+-        ).fetchone()
++    row = find_episode_by_url(con, episode_url) if source_generation is None else None
+     if row:
+         update_episode(
+             con,
+@@ -506,15 +512,16 @@
+     cur = con.execute(
+         """
+         INSERT INTO episodes (
+-            podcast_id, episode_url, guid, title, slug, published_at,
++            podcast_id, episode_url, source_generation, guid, title, slug, published_at,
+             last_client_duration_seconds, last_client_audio_bytes, last_client_audio_etag,
+             status, result_dir,
+             created_at, updated_at, last_requested_at, request_count
+-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, 1)
++        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, 1)
+         """,
+         (
+             podcast_id,
+             episode_url,
++            source_generation or 0,
+             guid,
+             episode_title,
+             slug,
+--- a/app/worker.py
++++ b/app/worker.py
+@@ -642,9 +642,18 @@
+     signal.signal(signal.SIGTERM, signal.SIG_DFL)
+     try:
+         with guarded_get(url, purpose="Episode Audio URL", stream=True, timeout=(15, 30),
+-                         headers={"User-Agent":config.USER_AGENT}, max_redirects=config.MAX_AUDIO_REDIRECTS) as response:
++                         headers={"User-Agent":config.USER_AGENT, "Accept-Encoding":"identity"}, max_redirects=config.MAX_AUDIO_REDIRECTS) as response:
+             length = response.headers.get("content-length", "")
+             expected = int(length) if length.isdigit() else None
++            complete_range_size = None
++            if response.status_code == 206:
++                content_range = re.fullmatch(r"bytes 0-(\d+)/(\d+)", response.headers.get("content-range", ""))
++                if (not content_range or int(content_range[1]) + 1 != int(content_range[2])
++                        or response.headers.get("content-encoding", "identity").lower() != "identity"):
++                    raise TranscriptionJobError("source_audio_unavailable", "Der Anbieter hat die Audiodatei nur unvollständig geliefert.", retryable=True)
++                complete_range_size = int(content_range[2])
++                if expected is not None and expected != complete_range_size:
++                    raise TranscriptionJobError("source_audio_unavailable", "Der Anbieter hat die Audiodatei nur unvollständig geliefert.", retryable=True)
+             if expected and expected > config.MAX_AUDIO_BYTES:
+                 raise TranscriptionJobError("audio_too_large", "Die Audiodatei überschreitet die erlaubte Grösse.", max_audio_bytes=config.MAX_AUDIO_BYTES)
+             written = 0
+@@ -657,6 +666,8 @@
+                         raise TranscriptionJobError("audio_too_large", "Die Audiodatei überschreitet die erlaubte Grösse.", max_audio_bytes=config.MAX_AUDIO_BYTES)
+                     output.write(chunk)
+                     connection.send(("progress", written, expected))
++            if complete_range_size is not None and written != complete_range_size:
++                raise TranscriptionJobError("source_audio_unavailable", "Der Anbieter hat die Audiodatei nur unvollständig geliefert.", retryable=True)
+             connection.send(("done", {"audio_bytes":written,"audio_etag":response.headers.get("etag")}))
+     except requests.HTTPError as exc:
+         status = exc.response.status_code if exc.response is not None else None
+@@ -6878,8 +6889,16 @@
+         heartbeat_job_id=job_id,
+     )
+     audio_sha256 = checkpoint_audio_hash(audio_path)
++    server_audio_bytes = int(audio_meta.get("audio_bytes") or audio_path.stat().st_size)
++    saved_audio = load_json(run_dir / "audio-checkpoint.json", {})
++    server_audio_etag = saved_audio.get("audio_etag") or audio_meta.get("audio_etag")
+     with queue_admission_transaction() as con:
+         assert_job_claim(con, episode_id)
++        # Publish the recoverable original before committing any request's binding.
++        # A crash during the duration probe must resume these exact bytes.
++        write_json_atomic(run_dir / "audio-checkpoint.json", {
++            "name": audio_path.name, "sha256": audio_sha256,
++            "audio_bytes": server_audio_bytes, "audio_etag": server_audio_etag})
+         con.execute("UPDATE jobs SET verified_audio_sha256=? WHERE id=?", (audio_sha256,job_id))
+         mismatched_request = con.execute("SELECT 1 FROM transcription_requests WHERE episode_id=? AND state='active' AND audio_sha256!=? LIMIT 1", (episode_id,audio_sha256)).fetchone()
+         matching_request = verify_requested_audio(con, episode_id, audio_sha256)
+@@ -6897,14 +6916,6 @@
+         raise TranscriptionJobError("audio_duration_invalid", "Die Audiodauer konnte nicht zuverlässig bestimmt werden.")
+     if detected_duration > config.MAX_AUDIO_DURATION_SECONDS:
+         raise TranscriptionJobError("audio_duration_exceeded", "Die Audiodauer überschreitet die unterstützte Höchstdauer.", max_duration_seconds=config.MAX_AUDIO_DURATION_SECONDS)
+-    server_audio_bytes = int(audio_meta.get("audio_bytes") or audio_path.stat().st_size)
+-    saved_audio = load_json(run_dir / "audio-checkpoint.json", {})
+-    server_audio_etag = saved_audio.get("audio_etag") or audio_meta.get("audio_etag")
+-    with tx() as con:
+-        assert_job_claim(con, episode_id)
+-        write_json_atomic(run_dir / "audio-checkpoint.json", {
+-            "name": audio_path.name, "sha256": audio_sha256,
+-            "audio_bytes": server_audio_bytes, "audio_etag": server_audio_etag})
+     with tx() as con:
+         assert_job_claim(con, episode_id)
+         update_duration_warning(

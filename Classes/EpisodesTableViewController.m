@@ -373,7 +373,44 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
 
 - (void) addAdditionalButtonsToMultiSelectEditActionSheet:(UIAlertController*)sheet selectedIndexPathes:(NSArray*)selectedIndexPathes completionBlock:(void (^)(void))completionBlock
 {
-
+    if (selectedIndexPathes.count == 0) {
+        return;
+    }
+    NSMutableArray<CDEpisode*>* selectedEpisodes = [NSMutableArray array];
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    for (NSIndexPath* indexPath in selectedIndexPathes) {
+        if (indexPath.section == 0 && indexPath.row < self.episodes.count) {
+            CDEpisode* episode = self.episodes[indexPath.row];
+            if ([cacheManager episodeIsCached:episode]) {
+                [selectedEpisodes addObject:episode];
+            }
+        }
+    }
+    if (selectedEpisodes.count == 0) {
+        return;
+    }
+    NSArray<CDEpisode*>* episodes = [selectedEpisodes copy];
+    WEAK_SELF
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Delete Download".ls
+                                              style:UIAlertActionStyleDestructive
+                                            handler:^(__unused UIAlertAction* action) {
+        STRONG_SELF
+        completionBlock();
+        [self setEditing:NO animated:YES];
+        VDModalInfo* modalInfo = [VDModalInfo modalInfoWithProgressLabel:@"Deleting…".ls];
+        [modalInfo show];
+        [[CacheManager sharedCacheManager] removeCacheForEpisodes:episodes automatic:NO completion:^(NSError* error) {
+            [modalInfo close];
+            if (error) {
+                [self presentAlertControllerWithTitle:@"Download Could Not Be Removed".ls
+                                              message:error.localizedDescription
+                                               button:@"OK".ls animated:YES completion:nil];
+                return;
+            }
+            [self _updateToolbarItemsAnimated:NO];
+            [self _updateToolbarLabels];
+        }];
+    }]];
 }
 
 - (id)initWithStyle:(UITableViewStyle)style {

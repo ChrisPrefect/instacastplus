@@ -1,0 +1,81 @@
+{
+  "action": "status",
+  "commandID": "c9f6f054-7191-444d-91dd-bae5b3c3e100",
+  "ok": true,
+  "queue": [
+    {
+      "automaticallyScheduled": false,
+      "chapterOnly": false,
+      "completedAt": "",
+      "episodeHash": "7aa5c09128333261396b6b0810451b9c",
+      "episodeTitle": "Stadtbibliothek und Lesekreis",
+      "error": "",
+      "feedTitle": "Server flow fixture",
+      "nextRetryAt": "2026-10-03T11:02:10Z",
+      "progress": 0,
+      "requiresExplicitRetryAfterCrash": false,
+      "retryAttempt": 0,
+      "serverActivity": "running",
+      "serverActivityUpdatedAt": "2026-10-03T11:02:09Z",
+      "serverAdmissionConfirmed": true,
+      "serverAudioSource": "client",
+      "serverConnectionIssue": false,
+      "serverEstimatedPhaseRemainingSeconds": 45,
+      "serverLastProcessingPhase": "transcribing",
+      "serverPhase": "transcribing",
+      "serverPhaseStartedAt": "2026-10-03T11:02:09Z",
+      "serverQueuePosition": null,
+      "serverWaitingForNetwork": false,
+      "serverWorkCompleted": 30,
+      "serverWorkTotal": 114.835875,
+      "serverWorkUnit": "audio_seconds",
+      "shouldGenerateAnalysis": true,
+      "status": 4,
+      "statusDetail": "Schritt 2 von 4 · Transkript wird erstellt",
+      "statusName": "transcribing",
+      "statusStartedAt": "2026-10-03T11:02:01Z",
+      "usesServerTranscription": true
+    }
+  ],
+  "selectedChapterModel": {
+    "deleteBlockedReason": "",
+    "downloaded": false,
+    "downloading": false,
+    "downloadSizeBytes": 2629991680,
+    "downloadSizeText": "2.63 GB",
+    "identifier": "gemma-4-e2b-it-q4-k",
+    "requiresDownload": true,
+    "role": 1,
+    "roleTitle": "Kapitel generieren",
+    "selected": true,
+    "shortTitle": "Gemma 4",
+    "sizeOnDiskBytes": 0,
+    "title": "Gemma 4 E2B-it"
+  },
+  "serverStatusAnimating": true,
+  "serverStatusProcess": [
+    {
+      "detail": "Auftrag vom Server angenommen",
+      "title": "Auftrag senden"
+    },
+    {
+      "detail": "Abgeschlossen",
+      "title": "Audiodatei auf dem Server laden"
+    },
+    {
+      "detail": "Server erstellt das Transkript",
+      "title": "Transkript erstellen"
+    },
+    {
+      "detail": "Noch nicht begonnen",
+      "title": "Kapitel und Zusammenfassung erstellen"
+    },
+    {
+      "detail": "Noch nicht begonnen",
+      "title": "Ergebnis auf diesem Gerät speichern"
+    }
+  ],
+  "source": "commandFile",
+  "statusScreenPresented": true,
+  "timestamp": "2026-10-03T11:02:09Z"
+}

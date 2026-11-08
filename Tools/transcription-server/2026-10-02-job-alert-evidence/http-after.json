@@ -1,0 +1,14 @@
+{
+  "url": "https://transcript.instacast.ch/api/v1/schema",
+  "authenticated": false,
+  "status": 401,
+  "body": {
+    "api_version": "v1",
+    "error": {
+      "code": "unauthorized",
+      "message": "missing bearer token",
+      "retryable": false
+    }
+  },
+  "purpose": "Public API routing after restart; no provider readiness check"
+}

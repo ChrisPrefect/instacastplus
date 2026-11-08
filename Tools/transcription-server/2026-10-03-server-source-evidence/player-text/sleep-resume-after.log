@@ -1,0 +1,24 @@
+PASS: queued-pause-cancel reconciles only the uncancelled timer
+PASS: queued-pause-expired reconciles only the uncancelled timer
+PASS: Pause freezes the timer even after the player rate became zero
+PASS: Pause freezes the timer even after the player rate became zero
+PASS: manual-rapid freezes while paused, resumes correctly and supports paused selection/cancellation
+PASS: manual-remote freezes while paused, resumes correctly and supports paused selection/cancellation
+PASS: manual-toggle freezes while paused, resumes correctly and supports paused selection/cancellation
+PASS: manual-ui freezes while paused, resumes correctly and supports paused selection/cancellation
+PASS: manual-async freezes while paused, resumes correctly and supports paused selection/cancellation
+PASS: manual-expiry freezes while paused, resumes correctly and supports paused selection/cancellation
+PASS: manual-remainder freezes while paused, resumes correctly and supports paused selection/cancellation
+PASS: manual-custom freezes while paused, resumes correctly and supports paused selection/cancellation
+PASS: play resumes with a 3-minute countdown and pauses when the timer fires
+PASS: playPause resumes with a 3-minute countdown and pauses when the timer fires
+PASS: remote resumes with a 3-minute countdown and pauses when the timer fires
+PASS: motion resumes with a 3-minute countdown and pauses when the timer fires
+PASS: setter resumes with a 3-minute countdown and pauses when the timer fires
+PASS: disabled, CarPlay, saved duration, existing deadlines and unloaded playback
+PASS: async-resume rechecks playback and settings on main
+PASS: async-paused rechecks playback and settings on main
+PASS: async-disabled rechecks playback and settings on main
+PASS: async-carplay rechecks playback and settings on main
+PASS: remote resumes with a 20-minute countdown and pauses when the timer fires
+Sleep timer playback resume regression checks passed

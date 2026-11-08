@@ -42,7 +42,7 @@ the production title action, then pops the podcast navigation controller.
 xcrun simctl boot 5492733F-33EF-4C7A-9484-3E9C31E47EED
 xcrun simctl bootstatus 5492733F-33EF-4C7A-9484-3E9C31E47EED -b
 xcodebuild -project Instacast.xcodeproj -scheme Instacast -configuration Debug -destination 'platform=iOS Simulator,id=5492733F-33EF-4C7A-9484-3E9C31E47EED' build
-python3 Tools/player_navigation_simulator_test.py --udid 5492733F-33EF-4C7A-9484-3E9C31E47EED --app /Users/Chris/Library/Developer/Xcode/DerivedData/Instacast-cgtqgggsjixnfbdsmznxtbkjogvj/Build/Products/Debug-iphonesimulator/InstacastPlus.app --evidence build/NavigationRegression/verified
+python3 Tools/player_navigation_simulator_test.py --udid 5492733F-33EF-4C7A-9484-3E9C31E47EED --app /Users/prefect/Library/Developer/Xcode/DerivedData/Instacast-cgtqgggsjixnfbdsmznxtbkjogvj/Build/Products/Debug-iphonesimulator/InstacastPlus.app --evidence build/NavigationRegression/verified
 ```
 
 Skip `boot` when already booted. The script records its exact command, OS/device,
@@ -73,7 +73,7 @@ synthesizing touches. This is not a timing/performance benchmark.
 ## Adjacent validation
 
 ```sh
-python3 Tools/list_refresh_scroll_simulator_test.py --udid 55AC6F95-4BD9-443B-917A-3B4584495A69 --app /Users/Chris/Library/Developer/Xcode/DerivedData/Instacast-cgtqgggsjixnfbdsmznxtbkjogvj/Build/Products/Debug-iphonesimulator/InstacastPlus.app --case first25 --evidence build/NavigationRegression/list-refresh-first25
+python3 Tools/list_refresh_scroll_simulator_test.py --udid 55AC6F95-4BD9-443B-917A-3B4584495A69 --app /Users/prefect/Library/Developer/Xcode/DerivedData/Instacast-cgtqgggsjixnfbdsmznxtbkjogvj/Build/Products/Debug-iphonesimulator/InstacastPlus.app --case first25 --evidence build/NavigationRegression/list-refresh-first25
 git diff --check
 ```
 

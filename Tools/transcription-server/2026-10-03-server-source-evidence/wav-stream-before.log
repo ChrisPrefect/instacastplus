@@ -1,0 +1,7 @@
+mode=local status=1 duration=114.835875 error=(null)
+mode=audio/wav status=2 duration=nan error=Error Domain=AVFoundationErrorDomain Code=-11828 "Cannot Open" UserInfo={NSLocalizedFailureReason=This media format is not supported., NSLocalizedDescription=Cannot Open, NSUnderlyingError=0x7b4ce7e9a0 {Error Domain=NSOSStatusErrorDomain Code=-12847 "(null)"}}
+mode=audio/x-wav status=2 duration=nan error=Error Domain=AVFoundationErrorDomain Code=-11828 "Cannot Open" UserInfo={NSLocalizedFailureReason=This media format is not supported., NSLocalizedDescription=Cannot Open, NSUnderlyingError=0x7aa8e6a850 {Error Domain=NSOSStatusErrorDomain Code=-12847 "(null)"}}
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/streaming_wav_playback_runtime_test.py", line 89, in <module>
+    if failures:raise AssertionError(f'Native AVPlayer did not become ready with the exact fixture duration: {failures}')
+AssertionError: Native AVPlayer did not become ready with the exact fixture duration: ['audio/wav', 'audio/x-wav']

@@ -186,6 +186,33 @@ struct ICCancelSleepTimerIntent: AudioPlaybackIntent {
     }
 }
 
+struct ICGetSleepTimerRemainingTimeIntent: AudioPlaybackIntent {
+    static let title: LocalizedStringResource = "Get Sleep Timer Remaining Time"
+    static let description = IntentDescription("Get the sleep timer's remaining seconds, including when paused. Returns 0 when no timer is active.", resultValueName: "Remaining Time (Seconds)")
+    static var openAppWhenRun: Bool { false }
+
+    func perform() async throws -> some IntentResult & ReturnsValue<Double> {
+        .result(value: await ICIntentBridge.sleepTimerRemainingTime())
+    }
+}
+
+struct ICSetAutomaticSleepTimerIntent: AudioPlaybackIntent {
+    static let title: LocalizedStringResource = "Set Automatic Sleep Timer"
+    static let description = IntentDescription("Automatically start a sleep timer when playback starts. Enabling also starts a missing timer during playback. An existing timer keeps its remaining time.")
+    static var openAppWhenRun: Bool { false }
+
+    @Parameter(title: "Enabled", default: true) var enabled: Bool
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Set automatic sleep timer to \(\.$enabled)")
+    }
+
+    func perform() async throws -> some IntentResult {
+        await ICIntentBridge.setAutomaticSleepTimer(enabled: enabled)
+        return .result()
+    }
+}
+
 // MARK: - Episode flags
 
 struct ICMarkPlayedIntent: AudioPlaybackIntent {

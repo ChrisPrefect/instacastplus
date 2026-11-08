@@ -1,5 +1,53 @@
 # Transkriptionsserver
 
+## Quellenmodus ab 3. Oktober 2026
+
+Servertranskription setzt keinen Download auf dem iPhone voraus. Die App speichert
+den Quellenmodus mit der Request-UUID: Ohne vollständige Geräteaudio sendet sie
+`audio_source: "server"`, Episoden-URL und UUID, ohne Gerätehash. Der Worker bindet
+den tatsächlichen SHA seiner ersten Audioquelle an diesen Auftrag. Bei vorhandener
+vollständiger Geräteaudio bleibt `audio_source: "client"` mit strengem Hashvergleich
+vor ASR möglich. Alte gespeicherte Aufträge bleiben Clientquellen. Ein Neustart oder
+späterer Gerätedownload ändert den Modus derselben UUID nicht.
+
+Serverergebnisse werden in beiden Quellenmodi ohne Geräteaudio importiert; bei
+Clientquellen muss der Ergebnis-SHA dem unveränderlich gespeicherten Start-SHA
+entsprechen. SRT und Analyse behalten den serverseitigen Quellhash. Das Lesen ist von der Audio-/Zeitmarkenfreigabe getrennt.
+Eine Quellenänderung beendet den betreffenden Auftrag mit konkretem Hinweis;
+ein ausdrücklicher neuer Versuch verwendet eine neue UUID.
+
+Schema `2026-10-03.1` ist produktiv. Sieben Dateien wurden nach Hashabgleich und
+vollständiger Datenbanksicherung ausgeliefert. Die additive Spalte
+`transcription_requests.audio_source` erhielt für alle 86 bisherigen Anfragen
+den Wert `client`; bestehende Jobzustände blieben unverändert. Sicherung:
+`var/backups/server-source-20261003`. Live geprüft: Health HTTP 200, API und Worker
+aktiv, neues öffentliches Schema und alle sieben Datei-Hashes korrekt. Nachweise,
+Tests und Auslieferung: [Serverquelle ohne Geräte-Download](transcription-server/2026-10-03-server-source-evidence/README.md).
+
+## Zuverlässigkeitskorrekturen und Quellgenerationen – 3. Oktober 2026
+
+Schema `2026-10-03.2` ist produktiv. Ein ausdrücklicher neuer Versuch mit neuer
+UUID und `force=true` oder eine andere Client-Audiofassung erhält bei Bedarf eine
+eigene Quellgeneration unter derselben echten URL. Alte UUIDs, Episode-IDs und
+Ergebnisdateien bleiben unverändert. Normale Serveranfragen dürfen passende
+fertige Ergebnisse wiederverwenden. Administrative Force-Aufrufe ohne UUID
+bleiben gesperrt; `ALLOW_API_FORCE=false` wurde live bestätigt.
+
+Der Download prüft vollständige HTTP206-Bereiche; der Quellen-Checkpoint wird
+vor der dauerhaften Audioidentität veröffentlicht. Die App setzt gespeicherte
+pending-Aufträge nach Neustart fort und trennt Ergebnisimport von Annahme/Status
+und Abbruch. Pro Folge verhindert eine gemeinsame Prüfung gleichzeitige lokale
+und Serveraufträge. Der Ergebnisimport benötigt auch bei Clientquellen keinen
+aktuellen Gerätedownload; der gespeicherte Start-SHA bleibt verbindlich.
+
+Vier Dateien wurden nach Hashabgleich, vollständiger DB-Sicherung und geprüfter
+Migration ausgeliefert. Bestehende 110 Episoden, 2419 Jobs, 86 Requests und
+333 Artefakte behalten ihre Zustände/Zuordnungen. Sicherung:
+`var/backups/transcription-reliability-20261003`. Live: Health200, API/Worker
+aktiv, Schema und Quellenhashes korrekt. Der App-Build besteht sechs tatsächliche
+Simulator-Abläufe; es erfolgte kein TestFlight-Upload.
+[Nachweise, Befehle und Prüfgrenzen](transcription-server/2026-10-03-reliability-fixes/README.md).
+
 ## Zugriff
 
 Produktiv: `https://transcript.instacast.ch`, Host `195.201.108.172`, SSH-Port `5000`, Benutzer `sshuser`. Der Dienst gehört zum separaten Virtualmin-Benutzer `instacast`; Änderungen nur im unten genannten Projekt und seinen Diensten durchführen.
@@ -25,7 +73,7 @@ Die lokale Arbeitskopie unter `.codex/private/server-src` ist eine Momentaufnahm
 
 ## Gemeinsamer Queue-Vertrag
 
-Die App nimmt maximal **25 offene Aufträge insgesamt** an, über lokale und serverseitige Verarbeitung hinweg. Fertige, fehlgeschlagene und abgebrochene Einträge sind Verlauf und belegen keinen offenen Platz. Vorhandene ältere Queues über dem Limit bleiben sichtbar; neue Aufträge werden erst unterhalb des Limits aufgenommen.
+Die App nimmt maximal **25 offene Aufträge insgesamt** an, über lokale und serverseitige Verarbeitung hinweg. Pro Folge darf nur ein offener Transkriptions- oder Kapitelauftrag bestehen; beide Backends prüfen dieselbe Aufnahmegrenze. Fertige, fehlgeschlagene und abgebrochene Einträge sind Verlauf und belegen keinen offenen Platz. Vorhandene ältere Queues über dem Limit bleiben sichtbar; neue Aufträge werden erst unterhalb des Limits aufgenommen.
 
 Der Server begrenzt offene Transkriptionsaufträge zusätzlich auf **25 je Client** und **250 insgesamt**. Wiederholte Abfragen eigener bestehender Aufträge und bereits fertige Ergebnisse bleiben möglich. Die Aufnahme samt Zählung und Client-Zuordnung muss über alle API-Prozesse atomar bleiben. Neue Aufträge benötigen einen tatsächlich laufenden Worker, einen verfügbaren KI-Anbieter und ausreichende Serverressourcen. `queued`, `running` und `paused` zählen gegen das Limit; laufende Worker werden unter derselben Datenbanksperre wie die Aufnahme gezählt und beansprucht.
 
@@ -137,7 +185,7 @@ Der iOS-Simulator-Build und die fokussierten App-Regressionen inklusive acht aus
 
 ## Annahme und Fehlerzustände – 6. September 2026
 
-Die App unterscheidet dauerhaft `pending` (Audio noch nicht fertig geprüft), `prepared` (Audio geprüft, Auftrag lokal gespeichert), `unconfirmed` (Annahme nach Versand unklar), `accepted` und `rejected`. Erst eine gültige Serverbestätigung zeigt einen angenommenen Auftrag an. Die Prüfung einer Annahme reserviert einen der 25 Plätze, damit gleichzeitige Bedienaktionen das App-Limit nicht überschreiten.
+Die App unterscheidet dauerhaft `pending` (dauerhaft vorgemerkt, noch nicht versandfertig), `prepared` (Quellenidentität geprüft, Auftrag lokal gespeichert), `unconfirmed` (Annahme nach Versand unklar), `accepted` und `rejected`. Erst eine gültige Serverbestätigung zeigt einen angenommenen Auftrag an. Die Prüfung einer Annahme reserviert einen der 25 Plätze, damit gleichzeitige Bedienaktionen das App-Limit nicht überschreiten.
 
 | Ereignis | Verhalten |
 | --- | --- |
@@ -146,7 +194,7 @@ Die App unterscheidet dauerhaft `pending` (Audio noch nicht fertig geprüft), `p
 | Server/Worker/Provider nicht bereit, kein Guthaben oder Kontingent, zu wenig Ressourcen, Queue voll | Server bestätigt `error.admitted: false`; App lehnt ab und zeigt den konkreten Grund. Keine versteckte Wiederaufnahme. |
 | Antwort nach POST verloren oder vorübergehender Verbindungsfehler | Abgleich derselben UUID vor erneutem POST verhindert doppelte Aufträge. Ein Verbindungsfehler beweist keine Ablehnung. |
 | Dauerhafte HTTP-Ablehnung oder ungültige Antwort | Kein endloses Warten auf Bestätigung. Ablehnung mit Ursache; bei unlesbarer Antwort oder unbekanntem Status ausdrücklicher Abgleich des gespeicherten Auftrags, keine automatische Neugenerierung. |
-| App-Neustart | Angenommene/unbestätigte Aufträge werden abgeglichen. Ein lediglich lokal vorbereitetes `pending` wird als nicht hinzugefügt wiederhergestellt und braucht einen ausdrücklichen neuen Versuch. |
+| App-Neustart | Angenommene/unbestätigte Aufträge werden abgeglichen. Dauerhaft gespeicherte `pending`-Aufträge werden mit derselben UUID automatisch vorbereitet und übermittelt. Speicherfehler blockieren den Versand bis zur erfolgreichen Speicherung; abgelehnte oder abgebrochene Aufträge bleiben beendet. |
 | Ausfall nach bestätigter Annahme | Identität und Zwischenstände bleiben erhalten; sichtbarer Wartegrund. Ein langer Offline-Zeitraum allein beendet keinen Auftrag. |
 | Serverabbruch oder Löschung | Dauerhafte Abbruch-Einträge führen beim nächsten erfolgreichen Abgleich zum Abbruch in der App. Offline ist ein sofortiger Abgleich technisch unmöglich. |
 | App-Abbruch während Offlinephase | Lokale Abbruchabsicht bleibt dauerhaft gespeichert und wird nach Netzrückkehr bestätigt; verspätete Ergebnisse dürfen sie nicht überschreiben. |
@@ -159,7 +207,7 @@ Statusabfragen, neue Aufträge und Abbrüche besitzen getrennte begrenzte Anfrag
 
 Die analysierte Audioquelle besitzt einen serverseitig gemessenen SHA-256-Wert, der in `episode.media.audio_sha256` nach dem Löschen temporärer Audiofiles erhalten bleibt. Lokale Zwischenstände, Transkripte und generierte Analyseergebnisse sind ebenfalls an die konkrete Audioquelle gebunden. Hashlose oder abweichende Zwischenstände dürfen keine alten Cues in eine neue dynamische Werbevariante mischen.
 
-Automatisches Überspringen anhand generierter Zeitmarken ist erst erlaubt, wenn die vollständigen aktuellen Audiodaten mit dieser Quelle übereinstimmen. Generierte Transkripte werden ebenfalls erst nach erfolgreicher Audioprüfung geladen; ungeprüfte Ergebnisse werden auch aus dem Cache nicht angezeigt. Beim Streaming kann die Prüfung nach erfolgreichem Abschluss des eigenen Cache-Imports erfolgen; ein alter Import darf keinen neuen Player freischalten. Eine noch laufende Prüfung erzeugt keine Fehlermeldung; eine fehlgeschlagene abgeschlossene Prüfung gibt keine generierten Zeitmarken frei.
+Automatisches Überspringen und Sprünge anhand generierter Zeitmarken sind erst erlaubt, wenn die vollständigen aktuellen Audiodaten mit dieser Quelle übereinstimmen. Transkripttext und Zusammenfassung sind auch ohne Geräteaudio lesbar; der Player prüft dafür die aktuelle Episode und den Artefaktstand. Beim Streaming kann die Zeitmarkenprüfung nach erfolgreichem Abschluss des eigenen Cache-Imports erfolgen; ein alter Import darf keinen neuen Player freischalten. Eine fehlende oder fehlgeschlagene Audioprüfung gibt keine generierten Zeitmarken frei.
 
 Änderungen der effektiven Skip-Einstellungen gelten beim nächsten Abspielen einer Marke unmittelbar. Ein manueller Sprung in ein Sponsorsegment am Episodenende darf die Episode nicht automatisch als gehört abschließen.
 
@@ -343,22 +391,37 @@ OpenAI-Anfrage antwortete jedoch mit `401 token_revoked`; für neue Verarbeitung
 ist die angeforderte erneute Anmeldung des Serverkontos erforderlich. Dieser
 Betriebszustand ist unabhängig von erfolgreichem App-Build und Vertragstests.
 
-## Fehlermails und wiederhergestellte Anmeldung – 2. Oktober 2026
+## Fehlermails aus tatsächlichen Aufträgen – 2. Oktober 2026
 
-Die Anmeldung des Dienstkontos wurde erneuert; eine echte Modellantwort und der
-öffentliche Health-Endpunkt sind wieder erfolgreich. Der vorhandene Mail-Monitor
-war deaktiviert und seine Prüfungen erfassten keine KI-Anbieter- oder Worker-Ausfälle.
-`app/alerts.py` prüft jetzt auch diese Zustände über dieselben Produktionsprüfungen
-wie die Auftragsannahme. Mails nennen den Fehlercode, die Auswirkung und bei
-Anmelde-, Kontingent-, Konfigurations- und Laufzeitfehlern den notwendigen nächsten
-Schritt. Vorhandene Job-, Ressourcen-, Queue- und Budgetmeldungen bleiben erhalten.
+Die Anmeldung des Dienstkontos wurde erneuert und zuvor mit einer echten
+Modellantwort geprüft. Die anschließend eingerichtete periodische Prüfung wurde
+auf ausdrücklichen Wunsch wieder entfernt: `transcript-instacast-monitor.service`
+ist gestoppt und dauerhaft deaktiviert. Es laufen keine periodischen
+Anbieter-/Kontingentabfragen für Benachrichtigungen.
 
-`transcript-instacast-monitor.service` ist wieder dauerhaft aktiviert. Prüfung alle
-60 Sekunden, Empfänger `info@instacast.ch`, bestehender Cooldown 3600 Sekunden pro
-Fehlerart. Zehn Monitor-Prozessfälle und zwei Ressourcenprüfungen bestehen. Die
-automatische Mail für einen bereits fehlgeschlagenen Auftrag sowie eine markierte
-Prüfmail wurden nachweislich zugestellt. API und Worker wurden nicht neu gestartet.
+Fehlermails an `info@instacast.ch` entstehen direkt aus einer abgewiesenen
+Auftragsannahme, einem blockierten Start eines wartenden Auftrags oder einem
+Verarbeitungsfehler. Sie verwenden den bereits aufgetretenen Fehler einschließlich
+Diagnose, Fehlercode und bei bestehenden Jobs deren Job-/Episoden-ID. Die
+HTTP-Antwort wird vor dem Mailversand gesendet; Worker melden nach Abschluss der
+Datenbanktransaktion. Der vorhandene Cooldown bleibt bei 3600 Sekunden pro
+Fehlerart. Normales Beenden, verlorene/abgebrochene Claims, erfolgreiche Anfragen
+und eine leere Queue erzeugen keine Fehlermail.
 
-Sicherung: `var/backups/transcription-alerts-20261002`. Quellpatch, Prüfsummen,
-Reproduktionsbefehle, Fehlernachweis und Zustelllogs:
-[Prüfnachweis](transcription-server/2026-10-02-alert-evidence/README.md).
+Die vorhandenen Bereitschaftsprüfungen bei Annahme und Start eines tatsächlichen
+Auftrags bleiben bestehen. Der Worker fragt bei leerer Queue keinen KI-Anbieter
+ab. Die Ressourcenmessung während einer laufenden Transkription bleibt erhalten;
+es gibt keine laufenden Messzyklen des separaten Monitors mehr.
+
+19 HTTP-/Worker-Mailfälle und 75 angrenzende Prüfungen bestehen. Auslieferung nach
+Quellabgleich und Sicherung unter `var/backups/transcription-job-alerts-20261002`;
+API und Worker bei leerer Queue neu gestartet. Produktive Jobdatensätze unverändert,
+Monitor nachweislich `disabled`, `inactive`, PID 0. Neue Tests verwenden eigene
+Datenbanken und einen aufzeichnenden Mailprozess, ohne Modellaufrufe oder
+Produktions-Testaufträge.
+
+Aktueller Patch, Prüfsummen, genaue Befehle und Testartefakte:
+[Prüfnachweis](transcription-server/2026-10-02-job-alert-evidence/README.md).
+Die früheren Mailzustellungen und die mittlerweile abgelöste Monitorlösung sind
+als [historischer Nachweis](transcription-server/2026-10-02-alert-evidence/README.md)
+erhalten.

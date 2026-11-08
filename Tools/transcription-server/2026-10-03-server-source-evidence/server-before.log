@@ -1,0 +1,106 @@
+/home/instacast/domains/transcript.instacast.ch/.venv/lib/python3.10/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_additive_migration_defaults_existing_requests_to_client (__main__.ServerAudioSourceTests) ... FAIL
+test_cancellation_blocks_server_replay (__main__.ServerAudioSourceTests) ... FAIL
+test_client_mode_still_requires_hash (__main__.ServerAudioSourceTests) ... FAIL
+test_explicit_source_contract_rejects_ambiguity (__main__.ServerAudioSourceTests) ... ok
+test_first_server_hash_binding_is_durable_and_replay_stays_hashless (__main__.ServerAudioSourceTests) ... FAIL
+test_late_server_join_binds_known_worker_source (__main__.ServerAudioSourceTests) ... FAIL
+test_no_device_audio_is_admitted_and_replayed (__main__.ServerAudioSourceTests) ... FAIL
+test_real_worker_download_binds_server_source_before_asr (__main__.ServerAudioSourceTests) ... FAIL
+test_shared_work_rejects_client_mismatch_only (__main__.ServerAudioSourceTests) ... FAIL
+test_uuid_source_mode_is_immutable_both_directions (__main__.ServerAudioSourceTests) ... FAIL
+
+======================================================================
+FAIL: test_additive_migration_defaults_existing_requests_to_client (__main__.ServerAudioSourceTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 159, in test_additive_migration_defaults_existing_requests_to_client
+    self.admitted(mode='client',sha='a'*64)
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 55, in admitted
+    self.assertEqual(202,response.status_code,response.text)
+AssertionError: 202 != 422 : {"api_version":"v1","error":{"code":"invalid_request","message":"Request validation failed.","retryable":false,"details":[{"loc":["body","audio_source"],"msg":"Extra inputs are not permitted","type":"extra_forbidden"}]}}
+
+======================================================================
+FAIL: test_cancellation_blocks_server_replay (__main__.ServerAudioSourceTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 124, in test_cancellation_blocks_server_replay
+    self.assertEqual(410,response.status_code,response.text)
+AssertionError: 410 != 422 : {"api_version":"v1","error":{"code":"invalid_request","message":"Request validation failed.","retryable":false,"details":[{"loc":["body","audio_source"],"msg":"Extra inputs are not permitted","type":"extra_forbidden"}]}}
+
+======================================================================
+FAIL: test_client_mode_still_requires_hash (__main__.ServerAudioSourceTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 75, in test_client_mode_still_requires_hash
+    self.assertEqual('audio_identity_required',response.json()['error']['code'])
+AssertionError: 'audio_identity_required' != 'invalid_request'
+- audio_identity_required
++ invalid_request
+
+
+======================================================================
+FAIL: test_first_server_hash_binding_is_durable_and_replay_stays_hashless (__main__.ServerAudioSourceTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 95, in test_first_server_hash_binding_is_durable_and_replay_stays_hashless
+    episode=self.admitted()
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 55, in admitted
+    self.assertEqual(202,response.status_code,response.text)
+AssertionError: 202 != 422 : {"api_version":"v1","error":{"code":"invalid_request","message":"Request validation failed.","retryable":false,"details":[{"loc":["body","audio_source"],"msg":"Extra inputs are not permitted","type":"extra_forbidden"}]}}
+
+======================================================================
+FAIL: test_late_server_join_binds_known_worker_source (__main__.ServerAudioSourceTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 114, in test_late_server_join_binds_known_worker_source
+    episode=self.admitted(mode='client',sha='a'*64)
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 55, in admitted
+    self.assertEqual(202,response.status_code,response.text)
+AssertionError: 202 != 422 : {"api_version":"v1","error":{"code":"invalid_request","message":"Request validation failed.","retryable":false,"details":[{"loc":["body","audio_source"],"msg":"Extra inputs are not permitted","type":"extra_forbidden"}]}}
+
+======================================================================
+FAIL: test_no_device_audio_is_admitted_and_replayed (__main__.ServerAudioSourceTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 62, in test_no_device_audio_is_admitted_and_replayed
+    episode=self.admitted()
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 55, in admitted
+    self.assertEqual(202,response.status_code,response.text)
+AssertionError: 202 != 422 : {"api_version":"v1","error":{"code":"invalid_request","message":"Request validation failed.","retryable":false,"details":[{"loc":["body","audio_source"],"msg":"Extra inputs are not permitted","type":"extra_forbidden"}]}}
+
+======================================================================
+FAIL: test_real_worker_download_binds_server_source_before_asr (__main__.ServerAudioSourceTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 141, in test_real_worker_download_binds_server_source_before_asr
+    episode=self.admitted()
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 55, in admitted
+    self.assertEqual(202,response.status_code,response.text)
+AssertionError: 202 != 422 : {"api_version":"v1","error":{"code":"invalid_request","message":"Request validation failed.","retryable":false,"details":[{"loc":["body","audio_source"],"msg":"Extra inputs are not permitted","type":"extra_forbidden"}]}}
+
+======================================================================
+FAIL: test_shared_work_rejects_client_mismatch_only (__main__.ServerAudioSourceTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 106, in test_shared_work_rejects_client_mismatch_only
+    episode=self.admitted()
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 55, in admitted
+    self.assertEqual(202,response.status_code,response.text)
+AssertionError: 202 != 422 : {"api_version":"v1","error":{"code":"invalid_request","message":"Request validation failed.","retryable":false,"details":[{"loc":["body","audio_source"],"msg":"Extra inputs are not permitted","type":"extra_forbidden"}]}}
+
+======================================================================
+FAIL: test_uuid_source_mode_is_immutable_both_directions (__main__.ServerAudioSourceTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 85, in test_uuid_source_mode_is_immutable_both_directions
+    self.admitted()
+  File "/tmp/instacast-server-source-20261003/tools/server_audio_source_regression.py", line 55, in admitted
+    self.assertEqual(202,response.status_code,response.text)
+AssertionError: 202 != 422 : {"api_version":"v1","error":{"code":"invalid_request","message":"Request validation failed.","retryable":false,"details":[{"loc":["body","audio_source"],"msg":"Extra inputs are not permitted","type":"extra_forbidden"}]}}
+
+----------------------------------------------------------------------
+Ran 10 tests in 3.638s
+
+FAILED (failures=9)

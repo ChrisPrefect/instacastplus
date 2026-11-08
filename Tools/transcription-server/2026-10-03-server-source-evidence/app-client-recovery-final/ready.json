@@ -1,0 +1,81 @@
+{
+  "action": "status",
+  "commandID": "8cf8863f-c0ef-4d03-9d4b-3083797f00af",
+  "ok": true,
+  "queue": [
+    {
+      "automaticallyScheduled": false,
+      "chapterOnly": false,
+      "completedAt": "2026-10-03T11:02:21Z",
+      "episodeHash": "7aa5c09128333261396b6b0810451b9c",
+      "episodeTitle": "Stadtbibliothek und Lesekreis",
+      "error": "",
+      "feedTitle": "Server flow fixture",
+      "nextRetryAt": "",
+      "progress": 1,
+      "requiresExplicitRetryAfterCrash": false,
+      "retryAttempt": 0,
+      "serverActivity": "",
+      "serverActivityUpdatedAt": "",
+      "serverAdmissionConfirmed": true,
+      "serverAudioSource": "client",
+      "serverConnectionIssue": false,
+      "serverEstimatedPhaseRemainingSeconds": null,
+      "serverLastProcessingPhase": "ready",
+      "serverPhase": "importing",
+      "serverPhaseStartedAt": "",
+      "serverQueuePosition": null,
+      "serverWaitingForNetwork": false,
+      "serverWorkCompleted": null,
+      "serverWorkTotal": null,
+      "serverWorkUnit": "",
+      "shouldGenerateAnalysis": true,
+      "status": 6,
+      "statusDetail": "",
+      "statusName": "completed",
+      "statusStartedAt": "",
+      "usesServerTranscription": true
+    }
+  ],
+  "selectedChapterModel": {
+    "deleteBlockedReason": "",
+    "downloaded": false,
+    "downloading": false,
+    "downloadSizeBytes": 2629991680,
+    "downloadSizeText": "2.63 GB",
+    "identifier": "gemma-4-e2b-it-q4-k",
+    "requiresDownload": true,
+    "role": 1,
+    "roleTitle": "Kapitel generieren",
+    "selected": true,
+    "shortTitle": "Gemma 4",
+    "sizeOnDiskBytes": 0,
+    "title": "Gemma 4 E2B-it"
+  },
+  "serverStatusAnimating": false,
+  "serverStatusProcess": [
+    {
+      "detail": "Auftrag vom Server angenommen",
+      "title": "Auftrag senden"
+    },
+    {
+      "detail": "Abgeschlossen",
+      "title": "Audiodatei auf dem Server laden"
+    },
+    {
+      "detail": "Abgeschlossen",
+      "title": "Transkript erstellen"
+    },
+    {
+      "detail": "Abgeschlossen",
+      "title": "Kapitel und Zusammenfassung erstellen"
+    },
+    {
+      "detail": "Abgeschlossen",
+      "title": "Ergebnis auf diesem Gerät speichern"
+    }
+  ],
+  "source": "commandFile",
+  "statusScreenPresented": true,
+  "timestamp": "2026-10-03T11:02:23Z"
+}

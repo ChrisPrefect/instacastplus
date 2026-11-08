@@ -1,0 +1,4 @@
+ok test_schema_has_one_public_contract
+ok test_canonical_time_and_unknown_client_duration
+ok test_artifact_revision_duration_and_boundaries
+ok test_schema_accepts_ready_and_rejects_missing_integrity

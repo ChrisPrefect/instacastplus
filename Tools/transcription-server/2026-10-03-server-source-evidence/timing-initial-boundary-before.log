@@ -1,0 +1,10 @@
+FAIL: First matching hash with only metadata churn triggers one still-blocked revalidation
+FAIL: First hash proof survives metadata churn only after stable revalidation
+FAIL: First matching hash with only metadata churn triggers one still-blocked revalidation
+FAIL: Repeated mutation never starts an unbounded hash loop
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/playback_autoskip_live_settings_runtime_test.py", line 369, in <module>
+    subprocess.run([str(path / "test")], check=True)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/instacast-skip-yfopixvv/test']' returned non-zero exit status 1.

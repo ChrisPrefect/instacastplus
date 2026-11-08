@@ -1,0 +1,29 @@
+...................F.........................................F..........................
+======================================================================
+FAIL: test_legacy_owned_cancel_receipt_and_foreign_denial (lifecycle_regression.LifecycleTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/lifecycle_regression.py", line 125, in test_legacy_owned_cancel_receipt_and_foreign_denial
+    self.assertEqual({'id':None,'episode_id':episode,'state':'canceled'},receipt)
+AssertionError: {'id': None, 'episode_id': 1, 'state': 'canceled'} != {'id': None, 'state': 'canceled', 'episode_id': 1, 'audio_source': 'client'}
+- {'episode_id': 1, 'id': None, 'state': 'canceled'}
++ {'audio_source': 'client', 'episode_id': 1, 'id': None, 'state': 'canceled'}
+?  ++++++++++++++++++++++++++
+
+
+======================================================================
+FAIL: test_legacy_owned_cancel_receipt_and_foreign_denial (__main__.ReliabilityTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/instacast-server-source-20261003/tools/lifecycle_regression.py", line 125, in test_legacy_owned_cancel_receipt_and_foreign_denial
+    self.assertEqual({'id':None,'episode_id':episode,'state':'canceled'},receipt)
+AssertionError: {'id': None, 'episode_id': 1, 'state': 'canceled'} != {'id': None, 'state': 'canceled', 'episode_id': 1, 'audio_source': 'client'}
+- {'episode_id': 1, 'id': None, 'state': 'canceled'}
++ {'audio_source': 'client', 'episode_id': 1, 'id': None, 'state': 'canceled'}
+?  ++++++++++++++++++++++++++
+
+
+----------------------------------------------------------------------
+Ran 88 tests in 34.539s
+
+FAILED (failures=2)

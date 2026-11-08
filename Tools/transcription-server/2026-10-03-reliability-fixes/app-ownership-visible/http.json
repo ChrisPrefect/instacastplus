@@ -1,0 +1,49 @@
+{
+  "phase": "queued",
+  "request": "2bfe959a-7d45-425a-9bc9-80c0bfe9cb83",
+  "posts": [
+    {
+      "audio_source": "server",
+      "force": false,
+      "episode_url": "http://127.0.0.1:56293/fixture.wav",
+      "client_duration_seconds": 115,
+      "wait_seconds": 0,
+      "client_request_id": "2bfe959a-7d45-425a-9bc9-80c0bfe9cb83",
+      "podcast_url": "http://127.0.0.1:56293/api/fixture.xml",
+      "title": "Stadtbibliothek und Lesekreis"
+    }
+  ],
+  "events": [
+    [
+      "POST",
+      "/api/v1/episodes"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/2bfe959a-7d45-425a-9bc9-80c0bfe9cb83"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/2bfe959a-7d45-425a-9bc9-80c0bfe9cb83"
+    ],
+    [
+      "GET",
+      "/api/v1/client-requests/2bfe959a-7d45-425a-9bc9-80c0bfe9cb83"
+    ]
+  ],
+  "paused": false,
+  "connection_error": false,
+  "requests": {
+    "2bfe959a-7d45-425a-9bc9-80c0bfe9cb83": {
+      "audio_source": "server",
+      "force": false,
+      "episode_url": "http://127.0.0.1:56293/fixture.wav",
+      "client_duration_seconds": 115,
+      "wait_seconds": 0,
+      "client_request_id": "2bfe959a-7d45-425a-9bc9-80c0bfe9cb83",
+      "podcast_url": "http://127.0.0.1:56293/api/fixture.xml",
+      "title": "Stadtbibliothek und Lesekreis"
+    }
+  },
+  "deletes": []
+}

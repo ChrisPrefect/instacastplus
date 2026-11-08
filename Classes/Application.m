@@ -52,6 +52,10 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
     double     lastAccelX;
     double     lastAccelY;
     double     lastAccelZ;
+    NSTimeInterval lastAccelTimestamp;
+    CMAcceleration previousAcceleration;
+    NSTimeInterval previousAccelerationTimestamp;
+    NSUInteger motionSampleCount;
     UIInterfaceOrientation orientationLast;
 }
 
@@ -299,14 +303,19 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 
 - (void)_resetSleepTimerForActivity:(NSString*)reason
 {
+    [self _resetSleepTimerForActivity:reason metadata:@{}];
+}
+
+- (void)_resetSleepTimerForActivity:(NSString*)reason metadata:(NSDictionary*)metadata
+{
     if (![NSThread isMainThread]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self _resetSleepTimerForActivity:reason];
+            [self _resetSleepTimerForActivity:reason metadata:metadata];
         });
         return;
     }
     AudioSession* session = [AudioSession sharedAudioSession];
-    [session resetSleepTimerForActivity:reason];
+    [session resetSleepTimerForActivity:reason metadata:metadata];
     [myidleTimer invalidate];
     myidleTimer = nil;
     if (session.stopDate) {
@@ -330,6 +339,9 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
         [self.motionManager startAccelerometerUpdatesToQueue:queue withHandler:^(CMAccelerometerData *accelerometerData, NSError *error) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 CMAcceleration acc = accelerometerData.acceleration;
+                CMAcceleration reference = { self->lastAccelX, self->lastAccelY, self->lastAccelZ };
+                NSTimeInterval referenceTimestamp = self->lastAccelTimestamp;
+                self->motionSampleCount++;
                 double threshold = [USER_DEFAULTS doubleForKey:DeviceMovementSensitivity];
                 if (threshold <= 0) threshold = 0.004;
                 if (fabs(acc.x - self->lastAccelX) > threshold ||
@@ -339,14 +351,36 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
                     self->lastAccelX = acc.x;
                     self->lastAccelY = acc.y;
                     self->lastAccelZ = acc.z;
+                    self->lastAccelTimestamp = accelerometerData.timestamp;
                     [[NSNotificationCenter defaultCenter] postNotificationName:ApplicationDidDetectMotionNotification object:nil];
                     BOOL isMotionActive = [USER_DEFAULTS boolForKey:DeviceMovementIntelligentSleep];
                     BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
 
                     if (isIntelligentTimerActive && isMotionActive) {
-                        [self _resetSleepTimerForActivity:@"motion"];
+                        // Preserve the detector's input before the baseline/deadline is lost.
+                        // The AudioSession logger still counts every reset and samples logs at 30 s.
+                        [self _resetSleepTimerForActivity:@"motion" metadata:@{
+                            @"motion.x": @(acc.x), @"motion.y": @(acc.y), @"motion.z": @(acc.z),
+                            @"motion.referenceX": @(reference.x), @"motion.referenceY": @(reference.y), @"motion.referenceZ": @(reference.z),
+                            @"motion.deltaX": @(acc.x - reference.x), @"motion.deltaY": @(acc.y - reference.y), @"motion.deltaZ": @(acc.z - reference.z),
+                            @"motion.previousDeltaX": @(acc.x - self->previousAcceleration.x),
+                            @"motion.previousDeltaY": @(acc.y - self->previousAcceleration.y),
+                            @"motion.previousDeltaZ": @(acc.z - self->previousAcceleration.z),
+                            @"motion.threshold": @(threshold),
+                            @"motion.sampleNumber": @(self->motionSampleCount),
+                            @"motion.samplePresent": @(accelerometerData != nil),
+                            @"motion.sampleUptime": @(accelerometerData.timestamp),
+                            @"motion.referenceSampleUptime": @(referenceTimestamp),
+                            @"motion.previousSampleUptime": @(self->previousAccelerationTimestamp),
+                            @"motion.sampleIntervalSeconds": @(accelerometerData.timestamp - self->previousAccelerationTimestamp),
+                            @"motion.deliveryLagSeconds": @(NSProcessInfo.processInfo.systemUptime - accelerometerData.timestamp),
+                            @"motion.errorDomain": error.domain ?: @"",
+                            @"motion.errorCode": @(error.code),
+                        }];
                     }
                 }
+                self->previousAcceleration = acc;
+                self->previousAccelerationTimestamp = accelerometerData.timestamp;
             });
         }];
     }

@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-03",
+  "fixture": "Tools/fixtures/server-sponsor-e2e/fixture.wav",
+  "fixture_audio_sha256": "92747209c31b54463fa69e40d7b29b15894a13ff00664e86ca8066112984b6d0",
+  "platform": "iOS 27.0 Simulator arm64; native Objective-C Foundation/AVFoundation production loader",
+  "primary_e2e_red": "app-timing-before/snapshot-flow/playback-retry-view.json",
+  "observed": "Same audio bytes/inode/size/mtime; UF_TRACKED flag 0 to 64 and ctime changes after cache publication. Strict proof revoked permanently before fix.",
+  "native_probe_command": "python3 Tools/transcription-server/2026-10-03-server-source-evidence/timing-container-metadata-probe.py --device 79C6B540-E8DC-4E2A-8171-25BB70F7E5D1 --documents /Users/prefect/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/79859010-10FA-4DEC-A671-D62146E50F81/Documents",
+  "native_probe_note": "The retained before log was captured by the same probe in /tmp before production edits, with the recorded device/documents path inline. The retained script only parameterizes those paths. Supply the current dedicated test-app container after reinstall. Metadata tracking scheduling is nondeterministic; this observation is not the sole regression test.",
+  "boundary_regression": {
+    "command": "python3 Tools/playback_autoskip_live_settings_runtime_test.py",
+    "red": "timing-boundary-before.log (five behavior assertions failed)",
+    "green": "timing-boundary-after.log"
+  },
+  "nearby_commands_passed": [
+    "python3 Tools/transcription_audio_identity_runtime_test.py",
+    "python3 Tools/playback_artifact_freshness_runtime_test.py",
+    "python3 Tools/playback_artifact_semantics_runtime_test.py",
+    "git diff --check -- Classes/PlaybackManager.m Tools/playback_autoskip_live_settings_runtime_test.py"
+  ],
+  "scope": "Runtime races are deterministic production-method tests; root reruns the unchanged full App E2E separately. No manual UF_TRACKED change, no snapshot guard weakening, no automatic retry on failed revalidation.",
+  "initial_verification": {
+    "reproduction": "Actual production SHA and snapshot helper run while holding first completion; a new hardlink changes ctime without changing bytes or write generation.",
+    "red": [
+      "timing-initial-boundary-before.log: 4 failures",
+      "timing-initial-prehash-before.log: 2 failures"
+    ],
+    "green": "timing-initial-boundary-after.log",
+    "fix": "Capture opaque original content generation before initial snapshot; never adopt a new generation. Matching first hash may retry once only with unchanged original content generation and artifact snapshots. A second unstable result remains blocked.",
+    "negative_controls": [
+      "in-place changed bytes, preserved device/inode/size and nanosecond mtime",
+      "in-place changed then restored bytes; generation still changes",
+      "new bytes matching expected artifact SHA cannot replace bytes originally selected by AVAsset",
+      "metadata changes twice cannot cause unbounded hashing"
+    ],
+    "probe_command": "python3 Tools/transcription-server/2026-10-03-server-source-evidence/timing-generation-probe.py --device 79C6B540-E8DC-4E2A-8171-25BB70F7E5D1 --documents /Users/prefect/Library/Developer/CoreSimulator/Devices/79C6B540-E8DC-4E2A-8171-25BB70F7E5D1/data/Containers/Data/Application/8315920D-C50C-4D07-A0CF-07ED9479C554/Documents",
+    "probe_evidence": "timing-generation-before.log: real UF_TRACKED leaves generation stable; in-place content write increments it even before writer close with original exact mtime restored.",
+    "nearby_checks_passed": [
+      "python3 Tools/playback_media_failure_runtime_test.py",
+      "python3 Tools/transcription_audio_identity_runtime_test.py",
+      "python3 Tools/playback_artifact_semantics_runtime_test.py"
+    ]
+  }
+}

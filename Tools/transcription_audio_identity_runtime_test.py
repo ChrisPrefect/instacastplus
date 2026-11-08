@@ -21,6 +21,7 @@ def method(source, signature):
 
 helper = method(generator, "func verifyPlaybackAudio(")
 helper += "\n" + method(generator, "@objc func cancelGeneratedAudioVerification()")
+helper += "\n" + method(generator, "@objc func chapterArtifactSnapshotIdentifier(")
 start = engine.find("enum ICAudioIdentity {")
 assert start >= 0, "Missing verified audio-byte identity; episode URL cannot identify a dynamic ad variant"
 brace = engine.index("{", start)
@@ -38,7 +39,10 @@ import CryptoKit
  func logEvent(_ category: String, message: String, metadata: NSDictionary) {}
 }
 IDENTITY
-enum ICTranscriptionPaths { static func analysisJSONURL(for hash:String)->URL { URL(fileURLWithPath:"/analysis") } }
+enum ICTranscriptionPaths {
+ static func analysisJSONURL(for hash:String)->URL { URL(fileURLWithPath:"/analysis") }
+ static func chaptersJSONURL(for hash:String)->URL { URL(fileURLWithPath:"/chapters") }
+}
 @MainActor final class TranscriptionEngine {
  static let shared = TranscriptionEngine()
  var source: String?

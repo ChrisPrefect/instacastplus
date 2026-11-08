@@ -603,7 +603,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     BOOL scheduleDelayedExport = NO;
 
     if ([action isEqualToString:@"playpause"]) {
-        if (pm.playingEpisode) {
+        if (pm.failed && !pm.ready && pm.playingEpisode) {
+            [as togglePlay];
+        } else if (pm.playingEpisode) {
             // Episode already loaded — just toggle play/pause
             [pm playPause];
         } else if (self.lastPlayedEpisodeDict[@"id"]) {

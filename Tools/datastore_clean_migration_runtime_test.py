@@ -37,9 +37,13 @@ func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
 }
 
 func genericModel(at path: String) throws -> NSManagedObjectModel {
-    guard let model = NSManagedObjectModel(contentsOf: URL(fileURLWithPath: path)) else {
+    guard let loaded = NSManagedObjectModel(contentsOf: URL(fileURLWithPath: path)) else {
         throw ProofFailure(description: "Could not load model at \(path)")
     }
+    // Core Data caches loaded models and freezes them after coordinator use.
+    // Each fixture needs its own editable class mapping, with identical schema hashes.
+    let model = loaded.copy() as! NSManagedObjectModel
+    try require(model.entityVersionHashesByName == loaded.entityVersionHashesByName, "Copy changed model schema")
     for entity in model.entities {
         entity.managedObjectClassName = "NSManagedObject"
     }

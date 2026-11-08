@@ -1,0 +1,134 @@
+{
+  "passed" : 0,
+  "nextAction" : true,
+  "title" : true,
+  "historyHidden" : true,
+  "activity" : false,
+  "confirmed" : true,
+  "timeline" : [
+    {
+      "title" : "Auftrag senden",
+      "detail" : "Auftrag vom Server angenommen"
+    },
+    {
+      "title" : "Audiodatei auf dem Server laden",
+      "detail" : "Verarbeitung pausiert"
+    },
+    {
+      "title" : "Transkript erstellen",
+      "detail" : "Noch nicht begonnen"
+    },
+    {
+      "title" : "Kapitel und Zusammenfassung erstellen",
+      "detail" : "Noch nicht begonnen"
+    },
+    {
+      "title" : "Ergebnis auf diesem Gerät speichern",
+      "detail" : "Noch nicht begonnen"
+    }
+  ],
+  "nodes" : [
+    {
+      "id" : "",
+      "text" : "Diagnoseverlauf"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Kapitel und Zusammenfassung erstellen"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Transkript erstellen"
+    },
+    {
+      "id" : "",
+      "text" : "Noch nicht begonnen"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Audiodatei auf dem Server laden"
+    },
+    {
+      "id" : "",
+      "text" : "Verarbeitung pausiert"
+    },
+    {
+      "id" : "ICServerProcess",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag senden"
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vom Server angenommen"
+    },
+    {
+      "id" : "ICServerAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag abbrechen"
+    },
+    {
+      "id" : "ICServerNextAction",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Die Verarbeitung wird automatisch fortgesetzt, sobald der Dienst wieder verfügbar ist."
+    },
+    {
+      "id" : "ICServerStatusTitle",
+      "text" : ""
+    },
+    {
+      "id" : "",
+      "text" : "Verarbeitung pausiert"
+    },
+    {
+      "id" : "",
+      "text" : "Auftrag vom Server angenommen\n\nDer Transkriptionsdienst ist vorübergehend nicht verfügbar.\n\nStand aktualisiert: 12:54:47"
+    },
+    {
+      "id" : "",
+      "text" : "So geht es weiter"
+    },
+    {
+      "id" : "",
+      "text" : "Ablauf"
+    }
+  ],
+  "process" : true,
+  "informative" : false
+}

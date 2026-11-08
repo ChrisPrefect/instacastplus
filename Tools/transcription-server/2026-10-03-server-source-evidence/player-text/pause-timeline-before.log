@@ -1,0 +1,152 @@
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-j4hd2pd2/main.m:503:292: warning: capturing 'walk' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  503 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                                                                                                                                                                                                                                                                                    ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-j4hd2pd2/main.m:503:32: note: block will be retained by the captured object
+  503 |  __block void (^walk)(UIView*);walk=^(UIView *view){if(view.accessibilityIdentifier||[view isKindOfClass:UILabel.class]) [nodes addObject:@{@"id":view.accessibilityIdentifier?:@"",@"text":[view isKindOfClass:UILabel.class]?((UILabel*)view).text?:@"":@""}];for(UIView *child in view.subviews)walk(child);};walk(vc.view);walk=nil;
+      |                                ^~~~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-j4hd2pd2/main.m:501:3: warning: capturing 'vc' strongly in this block is likely to lead to a retain cycle [-Warc-retain-cycles]
+  501 |  [vc.view layoutIfNeeded];[vc.tableView layoutIfNeeded];
+      |   ^~
+/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/server-status-j4hd2pd2/main.m:500:2: note: block will be retained by the captured object
+  500 |  vc.capture = ^{
+      |  ^~
+2 warnings generated.
+com.iteconomy.instacastplus.server-status-test: 32068
+{
+  "passed": 0,
+  "nextAction": true,
+  "title": true,
+  "historyHidden": true,
+  "activity": false,
+  "confirmed": true,
+  "timeline": [
+    {
+      "title": "Auftrag senden",
+      "detail": "Auftrag vom Server angenommen"
+    },
+    {
+      "title": "Audiodatei auf dem Server laden",
+      "detail": "Verarbeitung pausiert"
+    },
+    {
+      "title": "Transkript erstellen",
+      "detail": "Noch nicht begonnen"
+    },
+    {
+      "title": "Kapitel und Zusammenfassung erstellen",
+      "detail": "Noch nicht begonnen"
+    },
+    {
+      "title": "Ergebnis auf diesem Gerät speichern",
+      "detail": "Noch nicht begonnen"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "",
+      "text": "Diagnoseverlauf"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Ergebnis auf diesem Gerät speichern"
+    },
+    {
+      "id": "",
+      "text": "Noch nicht begonnen"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Kapitel und Zusammenfassung erstellen"
+    },
+    {
+      "id": "",
+      "text": "Noch nicht begonnen"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Transkript erstellen"
+    },
+    {
+      "id": "",
+      "text": "Noch nicht begonnen"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Audiodatei auf dem Server laden"
+    },
+    {
+      "id": "",
+      "text": "Verarbeitung pausiert"
+    },
+    {
+      "id": "ICServerProcess",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Auftrag senden"
+    },
+    {
+      "id": "",
+      "text": "Auftrag vom Server angenommen"
+    },
+    {
+      "id": "ICServerAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Auftrag abbrechen"
+    },
+    {
+      "id": "ICServerNextAction",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Die Verarbeitung wird automatisch fortgesetzt, sobald der Dienst wieder verfügbar ist."
+    },
+    {
+      "id": "ICServerStatusTitle",
+      "text": ""
+    },
+    {
+      "id": "",
+      "text": "Verarbeitung pausiert"
+    },
+    {
+      "id": "",
+      "text": "Auftrag vom Server angenommen\n\nDer Transkriptionsdienst ist vorübergehend nicht verfügbar.\n\nStand aktualisiert: 12:54:47"
+    },
+    {
+      "id": "",
+      "text": "So geht es weiter"
+    },
+    {
+      "id": "",
+      "text": "Ablauf"
+    }
+  ],
+  "process": true,
+  "informative": false
+}
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/server_transcription_status_screen_runtime_test.py", line 162, in <module>
+    assert data['passed'], 'Status needs a distinct current state, next action, process and collapsed diagnostics'
+AssertionError: Status needs a distinct current state, next action, process and collapsed diagnostics

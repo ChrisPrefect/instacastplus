@@ -1,0 +1,16 @@
+{
+  "command": "python3 Tools/server_transcription_errors_runtime_test.py",
+  "environment": "macOS; xcrun swiftc -swift-version 6; actual production manager apply/handle/retry methods with controlled HTTP and media boundaries",
+  "inputs": "server/client audio source; episode failure envelope and HTTP 409 audio_source_mismatch",
+  "expected": "source-appropriate message; terminal failed status without auto poll; historical admission preserved; explicit retry creates new UUID",
+  "observed_before": "9 failing behavior assertions; client-source-error-before.log",
+  "observed_after": "Server typed error/lifecycle matrix passed; client-source-error-after.log",
+  "result": "passed",
+  "source_sha256": {
+    "Classes/ServerTranscriptionManager.swift": "5e352be299f8ad816529e9c9e12bd714e73bdb255c61f4d6aac94df5c6e78aef",
+    "Tools/fixtures/server_transcription_error_cases.swift": "20b05ec9de4c3b71fb891417a9676e9df3aebd02815f9fe1e7cce38cbe43748e",
+    "Resources/de.lproj/Localizable.strings": "94f270ee717dcbbcf016581efc0ab6351bd0d0ab75549c000040286cec2ecc1f",
+    "Resources/en.lproj/Localizable.strings": "783f3530f550aa111f914d9aaa02abb1f0a12d6396d48d63d89d002da4ba229f"
+  },
+  "e2e_scope": "This deterministic source-replacement boundary test is isolated; real app no-download flow and Player verification are recorded separately."
+}

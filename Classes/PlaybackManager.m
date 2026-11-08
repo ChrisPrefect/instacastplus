@@ -71,13 +71,105 @@ static NSURL* ICPublicShareURLForEpisode(CDEpisode* episode)
 static NSString* kDefaultTemporaryPlaybackPositions = @"TemporaryPlaybackPositions";
 static NSString* kDefaultPlaybackVolume = @"PlaybackVolume";
 
-enum {
-	IdleState,
-	InitializedState,
-	ShouldRunState,
-	RunningState,
-	VideoPausedInBackground
+// Loading retains the latest playback intent. Readiness and failure are derived
+// from this lifecycle, rather than independently writable flags.
+typedef NS_ENUM(NSInteger, ICPlaybackState) {
+    IdleState,
+    InitializedState, // loading with a pending Play
+    ShouldRunState,  // ready, waiting for playback to start
+    RunningState,
+    PausedState,
+    LoadingPausedState,
+    FailedState,
 };
+
+typedef NS_ENUM(NSInteger, ICPlaybackEvent) {
+    ICPlaybackEventOpenPlaying,
+    ICPlaybackEventOpenPaused,
+    ICPlaybackEventReady,
+    ICPlaybackEventPlay,
+    ICPlaybackEventPause,
+    ICPlaybackEventStarted,
+    ICPlaybackEventStopped,
+    ICPlaybackEventClose,
+    ICPlaybackEventFail,
+};
+
+static BOOL ICPlaybackNextState(ICPlaybackState state, ICPlaybackEvent event, ICPlaybackState *next)
+{
+    if (state < IdleState || state > FailedState) return NO;
+    switch (event) {
+        case ICPlaybackEventOpenPlaying:
+        case ICPlaybackEventOpenPaused:
+            if (state != IdleState && state != FailedState) return NO;
+            *next = event == ICPlaybackEventOpenPlaying ? InitializedState : LoadingPausedState;
+            return YES;
+        case ICPlaybackEventReady:
+            if (state != InitializedState && state != LoadingPausedState) return NO;
+            *next = state == InitializedState ? ShouldRunState : PausedState;
+            return YES;
+        case ICPlaybackEventPlay:
+            switch (state) {
+                case InitializedState: case LoadingPausedState: *next = InitializedState; return YES;
+                case PausedState: case ShouldRunState: *next = ShouldRunState; return YES;
+                case RunningState: *next = RunningState; return YES;
+                default: return NO;
+            }
+        case ICPlaybackEventPause:
+            switch (state) {
+                case IdleState: case FailedState: *next = state; return YES;
+                case InitializedState: case LoadingPausedState: *next = LoadingPausedState; return YES;
+                case PausedState: case ShouldRunState: case RunningState: *next = PausedState; return YES;
+                default: return NO;
+            }
+        case ICPlaybackEventStarted:
+            if (state != ShouldRunState && state != RunningState && state != PausedState) return NO;
+            *next = RunningState;
+            return YES;
+        case ICPlaybackEventStopped:
+            if (state != RunningState && state != PausedState) return NO;
+            *next = PausedState;
+            return YES;
+        case ICPlaybackEventClose:
+            *next = IdleState;
+            return YES;
+        case ICPlaybackEventFail:
+            if (state == IdleState || state == FailedState) return NO;
+            *next = FailedState;
+            return YES;
+    }
+    return NO;
+}
+
+static NSString *ICPlaybackStateName(ICPlaybackState state)
+{
+    switch (state) {
+        case IdleState: return @"idle";
+        case InitializedState: return @"loading-playing";
+        case LoadingPausedState: return @"loading-paused";
+        case ShouldRunState: return @"waiting-to-play";
+        case RunningState: return @"playing";
+        case PausedState: return @"paused";
+        case FailedState: return @"failed";
+    }
+    return @"unknown";
+}
+
+static NSString *ICPlaybackEventName(ICPlaybackEvent event)
+{
+    switch (event) {
+        case ICPlaybackEventOpenPlaying: return @"open-playing";
+        case ICPlaybackEventOpenPaused: return @"open-paused";
+        case ICPlaybackEventReady: return @"ready";
+        case ICPlaybackEventPlay: return @"play";
+        case ICPlaybackEventPause: return @"pause";
+        case ICPlaybackEventStarted: return @"started";
+        case ICPlaybackEventStopped: return @"stopped";
+        case ICPlaybackEventClose: return @"close";
+        case ICPlaybackEventFail: return @"fail";
+    }
+    return @"unknown";
+}
 
 #if TARGET_OS_IPHONE
 typedef struct {
@@ -218,6 +310,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 @property (nonatomic, readonly, getter=isCacheTerminal) BOOL cacheTerminal;
 @property (nonatomic, copy, readonly) NSString* leaseToken;
 @property (atomic, strong, readonly) NSURL* completeReadURL;
+@property (atomic, strong, readonly) NSError* terminalError;
 @property (nonatomic, copy) void (^progressChangeHandler)(double progress,
                                                          unsigned long long downloadedBytes,
                                                          ICStreamingCacheLoaderState state);
@@ -239,6 +332,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 
 @interface ICStreamingCacheLoader ()
 @property (atomic, strong, readwrite) NSURL* completeReadURL;
+@property (atomic, strong, readwrite) NSError* terminalError;
 @property (nonatomic, strong) CDEpisode* episode;
 @property (nonatomic, strong) NSURL* remoteURL;
 @property (nonatomic, strong) NSURL* tempURL;
@@ -498,6 +592,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     NSError* terminalError = error ?: [NSError errorWithDomain:@"ICStreamingCacheErrorDomain"
                                                            code:1
                                                        userInfo:@{NSLocalizedDescriptionKey: @"Streaming stopped before the episode could be cached. Check your connection and try again.".ls}];
+    self.terminalError = terminalError;
     for (AVAssetResourceLoadingRequest* request in [self.pendingRequests copy]) {
         [request finishLoadingWithError:terminalError];
     }
@@ -582,6 +677,9 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     NSString* lowerMime = [mimeType lowercaseString];
     if ([lowerMime isEqualToString:@"audio/mpeg"]) {
         return @"public.mp3";
+    }
+    if ([lowerMime isEqualToString:@"audio/wav"] || [lowerMime isEqualToString:@"audio/x-wav"]) {
+        return @"com.microsoft.waveform-audio";
     }
     if ([lowerMime isEqualToString:@"audio/m4a"] ||
         [lowerMime isEqualToString:@"audio/mp4"] ||
@@ -1293,8 +1391,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 @interface PlaybackManager () <NSUserActivityDelegate>
 @property (nonatomic, readwrite, strong) CDEpisode* playingEpisode;
-@property (nonatomic, readwrite, getter=isReady) BOOL ready;
-@property (nonatomic, readwrite) BOOL failed;
+@property (nonatomic, readwrite, strong) NSError* playbackError;
 @property (nonatomic, readwrite, getter=hasMovingVideo) BOOL movingVideo;
 @property (nonatomic, readwrite) CGSize viewImageSize;
 
@@ -1322,7 +1419,8 @@ didReceiveResponse:(NSURLResponse *)response
 @property (nonatomic, strong) id playbackObserver;
 @property (nonatomic, strong) id temporaryPositionObserver;
 @property (nonatomic, strong) id savedPositionObserver;
-@property (assign) NSInteger state;
+@property (assign) ICPlaybackState state;
+- (BOOL)_transitionPlaybackWithEvent:(ICPlaybackEvent)event;
 
 @property (nonatomic) BOOL inTransitionToNextTrack;
 @property (nonatomic, strong) NSMutableDictionary* nowPlayingInfo;
@@ -1348,6 +1446,7 @@ didReceiveResponse:(NSURLResponse *)response
 @property (nonatomic, readwrite, copy) NSString *chapterTimelineIdentifier;
 @property (nonatomic, strong) AVURLAsset *audioSnapshotAsset;
 @property (nonatomic, copy) NSString *audioSnapshotAnchor;
+@property (nonatomic, copy) id audioContentGenerationAnchor;
 @property (nonatomic, copy) NSString *verifiedAnalysisSnapshot;
 @property (nonatomic, copy) NSArray *pendingGeneratedChapters;
 @property (nonatomic, copy) NSArray *originalChapterTimeline;
@@ -1370,6 +1469,38 @@ didReceiveResponse:(NSURLResponse *)response
     float*      _chapterTimesIdx;
     float*      _artworkTimesIdx;
 }
+
+- (BOOL)_transitionPlaybackWithEvent:(ICPlaybackEvent)event
+{
+    @synchronized (self) {
+        ICPlaybackState next;
+        if (!ICPlaybackNextState(self.state, event, &next)) {
+            [[ICDiagnosticLogger shared] logEvent:@"playback-transition"
+                                          message:@"Ungültiger Wiedergabe-Zustandswechsel verworfen"
+                                         metadata:@{
+                @"fromState": ICPlaybackStateName(self.state), @"from": @(self.state),
+                @"event": ICPlaybackEventName(event), @"eventRawValue": @(event),
+                @"episodeHash": self.playingEpisode.objectHash ?: @"",
+                @"playerRate": @(self.player.rate), @"playerItemStatus": @(self.player.currentItem.status),
+                @"mainThread": @([NSThread isMainThread]),
+            }];
+            return NO;
+        }
+        if (self.state != next) self.state = next;
+        return YES;
+    }
+}
+
++ (NSSet*)keyPathsForValuesAffectingReady { return [NSSet setWithObject:@"state"]; }
++ (NSSet*)keyPathsForValuesAffectingFailed { return [NSSet setWithObject:@"state"]; }
+
+- (BOOL)isReady
+{
+    ICPlaybackState state = self.state;
+    return state == ShouldRunState || state == RunningState || state == PausedState;
+}
+
+- (BOOL)failed { return self.state == FailedState; }
 
 #pragma mark -
 
@@ -2089,7 +2220,7 @@ didReceiveResponse:(NSURLResponse *)response
 #if TARGET_OS_IPHONE
         [App showBackgroundErrorWithTitle:@"Media not loaded.".ls message:@"No media to play.".ls];
 #else
-        self.failed = YES;
+        [self _transitionPlaybackWithEvent:ICPlaybackEventFail];
         SEND_UPDATE
 #endif
         return;
@@ -2112,8 +2243,7 @@ didReceiveResponse:(NSURLResponse *)response
 	// create background task until the first data is buffered and the app is ready to play
 	[self _startNextItemHandover];
 
-	self.ready = NO;
-	self.failed = NO;
+    self.playbackError = nil;
     self.movingVideo = NO;
 	self.currentChapter = -1;
     self.currentArtwork = -1;
@@ -2133,8 +2263,8 @@ didReceiveResponse:(NSURLResponse *)response
 #endif
     // Post start/change notification now that playingEpisode is set, so observers
     // (e.g. WidgetDataExporter) read the correct current episode.
+    if (![self _transitionPlaybackWithEvent:autostart ? ICPlaybackEventOpenPlaying : ICPlaybackEventOpenPaused]) return;
     [[NSNotificationCenter defaultCenter] postNotificationName:pendingNotificationName object:self];
-	self.state = InitializedState;
     self.streamingCacheActive = NO;
     self.streamingCacheProgress = 0.0;
     self.streamingCacheComplete = NO;
@@ -2226,6 +2356,7 @@ didReceiveResponse:(NSURLResponse *)response
 #endif
 	
     self.audioSnapshotAsset = self.mediaAsset;
+    self.audioContentGenerationAnchor = [self _audioContentGenerationAtURL:self.mediaAsset.URL];
     self.audioSnapshotAnchor = self.mediaAsset.URL.isFileURL ? [TranscriptionEngine artifactSnapshotIdentifierAt:self.mediaAsset.URL] : nil;
     [self _continueOpeningAsset:self.mediaAsset autostart:autostart];
 }
@@ -2271,9 +2402,9 @@ didReceiveResponse:(NSURLResponse *)response
     
     AVPlayerItem* playerItem = [AVPlayerItem playerItemWithAsset:asset];
     if (!playerItem) {
-        self.failed = YES;
-        [self close];
-        SEND_UPDATE
+        [self _failPlaybackWithError:[NSError errorWithDomain:AVFoundationErrorDomain
+                                                       code:AVErrorUnknown
+                                                   userInfo:@{NSLocalizedDescriptionKey: @"Media not loaded.".ls}]];
         return;
     }
     
@@ -2282,7 +2413,8 @@ didReceiveResponse:(NSURLResponse *)response
     [playerItem addTaskObserver:self forKeyPath:@"status" task:^(id obj, NSDictionary *change)
     {
         AVPlayerItem* currentItem = weakSelf.player.currentItem;
-        if (currentItem.status == AVPlayerItemStatusReadyToPlay && weakSelf.state == InitializedState)
+        if (currentItem.status == AVPlayerItemStatusReadyToPlay &&
+            (weakSelf.state == InitializedState || weakSelf.state == LoadingPausedState))
         {
             CDEpisode* episode = weakSelf.playingEpisode;
             CDFeed* feed = episode.feed;
@@ -2357,9 +2489,8 @@ didReceiveResponse:(NSURLResponse *)response
             }
 #endif
             
-            weakSelf.ready = YES;
-            weakSelf.state = (autostart) ? ShouldRunState : RunningState;
-            if (!autostart) {
+            if (![weakSelf _transitionPlaybackWithEvent:ICPlaybackEventReady]) return;
+            if (weakSelf.paused) {
                 [weakSelf _endNextItemHandover];
             }
 
@@ -2379,7 +2510,7 @@ didReceiveResponse:(NSURLResponse *)response
 
             SEND_UPDATE
             [weakSelf _startLoadingChapters];
-            if (weakSelf.player.currentItem.playbackLikelyToKeepUp && autostart) {
+            if (weakSelf.player.currentItem.playbackLikelyToKeepUp && weakSelf.state == ShouldRunState) {
                 [weakSelf play];
                 [weakSelf updateNowPlayingInfo];
             }
@@ -2387,8 +2518,13 @@ didReceiveResponse:(NSURLResponse *)response
 
         else if (weakSelf.player.currentItem.status == AVPlayerItemStatusFailed) {
             ErrLog(@"playback failed/interrupted due to error :%@", weakSelf.player.currentItem.error);
-            weakSelf.failed = YES;
-            [weakSelf close];
+            NSError* error = weakSelf.player.currentItem.error;
+#if TARGET_OS_IPHONE
+            if (weakSelf.streamCacheLoader.terminalError) {
+                error = weakSelf.streamCacheLoader.terminalError;
+            }
+#endif
+            [weakSelf _failPlaybackWithError:error];
         }
     }];
     
@@ -2442,12 +2578,16 @@ didReceiveResponse:(NSURLResponse *)response
         float rate = weakSelf.player.rate;
                 
         if (rate > 0 && weakSelf.state == ShouldRunState) {
-            weakSelf.state = RunningState;
+            if (![weakSelf _transitionPlaybackWithEvent:ICPlaybackEventStarted]) return;
             [weakSelf performSelector:@selector(_endNextItemHandover) withObject:nil afterDelay:1.0];
+        } else if (rate > 0 && weakSelf.state == PausedState) {
+            // SharePlay can change the coordinated player's rate directly.
+            if (![weakSelf _transitionPlaybackWithEvent:ICPlaybackEventStarted]) return;
         }
 
         if (weakSelf.mediaAsset && rate == 0 && weakSelf.state == RunningState)
         {
+            if (![weakSelf _transitionPlaybackWithEvent:ICPlaybackEventStopped]) return;
             [weakSelf _saveCurrentPlaybackPosition];//DevD to do
         }
         
@@ -2605,8 +2745,6 @@ didReceiveResponse:(NSURLResponse *)response
         }
     }];
 
-    self.state = InitializedState;
-    
     SEND_UPDATE
 }
 
@@ -2968,8 +3106,30 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) closeAndSaveCurrentPosition:(BOOL)saveCurrentPosition
 {
-	// stop the skipping thing in case the user holds down the buttons until the end
-    self.ready = NO;
+    [self _transitionPlaybackWithEvent:ICPlaybackEventClose];
+    [self _releasePlaybackResourcesAndSaveCurrentPosition:saveCurrentPosition];
+    self.playbackError = nil;
+    if (!self.changingEpisode && self.playingEpisode) {
+        self.playingEpisode = nil;
+        [[AudioSession sharedAudioSession] clear];
+        [[NSNotificationCenter defaultCenter] postNotificationName:PlaybackManagerDidEndNotification object:self];
+    }
+}
+
+- (void)_failPlaybackWithError:(NSError*)error
+{
+    // Failed media does not end the selected episode or its readable content.
+    BOOL wasReady = self.ready;
+    self.playbackError = error;
+    if (![self _transitionPlaybackWithEvent:ICPlaybackEventFail]) return;
+    [self _releasePlaybackResourcesAndSaveCurrentPosition:wasReady];
+    [[AudioSession sharedAudioSession] pauseSleepTimer];
+    SEND_UPDATE
+}
+
+- (void)_releasePlaybackResourcesAndSaveCurrentPosition:(BOOL)saveCurrentPosition
+{
+	// The caller has already retired the playback lifecycle before teardown.
 
 #if TARGET_OS_IPHONE
     ICStreamingCacheLoader* streamLoader = self.streamCacheLoader;
@@ -3017,6 +3177,7 @@ didReceiveResponse:(NSURLResponse *)response
 	self.mediaAsset = nil;
     self.audioSnapshotAsset = nil;
     self.audioSnapshotAnchor = nil;
+    self.audioContentGenerationAnchor = nil;
     self.verifiedAnalysisSnapshot = nil;
 	
     if (!self.changingEpisode) {
@@ -3066,9 +3227,6 @@ didReceiveResponse:(NSURLResponse *)response
 		[self.playerView removeFromSuperview];
 		self.playerView = nil;
 		
-		//_state = IdleState;
-		self.ready = NO;
-        
         self.embeddedChaptersForPersistence = @[];
 		self.chapters = nil;
         if (_chapterTimesIdx) {
@@ -3085,12 +3243,6 @@ didReceiveResponse:(NSURLResponse *)response
 		self.player = nil;
         [self _setupRemotePlaybackCenterWithEpisode:nil];
 	}
-    
-    if (!self.changingEpisode && self.playingEpisode) {
-        self.playingEpisode = nil;
-        [[AudioSession sharedAudioSession] clear];
-        [[NSNotificationCenter defaultCenter] postNotificationName:PlaybackManagerDidEndNotification object:self];
-    }
 }
 
 + (NSSet*) keyPathsForValuesAffectingVolume {
@@ -3127,11 +3279,9 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (BOOL) isPaused
 {
-    if (self.state == ShouldRunState) {
-        return NO;
-    }
-    
-	return (self.player.rate == 0 && self.state != InitializedState);
+    ICPlaybackState state = self.state;
+    return state == IdleState || state == LoadingPausedState ||
+        state == PausedState || state == FailedState;
 }
 
 - (BOOL) isPodcastPlaying
@@ -3232,6 +3382,10 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) play
 {
+    BOOL wasPaused = self.paused;
+    if (![self _transitionPlaybackWithEvent:ICPlaybackEventPlay]) return;
+    // Play during loading changes intent; the ready event starts the player.
+    if (!self.ready) { SEND_UPDATE return; }
     BOOL hasRecentSeek = (self.seekingPositionChangeDate && [self.seekingPositionChangeDate timeIntervalSinceNow] > -1);
 
 	// rewind 30 seconds if we paused more than 10 mins
@@ -3249,7 +3403,7 @@ didReceiveResponse:(NSURLResponse *)response
 		
     // When stream-caching finished in the background, switch to local file on the next explicit resume.
 #if TARGET_OS_IPHONE
-    if (self.paused && self.streamCacheLoader && self.playingEpisode && [[CacheManager sharedCacheManager] episodeIsCached:self.playingEpisode]) {
+    if (wasPaused && self.streamCacheLoader && self.playingEpisode && [[CacheManager sharedCacheManager] episodeIsCached:self.playingEpisode]) {
         NSTimeInterval resumeTime = [self time];
         if (hasRecentSeek && self.duration > 0) {
             resumeTime = self.seekingPosition * self.duration;
@@ -3269,7 +3423,9 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) pause
 {
-    if (!self.paused)
+    BOOL wasPaused = self.paused;
+    if (![self _transitionPlaybackWithEvent:ICPlaybackEventPause]) return;
+    if (!wasPaused)
     {
         [self.player pause];
         self.lastPauseDate = [NSDate date];
@@ -3283,9 +3439,6 @@ didReceiveResponse:(NSURLResponse *)response
             }
             self.playStartDate = nil;
         }
-
-        // prevent starting auto-playback when playthrough available
-        self.state = RunningState;
 
         [self _saveCurrentPlaybackPosition];
         SEND_UPDATE
@@ -3976,6 +4129,7 @@ didReceiveResponse:(NSURLResponse *)response
     AVURLAsset *chapterAsset = self.mediaAsset;
     if (self.audioSnapshotAsset != chapterAsset) {
         self.audioSnapshotAsset = chapterAsset;
+        self.audioContentGenerationAnchor = [self _audioContentGenerationAtURL:chapterAsset.URL];
         self.audioSnapshotAnchor = chapterAsset.URL.isFileURL ? [TranscriptionEngine artifactSnapshotIdentifierAt:chapterAsset.URL] : nil;
     }
     self.verifiedAnalysisSnapshot = nil;
@@ -4120,33 +4274,78 @@ didReceiveResponse:(NSURLResponse *)response
     }];
 }
 
+- (id)_audioContentGenerationAtURL:(NSURL*)url
+{
+    if (!url.isFileURL) return nil;
+    id generation = nil;
+    // A fresh URL avoids cached resource values hiding an in-place write.
+    [[NSURL fileURLWithPath:url.path] getResourceValue:&generation forKey:NSURLGenerationIdentifierKey error:nil];
+    return generation;
+}
+
 - (void)_verifyGeneratedChapterAudioForCurrentAsset
 {
     AVURLAsset *asset = self.mediaAsset;
-    NSUInteger generation = self.chapterLoadGeneration;
     NSString *episodeHash = self.playingEpisode.objectHash;
     NSURL *sourceURL = asset.URL.isFileURL ? asset.URL : nil;
 #if TARGET_OS_IPHONE
     ICStreamingCacheLoader *loader = self.streamCacheLoader;
-    NSString *leaseToken = loader.leaseToken;
     if (!sourceURL && [asset.URL isEqual:loader.assetURL]) {
         sourceURL = loader.completeReadURL;
     }
 #endif
     if (!sourceURL || [self.audioVerificationSourceURL isEqual:sourceURL]) return;
+    id contentGeneration = [self _audioContentGenerationAtURL:sourceURL];
     NSString *audioSnapshot = [TranscriptionEngine artifactSnapshotIdentifierAt:sourceURL];
-    if (!self.audioSnapshotAnchor) self.audioSnapshotAnchor = audioSnapshot;
-    if (!audioSnapshot || ![audioSnapshot isEqualToString:self.audioSnapshotAnchor]) return;
-    self.audioVerificationSourceURL = sourceURL;
+    if (!self.audioSnapshotAnchor) {
+        self.audioContentGenerationAnchor = contentGeneration;
+        self.audioSnapshotAnchor = audioSnapshot;
+    }
+    if (!audioSnapshot) return;
+    if (![audioSnapshot isEqualToString:self.audioSnapshotAnchor] &&
+        (!self.audioContentGenerationAnchor || ![self.audioContentGenerationAnchor isEqual:contentGeneration])) return;
     NSString *transcriptSnapshot = [[TranscriptionEngine shared] transcriptSnapshotIdentifierFor:episodeHash];
-    NSString *analysisSnapshot = [TranscriptionEngine artifactSnapshotIdentifierAt:[ICTranscriptionPaths analysisJSONURLFor:episodeHash]];
+    NSString *analysisSnapshot = [[ChapterGenerator shared] chapterArtifactSnapshotIdentifierFor:episodeHash];
+    [self _verifyGeneratedChapterAudioAtURL:sourceURL audioSnapshot:audioSnapshot
+                       transcriptSnapshot:transcriptSnapshot analysisSnapshot:analysisSnapshot allowSnapshotRevalidation:YES];
+}
+
+- (void)_verifyGeneratedChapterAudioAtURL:(NSURL*)sourceURL
+                          audioSnapshot:(NSString*)audioSnapshot
+                     transcriptSnapshot:(NSString*)transcriptSnapshot
+                       analysisSnapshot:(NSString*)analysisSnapshot
+              allowSnapshotRevalidation:(BOOL)allowSnapshotRevalidation
+{
+    AVURLAsset *asset = self.mediaAsset;
+    NSUInteger generation = self.chapterLoadGeneration;
+    NSString *episodeHash = self.playingEpisode.objectHash;
+#if TARGET_OS_IPHONE
+    ICStreamingCacheLoader *loader = self.streamCacheLoader;
+    NSString *leaseToken = loader.leaseToken;
+#endif
+    self.audioVerificationSourceURL = sourceURL;
     [[ChapterGenerator shared] verifyPlaybackAudioForEpisodeHash:episodeHash audioURL:sourceURL completion:^(BOOL verified, BOOL transcriptVerified) {
 #if TARGET_OS_IPHONE
         if (loader != self.streamCacheLoader || (loader && ![leaseToken isEqualToString:loader.leaseToken])) return;
 #endif
         if (generation != self.chapterLoadGeneration || asset != self.mediaAsset ||
             ![episodeHash isEqualToString:self.playingEpisode.objectHash]) return;
-        if (![audioSnapshot isEqualToString:[TranscriptionEngine artifactSnapshotIdentifierAt:sourceURL]]) return;
+        if (transcriptSnapshot && ![transcriptSnapshot isEqualToString:[[TranscriptionEngine shared] transcriptSnapshotIdentifierFor:episodeHash]]) return;
+        if (analysisSnapshot && ![analysisSnapshot isEqualToString:[[ChapterGenerator shared] chapterArtifactSnapshotIdentifierFor:episodeHash]]) return;
+        verified = verified && analysisSnapshot != nil;
+        transcriptVerified = transcriptVerified && transcriptSnapshot != nil;
+        if (self.audioContentGenerationAnchor && ![self.audioContentGenerationAnchor isEqual:[self _audioContentGenerationAtURL:sourceURL]]) return;
+        NSString *currentAudioSnapshot = [TranscriptionEngine artifactSnapshotIdentifierAt:sourceURL];
+        if (![audioSnapshot isEqualToString:currentAudioSnapshot]) {
+            // The original byte generation must survive metadata churn during
+            // the first hash too. Never adopt new contents or retry indefinitely.
+            if (allowSnapshotRevalidation && self.audioContentGenerationAnchor && currentAudioSnapshot && (verified || transcriptVerified)) {
+                [self _verifyGeneratedChapterAudioAtURL:sourceURL audioSnapshot:currentAudioSnapshot
+                                   transcriptSnapshot:transcriptSnapshot analysisSnapshot:analysisSnapshot allowSnapshotRevalidation:NO];
+            }
+            return;
+        }
+        if (verified || transcriptVerified) self.audioSnapshotAnchor = audioSnapshot;
         self.verifiedAnalysisSnapshot = verified ? analysisSnapshot : nil;
         self.verifiedTranscriptSnapshot = transcriptVerified ? transcriptSnapshot : nil;
         self.transcriptAudioVerified = transcriptVerified;
@@ -4215,9 +4414,12 @@ didReceiveResponse:(NSURLResponse *)response
 {
     if (!self.generatedChapterAudioVerified && !self.transcriptAudioVerified) return NO;
     NSString *hash = self.playingEpisode.objectHash;
-    BOOL audioCurrent = [self.audioSnapshotAnchor isEqualToString:[TranscriptionEngine artifactSnapshotIdentifierAt:self.audioVerificationSourceURL]];
+    NSString *audioSnapshot = [TranscriptionEngine artifactSnapshotIdentifierAt:self.audioVerificationSourceURL];
+    NSString *transcriptSnapshot = self.transcriptAudioVerified ? self.verifiedTranscriptSnapshot : nil;
+    NSString *analysisSnapshot = self.generatedChapterAudioVerified ? self.verifiedAnalysisSnapshot : nil;
+    BOOL audioCurrent = [self.audioSnapshotAnchor isEqualToString:audioSnapshot];
     BOOL transcriptCurrent = !self.transcriptAudioVerified || [self.verifiedTranscriptSnapshot isEqualToString:[[TranscriptionEngine shared] transcriptSnapshotIdentifierFor:hash]];
-    BOOL analysisCurrent = !self.generatedChapterAudioVerified || [self.verifiedAnalysisSnapshot isEqualToString:[TranscriptionEngine artifactSnapshotIdentifierAt:[ICTranscriptionPaths analysisJSONURLFor:hash]]];
+    BOOL analysisCurrent = !self.generatedChapterAudioVerified || [self.verifiedAnalysisSnapshot isEqualToString:[[ChapterGenerator shared] chapterArtifactSnapshotIdentifierFor:hash]];
     if (audioCurrent && transcriptCurrent && analysisCurrent) return YES;
     self.generatedChapterAudioVerified = NO;
     self.transcriptAudioVerified = NO;
@@ -4225,6 +4427,12 @@ didReceiveResponse:(NSURLResponse *)response
     self.chaptersUseGeneratedAnalysis = NO;
     self.generatedChapterTimelineUnverified = self.pendingGeneratedChapters.count > 0;
     [self _publishChapterTimeline:self.originalChapterTimeline];
+    // Document tracking can change ctime after import. Rehash against the same
+    // artifacts; neither metadata churn nor changed bytes inherit the old proof.
+    if (!audioCurrent && audioSnapshot && transcriptCurrent && analysisCurrent) {
+        [self _verifyGeneratedChapterAudioAtURL:self.audioVerificationSourceURL audioSnapshot:audioSnapshot
+                           transcriptSnapshot:transcriptSnapshot analysisSnapshot:analysisSnapshot allowSnapshotRevalidation:NO];
+    }
     return NO;
 }
 

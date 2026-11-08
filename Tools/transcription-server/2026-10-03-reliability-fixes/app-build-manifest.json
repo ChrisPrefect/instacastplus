@@ -1,0 +1,7 @@
+{
+  "build_succeeded": true,
+  "sources_unchanged_during_build": true,
+  "source_files": 609,
+  "binary_uuid": "UUID: 60F00567-1772-3FB7-8F2B-B961FDB3845C (arm64) build/ServerStatusDD/Build/Products/Debug-iphonesimulator/InstacastPlus.app/InstacastPlus.debug.dylib",
+  "build_command": "xcodebuild -project Instacast.xcodeproj -scheme Instacast -configuration Debug -destination 'platform=iOS Simulator,id=79C6B540-E8DC-4E2A-8171-25BB70F7E5D1' -derivedDataPath build/ServerStatusDD build"
+}

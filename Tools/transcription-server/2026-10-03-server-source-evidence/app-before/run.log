@@ -1,0 +1,7 @@
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 7881EB2C-A321-4A13-AE2E-B4F8FA00C886 (screenID: 1, name: LCD)
+Wrote screenshot to: /Users/prefect/Developer/instacastplus/Tools/transcription-server/2026-10-03-server-source-evidence/app-before/failure.png
+Traceback (most recent call last):
+  File "/Users/prefect/Developer/instacastplus/Tools/server_transcription_app_flow_test.py", line 176, in <module>
+    raise AssertionError(item)
+AssertionError: {'automaticallyScheduled': False, 'chapterOnly': False, 'completedAt': '2026-10-03T09:30:58Z', 'episodeHash': '46c0af4ac3196ab223f5084847689f14', 'episodeTitle': 'Stadtbibliothek und Lesekreis', 'error': 'Nicht hinzugefügt: Lade die Folge vollständig herunter, bevor du die Transkription startest.', 'feedTitle': 'Server flow fixture', 'nextRetryAt': '', 'progress': 0, 'requiresExplicitRetryAfterCrash': False, 'retryAttempt': 0, 'serverActivity': '', 'serverActivityUpdatedAt': '', 'serverAdmissionConfirmed': False, 'serverConnectionIssue': False, 'serverEstimatedPhaseRemainingSeconds': None, 'serverPhase': '', 'serverPhaseStartedAt': '', 'serverQueuePosition': None, 'serverWaitingForNetwork': False, 'serverWorkCompleted': None, 'serverWorkTotal': None, 'serverWorkUnit': '', 'shouldGenerateAnalysis': True, 'status': 7, 'statusDetail': '', 'statusName': 'failed', 'statusStartedAt': '', 'usesServerTranscription': True}

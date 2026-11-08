@@ -19,6 +19,7 @@ persist=declaration(local,'private func persistQueue(')
 persist=persist[persist.index('{')+1:persist.index('        let now = Date()')]
 fixture='''
 import Foundation
+enum ICTranscriptionStatus:Int {case none,queued,downloadingModel,analyzingMusic,transcribing,generatingChapters,completed,failed,canceled}
 MODEL
 READER
 final class Preparation { var error:NSError?;func finishPreparation(withError value:NSError?) { error=value } }
@@ -45,6 +46,18 @@ final class Local {
  try local.save(cacheDeletionPreparation:preparation) {callbackError=$0}
  precondition(preparation.error != nil && callbackError != nil)
  precondition(try! Data(contentsOf:file)==broken,"Failed local restore must never clobber snapshot or cache deletion intent")
+ // A syntactically valid snapshot with an impossible lifecycle must also stay
+ // untouched. Otherwise restoration silently turns unknown work into a new job.
+ for raw in [0,-1,999] {
+  let entry:[String:Any] = ["episodeHash":"retained","episodeTitle":"Fixture","feedTitle":"Test",
+   "automaticallyScheduled":true,"shouldGenerateAnalysis":true,"requiresExplicitRetryAfterCrash":false,"statusRawValue":raw]
+  let damaged=try JSONSerialization.data(withJSONObject:["items":[entry],"pendingCacheDeletionHashes":["owned-cache-intent"]])
+  try damaged.write(to:file,options:.atomic)
+  let invalid=Local(file);invalid.load()
+  precondition(invalid.queueLoadError != nil && invalid.loaded == nil,"Unknown/none lifecycle was accepted")
+  try invalid.save(cacheDeletionPreparation:nil,completion:nil)
+  precondition(try! Data(contentsOf:file)==damaged,"Invalid lifecycle snapshot was overwritten")
+ }
  let repaired=Data(#"{"items":[],"pendingCacheDeletionHashes":["owned-cache-intent"]}"#.utf8)
  try repaired.write(to:file,options:.atomic);local.load()
  precondition(local.queueLoadError == nil && local.loaded?.pendingCacheDeletionHashes == ["owned-cache-intent"])
