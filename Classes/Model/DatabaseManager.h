@@ -96,7 +96,7 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 // playlists
 @property (readonly, strong) NSArray* lists;
 - (void) addList:(CDList*)list;
-- (void) removeList:(CDList*)list;
+- (NSError*) removeList:(CDList*)list;
 - (void) reorderListFromIndex:(NSInteger)fromIndex toIndex:(NSInteger)toIndex;
 @property (nonatomic, readonly) CDEpisodeList* unplayedList;
 

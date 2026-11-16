@@ -2409,6 +2409,42 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
 {
     NSManagedObjectContext* context = localFeed.managedObjectContext;
     NSSet* localEpisodes = localFeed.episodes;
+    // The relationship delivers faults. Reading guid/objectHash below fires them one by one.
+    // In the refresh merge context (a child of the main context) each fault asks the parent
+    // for its values, and the parent answers with a single-row query on the main queue: one
+    // query per episode, 642 for a feed with 642 episodes (measured, sample stack
+    // -[NSManagedObjectContext(_NestedContextSupport) newValuesForObjectWithID:...]).
+    // A batched fetch in the child did not prevent this. Realize the episodes where the
+    // values are answered, in bounded batches, and keep them until the merge is done.
+    NSManagedObjectContext* realizingContext = context.parentContext ?: context;
+    NSMutableArray<NSManagedObjectID*>* localEpisodeIDs = [NSMutableArray arrayWithCapacity:localEpisodes.count];
+    for (CDEpisode* episode in localEpisodes) {
+        // objectID does not fire the fault; unsaved episodes are already in memory.
+        if (!episode.objectID.isTemporaryID) {
+            [localEpisodeIDs addObject:episode.objectID];
+        }
+    }
+    __block NSMutableArray<NSManagedObject*>* realizedLocalEpisodes = [NSMutableArray arrayWithCapacity:localEpisodeIDs.count];
+    void (^realizeLocalEpisodes)(void) = ^{
+        static const NSUInteger kMergePrefetchBatchSize = 200;
+        for (NSUInteger offset = 0; offset < localEpisodeIDs.count; offset += kMergePrefetchBatchSize) {
+            NSRange range = NSMakeRange(offset, MIN(kMergePrefetchBatchSize, localEpisodeIDs.count - offset));
+            NSFetchRequest* prefetchRequest = [NSFetchRequest fetchRequestWithEntityName:@"Episode"];
+            prefetchRequest.predicate = [NSPredicate predicateWithFormat:@"SELF IN %@", [localEpisodeIDs subarrayWithRange:range]];
+            prefetchRequest.returnsObjectsAsFaults = NO;
+            NSArray* batch = [realizingContext executeFetchRequest:prefetchRequest error:nil];
+            if (batch) {
+                [realizedLocalEpisodes addObjectsFromArray:batch];
+            }
+        }
+    };
+    if (localEpisodeIDs.count > 0) {
+        if (realizingContext == context) {
+            realizeLocalEpisodes();
+        } else {
+            [realizingContext performBlockAndWait:realizeLocalEpisodes];
+        }
+    }
     NSMutableDictionary<NSString*, CDEpisode*>* localEpisodesByGUID = [NSMutableDictionary dictionaryWithCapacity:localEpisodes.count];
     NSMutableDictionary<NSString*, CDEpisode*>* localEpisodesByObjectHash = [NSMutableDictionary dictionaryWithCapacity:localEpisodes.count];
     NSDate* newestLocalEpisodeDate = nil;
@@ -2527,7 +2563,16 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
 	}
 
     [self updateLocalFeedInfo:localFeed withRemoteFeed:remoteFeed force:force];
-    
+
+    // The realized objects belong to the parent context: release them on its queue.
+    if (realizingContext != context && realizedLocalEpisodes.count > 0) {
+        NSArray* releasedOnParentQueue = realizedLocalEpisodes;
+        realizedLocalEpisodes = nil;
+        [realizingContext performBlock:^{
+            (void)releasedOnParentQueue.count;
+        }];
+    }
+
     return newEpisodes;
 }
 

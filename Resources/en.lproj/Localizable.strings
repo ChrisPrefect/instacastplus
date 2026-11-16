@@ -406,6 +406,7 @@
 /* BookmarksCollectionViewController.m */
 "%d Bookmarks" = "%d Bookmarks";
 "%d Episodes" = "%d Episodes";
+"%lu of %lu Episodes" = "%lu of %lu Episodes";
 "1 Bookmark" = "1 Bookmark";
 "Bookmarks from %@" = "Bookmarks from %@";
 "Can not send email. Please add a mail account to the Mail app." = "Can not send email. Please add a mail account to the Mail app.";

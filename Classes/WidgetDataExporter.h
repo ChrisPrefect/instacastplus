@@ -33,6 +33,18 @@ NS_ASSUME_NONNULL_BEGIN
 /// Reload widget timelines (debounced, calls WidgetCenter)
 - (void)reloadWidgetTimelines;
 
+/// Runs one Now Playing widget button action in this process. The widget's buttons are
+/// AudioPlaybackIntents that the system executes in the app (launching it in the background
+/// if needed), so this is called directly instead of through the pending-action files.
+/// A chapter row also passes the episode it belongs to and the chapter's start time, so it
+/// still works when its timeline is no longer loaded (for example after a relaunch).
+/// Main thread only.
+- (void)performWidgetControlAction:(NSString *)action
+                      chapterIndex:(nullable NSNumber *)chapterIndex
+         chapterTimelineIdentifier:(nullable NSString *)chapterTimelineIdentifier
+                 episodeIdentifier:(nullable NSString *)episodeIdentifier
+                  chapterStartTime:(nullable NSNumber *)chapterStartTime;
+
 @end
 
 NS_ASSUME_NONNULL_END

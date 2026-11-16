@@ -42,6 +42,12 @@ typedef NS_ENUM(NSInteger, ICNetworkAccessTechnlogy) {
 
 -(void)resetIdleTimer;
 
+// Accelerometer runs only while needed (sleep timer countdown with motion, smart home,
+// or a visible client). Clients balance begin/end on the main thread.
+- (void)updateMotionDetection;
+- (void)beginMotionDetectionClient;
+- (void)endMotionDetectionClient;
+
 - (void) initializeLoggers;
 
 - (void) retainNetworkActivity;

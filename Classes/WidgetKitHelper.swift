@@ -28,7 +28,8 @@ import Foundation
         "cyclespeed", "togglesleeptimer", "skipchapter"
     ]
 
-    // Throttle: each kind can reload at most once per 2 seconds.
+    // Throttle: each kind reloads at most once per 2 seconds; a request inside the interval
+    // reloads once at its end (_reloadWhenIntervalEnds).
     // Prevents startup cascades (Core Data changes, feed refreshes, etc.) from spamming WidgetKit.
     private nonisolated(unsafe) static var _lastReloadAll: Date?
     private nonisolated(unsafe) static var _lastReloadNowPlaying: Date?
@@ -36,6 +37,21 @@ import Foundation
     private nonisolated(unsafe) static var _lastReloadStats: Date?
     private static let _minInterval: TimeInterval = 2.0
     private nonisolated(unsafe) static var _stateChangeReloadPending = false
+    private nonisolated(unsafe) static var _trailingReloadKeys = Set<String>()
+
+    /// A request inside the throttle interval is not dropped: the widget would keep the older
+    /// state until its own timeline runs out (a widget skip right after the app's background
+    /// launch, or a second tap within 2 s, showed the state before it). It reloads once when
+    /// the interval ends instead. Main thread, like all callers.
+    private static func _reloadWhenIntervalEnds(_ key: String, last: Date, _ reload: @escaping @Sendable () -> Void) {
+        guard !_trailingReloadKeys.contains(key) else { return }
+        _trailingReloadKeys.insert(key)
+        let delay = max(0, _minInterval - Date().timeIntervalSince(last)) + 0.05
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            _trailingReloadKeys.remove(key)
+            reload()
+        }
+    }
 
     // MARK: - Installed-widget gate (per kind)
     //
@@ -44,11 +60,42 @@ import Foundation
     // intent in the app process, and the SmartList config intent lives only in the widget
     // binary, so it logs ~N "Failed to instantiate SmartListConfigIntent" errors per call.
     // Instead each widget records its kind (ICWidgetConstants.recordWidgetKindInstalled) when its
-    // timeline runs; we read that here. Nothing recorded yet → assume installed (first launch).
+    // timeline runs; we read that here. Nothing recorded yet → ask WidgetKit once (see
+    // resolveInstalledKindsIfUnknown); until that answer arrives, assume installed.
     private static let _seenKindsDefaultsKey = "ICWidgetInstalledKindsCache"  // previously-seen set, for added-detection
 
     private static func cachedInstalledKinds() -> Set<String>? {
-        ICWidgetConstants.installedWidgetKinds()
+        if let recorded = ICWidgetConstants.installedWidgetKinds() { return recorded }
+        _resolvedKindsLock.lock()
+        defer { _resolvedKindsLock.unlock() }
+        return _resolvedKinds
+    }
+
+    // "Nothing recorded" is ambiguous: no widget exists, or one exists whose timeline has not
+    // run yet. Left unresolved it never ends for a user without widgets, and every export runs
+    // for nobody. Only in that state WidgetKit is asked directly; without widgets there is no
+    // config intent to decode, so the log noise described above cannot occur. As soon as a
+    // widget records itself, the self-reports are the only source again.
+    private static let _resolvedKindsLock = NSLock()
+    private nonisolated(unsafe) static var _resolvedKinds: Set<String>?
+    private nonisolated(unsafe) static var _resolvingKinds = false
+
+    private static func resolveInstalledKindsIfUnknown() {
+        guard ICWidgetConstants.installedWidgetKinds() == nil else { return }
+        _resolvedKindsLock.lock()
+        let alreadyResolving = _resolvingKinds
+        _resolvingKinds = true
+        _resolvedKindsLock.unlock()
+        guard !alreadyResolving else { return }
+        WidgetCenter.shared.getCurrentConfigurations { result in
+            _resolvedKindsLock.lock()
+            _resolvingKinds = false
+            // A failed query leaves the state unknown (treated as installed).
+            if case .success(let widgets) = result {
+                _resolvedKinds = Set(widgets.map { $0.kind })
+            }
+            _resolvedKindsLock.unlock()
+        }
     }
 
     /// Whether a specific widget kind is installed. Unknown (nothing recorded yet) → true.
@@ -77,6 +124,7 @@ import Foundation
     /// newly appeared since last check (they need their snapshot exported now). Synchronous now
     /// (no async WidgetCenter round-trip), so the completion runs immediately.
     @objc public static func refreshInstalledWidgets(completion: (@Sendable () -> Void)?) {
+        resolveInstalledKindsIfUnknown()
         let current = ICWidgetConstants.installedWidgetKinds() ?? []
         let previous = Set(UserDefaults.standard.array(forKey: _seenKindsDefaultsKey) as? [String] ?? [])
         UserDefaults.standard.set(Array(current), forKey: _seenKindsDefaultsKey)
@@ -99,7 +147,10 @@ import Foundation
         if #available(iOS 14.0, *) {
             if ProcessInfo.processInfo.isiOSAppOnMac { return }
             let now = Date()
-            if let last = _lastReloadAll, now.timeIntervalSince(last) < _minInterval { return }
+            if let last = _lastReloadAll, now.timeIntervalSince(last) < _minInterval {
+                _reloadWhenIntervalEnds("all", last: last) { reloadAllTimelines() }
+                return
+            }
             _lastReloadAll = now
             _lastReloadNowPlaying = now
             _lastReloadLists = now
@@ -113,7 +164,10 @@ import Foundation
         if #available(iOS 14.0, *) {
             if ProcessInfo.processInfo.isiOSAppOnMac { return }
             let now = Date()
-            if let last = _lastReloadNowPlaying, now.timeIntervalSince(last) < _minInterval { return }
+            if let last = _lastReloadNowPlaying, now.timeIntervalSince(last) < _minInterval {
+                _reloadWhenIntervalEnds("nowPlaying", last: last) { reloadNowPlayingTimeline() }
+                return
+            }
             _lastReloadNowPlaying = now
             WidgetCenter.shared.reloadTimelines(ofKind: ICWidgetConstants.nowPlayingWidgetKind)
         }
@@ -140,7 +194,10 @@ import Foundation
         if #available(iOS 14.0, *) {
             if ProcessInfo.processInfo.isiOSAppOnMac { return }
             let now = Date()
-            if let last = _lastReloadLists, now.timeIntervalSince(last) < _minInterval { return }
+            if let last = _lastReloadLists, now.timeIntervalSince(last) < _minInterval {
+                _reloadWhenIntervalEnds("lists", last: last) { reloadListsTimeline() }
+                return
+            }
             _lastReloadLists = now
             WidgetCenter.shared.reloadTimelines(ofKind: ICWidgetConstants.smartListWidgetKind)
         }
@@ -151,7 +208,10 @@ import Foundation
         if #available(iOS 14.0, *) {
             if ProcessInfo.processInfo.isiOSAppOnMac { return }
             let now = Date()
-            if let last = _lastReloadStats, now.timeIntervalSince(last) < _minInterval { return }
+            if let last = _lastReloadStats, now.timeIntervalSince(last) < _minInterval {
+                _reloadWhenIntervalEnds("stats", last: last) { reloadStatsTimeline() }
+                return
+            }
             _lastReloadStats = now
             WidgetCenter.shared.reloadTimelines(ofKind: ICWidgetConstants.statsWidgetKind)
         }
@@ -186,6 +246,26 @@ import Foundation
                 nil,
                 .deliverImmediately
             )
+        }
+    }
+}
+
+// MARK: - Widget playback buttons (app process)
+
+/// App-process side of the Now Playing widget buttons (Shared/WidgetPlaybackIntents.swift).
+/// The system runs those AudioPlaybackIntents here — launching the app in the background
+/// if it is not running — so the action reaches the player directly, with the same handling
+/// as before (WidgetDataExporter._handleWidgetAction:).
+enum WidgetControlActionPerformer {
+    static func perform(_ action: String, chapterIndex: Int? = nil, chapterTimelineIdentifier: String? = nil,
+                        episodeID: String? = nil, chapterStartTime: Double? = nil) async throws {
+        await MainActor.run {
+            WidgetDataExporter.shared().performWidgetControlAction(
+                action,
+                chapterIndex: chapterIndex.map { NSNumber(value: $0) },
+                chapterTimelineIdentifier: chapterTimelineIdentifier,
+                episodeIdentifier: episodeID,
+                chapterStartTime: chapterStartTime.map { NSNumber(value: $0) })
         }
     }
 }

@@ -36,13 +36,22 @@ static NSString* const kListeningLogFile     = @"widget_listening_log.plist";
 static NSString* const kImagesFolder         = @"WidgetImages";
 static NSString* const kPendingActionFile    = @"widget_pending_action.json";
 static NSString* const kPendingActionsFolder = @"widget_pending_actions";
+static const NSTimeInterval kPendingWidgetActionMaxAge = 30.0;
 
 // Image sizes for widgets
 static const NSInteger kImageSizeMedium = 120;
 
 // Max episodes per list snapshot
 static const NSInteger kMaxEpisodesPerList = 14;
-static const NSTimeInterval kNowPlayingExportThrottleInterval = 0.75;
+// Position-only refresh of the now-playing snapshot (keeps the time anchor fresh). The
+// widgets project the position from the anchor; play/pause, seeks, stalls, rate, chapter,
+// episode and control-action changes export and reload immediately on their own paths.
+static const NSTimeInterval kNowPlayingExportThrottleInterval = 10.0;
+// The listening log is accumulated in memory and written at this interval and at
+// every pause/end, instead of one read-modify-write per playback tick.
+static const NSTimeInterval kListeningLogFlushInterval = 60.0;
+// Downloaded bytes change continuously while a download or stream cache is running.
+static const NSTimeInterval kDownloadedBytesStatsExportDelay = 2.0;
 static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 @interface WidgetDataExporter ()
@@ -73,7 +82,26 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 @property (nonatomic, strong) dispatch_queue_t pendingWidgetActionQueue;
 @property (nonatomic) BOOL statsRefreshInProgress;
 @property (nonatomic, strong) NSDate *lastPlaybackStatsRefreshDate;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *pendingListeningSecondsByDay;
+@property (nonatomic, strong) NSDate *lastListeningLogFlushDate;
+@property (nonatomic, strong) NSData *lastExportedChapterArtworkData;
+@property (nonatomic, copy) NSString *lastExportedChapterArtworkFilename;
 @property (nonatomic, strong) NSMutableSet<NSString *> *pendingImageFetchKeys;
+
+// Time anchor of the last now-playing export. The widget projects the position from it
+// (live progress bar, see WNowPlaying.liveProgressInterval), so a position-only export is
+// not needed while playback runs as exported. Anything the projection cannot know — a
+// seek, a stall, a rate, chapter or episode change — exports and reloads at once.
+@property (nonatomic) double nowPlayingAnchorPosition;
+@property (nonatomic) CFTimeInterval nowPlayingAnchorMediaTime;
+@property (nonatomic) double nowPlayingAnchorRate;
+@property (nonatomic) NSInteger nowPlayingAnchorChapter;
+@property (nonatomic, copy) NSString *nowPlayingAnchorEpisodeHash;
+// Measured media rate: AVPlayer keeps its rate while it waits for data.
+@property (nonatomic) CFTimeInterval observedRateSampleMediaTime;
+@property (nonatomic) double observedRateSamplePosition;
+@property (nonatomic) double observedNowPlayingRate;
+@property (nonatomic) BOOL nowPlayingResyncScheduled;
 
 // Heavy widget exports (per-list Core Data scans) deferred because they were requested
 // while the app was kept alive in the background by audio playback — running them there
@@ -90,6 +118,14 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 // Cache last played episode so widget can show it after playback ends
 @property (nonatomic, strong) NSDictionary *lastPlayedEpisodeDict;
 @property (nonatomic, strong) NSDictionary *lastPlayedExtraFields;
+
+// A widget button that needs a loaded episode (skip, speed, a chapter row whose timeline is
+// not the loaded one) while none is loaded or ready: the episode is loaded paused, as the app's player
+// does when it opens, and the action runs once it is ready (_performActionAwaitingEpisodeLoad).
+@property (nonatomic, copy) NSString *actionAwaitingEpisodeLoad;
+@property (nonatomic, copy) NSString *actionAwaitingEpisodeHash;
+@property (nonatomic, strong) NSNumber *actionAwaitingEpisodeChapterStartTime;
+@property (nonatomic) CFTimeInterval actionAwaitingEpisodeLoadStart;
 
 // Navigation availability is structural state. Playback position ticks reuse it until an
 // episode/queue/list/cache transition explicitly advances this generation.
@@ -108,6 +144,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 - (void)_updateStatsCacheForAddedEpisodes:(NSArray<CDEpisode *> *)episodes;
 - (NSDate *)_dateFromISOString:(NSString *)string;
 - (BOOL)_appendListeningDeltaSinceLastTimestampAtDate:(NSDate *)date;
+- (void)_flushListeningLog;
 - (void)_refreshStatsDuringPlaybackIfNeeded;
 - (void)_scheduleDebouncedNowPlayingExport;
 - (void)_scheduleControlActionNowPlayingExport;
@@ -274,6 +311,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     dispatch_async(dispatch_get_main_queue(), ^{
         [self _invalidateNowPlayingNavigationCache];
         [self _appendListeningDeltaSinceLastTimestampAtDate:[NSDate date]];
+        [self _flushListeningLog];
         self.lastListeningTimestamp = nil;
         self.lastPlaybackStatsRefreshDate = nil;
         [self exportNowPlayingSnapshot];
@@ -296,17 +334,24 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_playbackDidUpdate:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        // Readiness and the parsed chapter timeline both arrive with an update.
+        [self _performActionAwaitingEpisodeLoadIfReady];
         NSNumber *paused = @([PlaybackManager playbackManager].isPaused);
         if (![self.lastObservedPlaybackPaused isEqualToNumber:paused]) {
             self.lastObservedPlaybackPaused = paused;
             [self exportNowPlayingSnapshot];
             [WidgetKitHelper reloadNowPlayingTimelineForStateChange];
+            [self _reloadListsTimelineForPlaybackChange];
+        } else if ([self _nowPlayingSnapshotDiffersFromPlayback]) {
+            [self _scheduleNowPlayingResync];
         } else {
             [self _scheduleDebouncedNowPlayingExport];
         }
-        // Track listening time (every 10 seconds)
         [self _trackListeningTime];
         [self _refreshStatsDuringPlaybackIfNeeded];
+        if (paused.boolValue) {
+            [self _flushListeningLog];
+        }
     });
 }
 
@@ -585,6 +630,15 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             if (![payload isKindOfClass:[NSDictionary class]]) continue;
             NSString *action = payload[@"action"];
             if (![action isKindOfClass:[NSString class]] || action.length == 0) continue;
+            // A widget tap is a "now" command. One that could not reach the app (the app was
+            // not running when the widget process wrote it) must not fire when the app is
+            // opened minutes or hours later — it started playback on its own on app open.
+            NSNumber *timestamp = payload[@"timestamp"];
+            if ([timestamp isKindOfClass:[NSNumber class]] &&
+                [NSDate date].timeIntervalSince1970 - timestamp.doubleValue > kPendingWidgetActionMaxAge) {
+                DebugLog(@"Widget action %@ dropped: %.0f s old", action, [NSDate date].timeIntervalSince1970 - timestamp.doubleValue);
+                continue;
+            }
             NSNumber *chapterIndex = payload[@"chapterIndex"];
             NSString *timelineIdentifier = payload[@"chapterTimelineIdentifier"];
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -594,13 +648,140 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     });
 }
 
+- (void)performWidgetControlAction:(NSString *)action
+                      chapterIndex:(NSNumber *)chapterIndex
+         chapterTimelineIdentifier:(NSString *)chapterTimelineIdentifier
+                 episodeIdentifier:(NSString *)episodeIdentifier
+                  chapterStartTime:(NSNumber *)chapterStartTime {
+    NSParameterAssert(NSThread.isMainThread);
+    [self _handleWidgetAction:action chapterIndex:chapterIndex chapterTimelineIdentifier:chapterTimelineIdentifier
+            episodeIdentifier:episodeIdentifier chapterStartTime:chapterStartTime];
+}
+
+- (CDEpisode *)_lastPlayedEpisode {
+    NSString *episodeHash = self.lastPlayedEpisodeDict[@"id"];
+    return [episodeHash isKindOfClass:[NSString class]] ? [DMANAGER episodeWithObjectHash:episodeHash] : nil;
+}
+
+- (void)_clearActionAwaitingEpisodeLoad {
+    self.actionAwaitingEpisodeLoad = nil;
+    self.actionAwaitingEpisodeHash = nil;
+    self.actionAwaitingEpisodeChapterStartTime = nil;
+}
+
+// After a relaunch the widget shows the last played episode as paused, but nothing is
+// loaded and the player's skip, chapter and speed methods do nothing. The app's player
+// loads the episode paused when it opens; do the same and run the action once the episode
+// is ready, so a button behaves as with a loaded paused episode.
+// `episodeIdentifier` (chapter rows) names the episode the widget showed; without it the
+// last played episode is meant, which is the one the widget shows while none is loaded.
+- (void)_performAction:(NSString *)action afterLoadingEpisode:(NSString *)episodeIdentifier
+      chapterStartTime:(NSNumber *)chapterStartTime {
+    PlaybackManager *pm = [PlaybackManager playbackManager];
+    AudioSession *as = [AudioSession sharedAudioSession];
+    CDEpisode *episode = pm.playingEpisode;
+    if (!episode) {
+        episode = episodeIdentifier.length > 0 ? [DMANAGER episodeWithObjectHash:episodeIdentifier] : [self _lastPlayedEpisode];
+        if (!episode) return;
+        [as playEpisode:episode queueUpCurrent:NO at:0 autostart:NO preservingPlaybackSource:[as.episode isEqual:episode]];
+        if (![pm.playingEpisode isEqual:episode]) return; // no media to play (error shown)
+    }
+    // A chapter row of an episode that is no longer the loaded one.
+    if (episodeIdentifier.length > 0 && ![episode.objectHash isEqualToString:episodeIdentifier]) return;
+
+    self.actionAwaitingEpisodeLoad = action;
+    self.actionAwaitingEpisodeHash = episode.objectHash;
+    self.actionAwaitingEpisodeChapterStartTime = chapterStartTime;
+    self.actionAwaitingEpisodeLoadStart = CACurrentMediaTime();
+    [self _performActionAwaitingEpisodeLoadIfReady];
+}
+
+- (void)_performActionAwaitingEpisodeLoadIfReady {
+    NSString *action = self.actionAwaitingEpisodeLoad;
+    if (!action) return;
+
+    PlaybackManager *pm = [PlaybackManager playbackManager];
+    if (![pm.playingEpisode.objectHash isEqualToString:self.actionAwaitingEpisodeHash] || pm.failed ||
+        CACurrentMediaTime() - self.actionAwaitingEpisodeLoadStart > kPendingWidgetActionMaxAge) {
+        DebugLog(@"[WidgetDataExporter] Dropping widget action '%@': its episode did not become ready", action);
+        [self _clearActionAwaitingEpisodeLoad];
+        return;
+    }
+    // Seeks need the media duration (the player starts at the saved position on ready);
+    // the chapter-end skip, auto-skip zones and chapter steps need the chapter timeline,
+    // which stays nil until the media's chapters are parsed.
+    if (!pm.ready || pm.duration <= 0 || !pm.chapters) return;
+
+    NSNumber *chapterStartTime = self.actionAwaitingEpisodeChapterStartTime;
+    [self _clearActionAwaitingEpisodeLoad];
+
+    if (!chapterStartTime) {
+        [self _handleWidgetAction:action chapterIndex:nil chapterTimelineIdentifier:nil
+                episodeIdentifier:nil chapterStartTime:nil];
+        return;
+    }
+
+    // A chapter row whose timeline is not the loaded one (the app was relaunched, or the
+    // row came from the episode's stored chapters). As when choosing a chapter in the app's
+    // player: select the playback chapter that starts where the row does, else seek to the
+    // row's start, and play.
+    NSTimeInterval listedStart = chapterStartTime.doubleValue;
+    ICMetadataChapter *matchingChapter = nil;
+    for (ICMetadataChapter *chapter in pm.chapters) {
+        if (fabs(CMTimeGetSeconds(chapter.start) - listedStart) < 0.5) {
+            matchingChapter = chapter;
+            break;
+        }
+    }
+    if (matchingChapter) {
+        [pm seekToChapter:matchingChapter];
+    } else {
+        [pm seekToTime:MAX(0, listedStart) tolerance:NO];
+    }
+    [pm play];
+    [self _scheduleControlActionNowPlayingExport];
+}
+
 - (void)_handleWidgetAction:(NSString *)action chapterIndex:(NSNumber *)chapterIndex chapterTimelineIdentifier:(NSString *)timelineIdentifier {
+    [self _handleWidgetAction:action chapterIndex:chapterIndex chapterTimelineIdentifier:timelineIdentifier
+            episodeIdentifier:nil chapterStartTime:nil];
+}
+
+- (void)_handleWidgetAction:(NSString *)action
+               chapterIndex:(NSNumber *)chapterIndex
+  chapterTimelineIdentifier:(NSString *)timelineIdentifier
+          episodeIdentifier:(NSString *)episodeIdentifier
+           chapterStartTime:(NSNumber *)chapterStartTime {
     if (action.length == 0) return;
 
     PlaybackManager *pm = [PlaybackManager playbackManager];
     AudioSession *as = [AudioSession sharedAudioSession];
     BOOL exportImmediately = NO;
     BOOL scheduleDelayedExport = NO;
+
+    // A new tap replaces one that still waits for its episode to load.
+    [self _clearActionAwaitingEpisodeLoad];
+
+    if ([action isEqualToString:@"skipchapter"]) {
+        NSInteger targetIdx = chapterIndex ? chapterIndex.integerValue : NSNotFound;
+        if (pm.ready && timelineIdentifier.length > 0 && [timelineIdentifier isEqualToString:pm.chapterTimelineIdentifier] &&
+            targetIdx >= 0 && targetIdx < (NSInteger)pm.chapters.count) {
+            ICMetadataChapter *chapter = pm.chapters[targetIdx];
+            [pm seekToChapter:chapter];
+            // Choosing a chapter in the app's player or in CarPlay also starts playback.
+            [pm play];
+            [self _scheduleControlActionNowPlayingExport];
+        } else if (chapterStartTime && episodeIdentifier.length > 0) {
+            [self _performAction:action afterLoadingEpisode:episodeIdentifier chapterStartTime:chapterStartTime];
+        }
+        return;
+    }
+
+    if ((!pm.playingEpisode || !pm.ready) &&
+        [@[@"skipforward", @"skipbackward", @"nextchapter", @"prevchapter", @"cyclespeed"] containsObject:action]) {
+        [self _performAction:action afterLoadingEpisode:nil chapterStartTime:nil];
+        return;
+    }
 
     if ([action isEqualToString:@"playpause"]) {
         if (pm.failed && !pm.ready && pm.playingEpisode) {
@@ -636,7 +817,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         }
         scheduleDelayedExport = YES;
     } else if ([action isEqualToString:@"previousepisode"]) {
-        CDEpisode *previousEpisode = [self _previousEpisodeForPlaybackManager:pm audioSession:as];
+        CDEpisode *previousEpisode = [self _previousEpisodeBefore:pm.playingEpisode ?: [self _lastPlayedEpisode] audioSession:as];
         if (previousEpisode) {
             [as playEpisode:previousEpisode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
         }
@@ -655,14 +836,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             as.timerValue = lastTimer;
         }
         exportImmediately = YES;
-    } else if ([action isEqualToString:@"skipchapter"]) {
-        NSInteger targetIdx = chapterIndex ? chapterIndex.integerValue : NSNotFound;
-        if (timelineIdentifier.length > 0 && [timelineIdentifier isEqualToString:pm.chapterTimelineIdentifier] &&
-            targetIdx >= 0 && targetIdx < (NSInteger)pm.chapters.count) {
-            ICMetadataChapter *chapter = pm.chapters[targetIdx];
-            [pm seekToChapter:chapter];
-            scheduleDelayedExport = YES;
-        }
     }
 
     if (exportImmediately) {
@@ -675,14 +848,26 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
     if ([keyPath isEqualToString:@"numberOfDownloadedBytes"]) {
+        // The value moves with every chunk of a running download or stream cache. Export
+        // once it has settled (finished download, deleted files, recalculation); a finished
+        // download additionally exports through _cacheDidFinish:.
+        if (![WidgetKitHelper isStatsWidgetInstalled]) return;
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self exportStatsSnapshot];
-            // Only reload Stats widget — download progress doesn't affect NowPlaying or Lists
-            [WidgetKitHelper reloadStatsTimeline];
+            [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_exportStatsAfterDownloadedBytesSettled) object:nil];
+            [self performSelector:@selector(_exportStatsAfterDownloadedBytesSettled)
+                       withObject:nil
+                       afterDelay:kDownloadedBytesStatsExportDelay
+                          inModes:@[ NSRunLoopCommonModes ]];
         });
     } else {
         [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
     }
+}
+
+- (void)_exportStatsAfterDownloadedBytesSettled {
+    [self exportStatsSnapshot];
+    // Only reload Stats widget — download progress doesn't affect NowPlaying or Lists
+    [WidgetKitHelper reloadStatsTimeline];
 }
 
 - (void)_debouncedNowPlayingExport {
@@ -719,6 +904,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)exportAllSnapshots {
     if (!self.containerURL) return;
+    [self _flushListeningLog];
     [self exportNowPlayingSnapshot];
     [self _persistLastPlayedCache];
     [self exportListsSnapshot];
@@ -731,8 +917,12 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 #pragma mark - Now Playing Export
 
 - (void)exportNowPlayingSnapshot {
-    if (!self.containerURL) return;
-    if (![WidgetKitHelper isNowPlayingWidgetInstalled]) return;
+    // The episode-list widget reads the time anchor too (remaining time of the playing episode).
+    if (!self.containerURL || !([WidgetKitHelper isNowPlayingWidgetInstalled] || [WidgetKitHelper isSmartListWidgetInstalled])) {
+        // Nothing exported: no anchor to keep in sync either.
+        self.nowPlayingAnchorMediaTime = 0;
+        return;
+    }
 
     PlaybackManager *pm = [PlaybackManager playbackManager];
     AudioSession *as = [AudioSession sharedAudioSession];
@@ -753,6 +943,20 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         episodeDict[@"position"] = @(currentPosition);
         episodeDict[@"duration"] = @(MAX(0, currentDuration));
         snapshot[@"episode"] = episodeDict;
+
+        // Time anchor for the widget's live progress: exact position at an exact wall-clock
+        // time and the rate media time advances at (0 while paused or stalled).
+        double anchorPosition = MAX(0.0, pm.time);
+        double anchorRate = [self _observedNowPlayingRateForPlaybackManager:pm];
+        NSDate *anchorDate = [NSDate date];
+        snapshot[@"positionSeconds"] = @(anchorPosition);
+        snapshot[@"positionTimestamp"] = @(anchorDate.timeIntervalSince1970);
+        snapshot[@"playbackRate"] = @(anchorRate);
+        self.nowPlayingAnchorPosition = anchorPosition;
+        self.nowPlayingAnchorMediaTime = CACurrentMediaTime();
+        self.nowPlayingAnchorRate = anchorRate;
+        self.nowPlayingAnchorChapter = pm.currentChapter;
+        self.nowPlayingAnchorEpisodeHash = episode.objectHash;
 
         // Skip times from feed settings
         CDFeed *feed = episode.feed;
@@ -831,12 +1035,20 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         NSInteger artIdx = pm.currentArtwork;
         if (artworks.count > 0 && artIdx >= 0 && artIdx < (NSInteger)artworks.count) {
             ICMetadataImage *art = artworks[artIdx];
-            if (art.data) {
+            NSData *imageData = art.data;
+            if (imageData) {
                 NSString *episodeHash = episode.objectHash ?: @"unknown";
                 NSString *artFilename = [NSString stringWithFormat:@"chapter_art_%@_%ld.jpg", episodeHash, (long)artIdx];
                 NSURL *artDest = [self.imagesURL URLByAppendingPathComponent:artFilename];
-                [art.data writeToURL:artDest atomically:YES];
-                snapshot[@"chapterArtPath"] = artFilename;
+                // A replacement media file can carry different artwork at the same index.
+                BOOL alreadyExported = self.lastExportedChapterArtworkData == imageData &&
+                    [self.lastExportedChapterArtworkFilename isEqualToString:artFilename] &&
+                    [[NSFileManager defaultManager] fileExistsAtPath:artDest.path];
+                if (alreadyExported || [imageData writeToURL:artDest atomically:YES]) {
+                    self.lastExportedChapterArtworkData = imageData;
+                    self.lastExportedChapterArtworkFilename = artFilename;
+                    snapshot[@"chapterArtPath"] = artFilename;
+                }
             }
         }
 
@@ -877,10 +1089,36 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     } else if (self.lastPlayedEpisodeDict) {
         // No current playback — show last played episode as paused
         snapshot[@"isPaused"] = @YES;
-        snapshot[@"episode"] = self.lastPlayedEpisodeDict;
         if (self.lastPlayedExtraFields) {
             [snapshot addEntriesFromDictionary:self.lastPlayedExtraFields];
         }
+        // The cache is only persisted at playback transitions and on entering the background;
+        // a pause from the widget or lock screen followed by termination left the position of
+        // the playback start in it (after a relaunch the widget showed 0 min instead of 7 min).
+        // The stored episode position is the saved truth.
+        NSMutableDictionary *episodeDict = [self.lastPlayedEpisodeDict mutableCopy];
+        NSString *episodeHash = episodeDict[@"id"];
+        CDEpisode *storedEpisode = [episodeHash isKindOfClass:[NSString class]] ? [DMANAGER episodeWithObjectHash:episodeHash] : nil;
+        if (storedEpisode) {
+            episodeDict[@"position"] = @(MAX(0, storedEpisode.position));
+            // Same for the per-podcast settings the next play uses (speed changed from the
+            // widget showed the old "1x" after a relaunch).
+            CDFeed *feed = storedEpisode.feed;
+            if (feed) {
+                snapshot[@"playbackSpeed"] = [self _playbackSpeedString:[feed integerForKey:DefaultPlaybackSpeed]];
+                snapshot[@"skipForwardSeconds"] = @([feed integerForKey:PlayerSkipForwardPeriod]);
+                snapshot[@"skipBackwardSeconds"] = @([feed integerForKey:PlayerSkipBackPeriod]);
+            }
+            // The cached navigation availability was the one at playback start.
+            // BOOL variables: a C comparison is an int and would be exported as 0/1, which the
+            // widget's Bool decoding rejects (the whole snapshot then fails to decode).
+            BOOL hasPreviousEpisode = [self _previousEpisodeBefore:storedEpisode audioSession:as] != nil;
+            BOOL hasNextEpisode = [as.episode isEqual:storedEpisode] &&
+                [self _hasNextEpisodeAfter:storedEpisode audioSession:as];
+            snapshot[@"hasPreviousEpisode"] = @(hasPreviousEpisode);
+            snapshot[@"hasNextEpisode"] = @(hasNextEpisode);
+        }
+        snapshot[@"episode"] = episodeDict;
     } else {
         // No episode and no cache — don't overwrite existing widget data
         // (previous session's last played info may still be in the JSON file)
@@ -888,6 +1126,90 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     }
 
     [self _writeJSON:snapshot toFile:kNowPlayingFile];
+}
+
+// Media rate as the listener experiences it: 0 while paused or while the player waits for
+// data (AVPlayer keeps its requested rate then), otherwise the selected speed. Sampled at
+// most once per second from the playback ticks.
+- (double)_observedNowPlayingRateForPlaybackManager:(PlaybackManager *)pm {
+    if (pm.isPaused || !pm.isPodcastPlaying || !pm.playingEpisode) {
+        self.observedRateSampleMediaTime = 0;
+        self.observedNowPlayingRate = 0;
+        return 0;
+    }
+    double nominalRate = pm.playbackRate > 0 ? pm.playbackRate : 1.0;
+    CFTimeInterval now = CACurrentMediaTime();
+    double position = pm.time;
+    CFTimeInterval elapsed = now - self.observedRateSampleMediaTime;
+    if (self.observedRateSampleMediaTime <= 0 || elapsed > 5.0) {
+        // First sample (or an old one): nothing to compare yet, trust the player.
+        self.observedRateSampleMediaTime = now;
+        self.observedRateSamplePosition = position;
+        self.observedNowPlayingRate = nominalRate;
+        return nominalRate;
+    }
+    if (elapsed < 1.0) {
+        return self.observedNowPlayingRate > 0 ? nominalRate : 0;
+    }
+    double advance = position - self.observedRateSamplePosition;
+    self.observedRateSampleMediaTime = now;
+    self.observedRateSamplePosition = position;
+    // A seek moves the position by much more than the elapsed time; only a position that
+    // stands still is a stall.
+    self.observedNowPlayingRate = (fabs(advance) < 0.2 * elapsed) ? 0 : nominalRate;
+    return self.observedNowPlayingRate;
+}
+
+// YES when the exported time anchor no longer describes the playback: the widget would
+// show a wrong position, chapter or episode until its next timeline reload.
+- (BOOL)_nowPlayingSnapshotDiffersFromPlayback {
+    if (self.nowPlayingAnchorMediaTime <= 0) {
+        return NO;
+    }
+    PlaybackManager *pm = [PlaybackManager playbackManager];
+    CDEpisode *episode = pm.playingEpisode;
+    if (!episode) {
+        return NO;
+    }
+    if (![episode.objectHash isEqualToString:self.nowPlayingAnchorEpisodeHash ?: @""]) {
+        return YES;
+    }
+    if (pm.currentChapter != self.nowPlayingAnchorChapter) {
+        return YES;
+    }
+    double rate = [self _observedNowPlayingRateForPlaybackManager:pm];
+    if (fabs(rate - self.nowPlayingAnchorRate) > 0.01) {
+        return YES;
+    }
+    double projected = self.nowPlayingAnchorPosition +
+        self.nowPlayingAnchorRate * (CACurrentMediaTime() - self.nowPlayingAnchorMediaTime);
+    return fabs(MAX(0.0, pm.time) - projected) > 2.5;
+}
+
+// Playback details changed: export and reload now. While the app is the Now Playing app
+// WidgetKit does not count these reloads against the widget's budget (Apple, "Keeping a
+// widget up to date"). A short trailing delay collapses a scrub into one reload at its end.
+- (void)_scheduleNowPlayingResync {
+    if (self.nowPlayingResyncScheduled) {
+        return;
+    }
+    self.nowPlayingResyncScheduled = YES;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        self.nowPlayingResyncScheduled = NO;
+        if (![self _nowPlayingSnapshotDiffersFromPlayback]) {
+            return;
+        }
+        [self exportNowPlayingSnapshot];
+        [WidgetKitHelper reloadNowPlayingTimelineForStateChange];
+        [self _reloadListsTimelineForPlaybackChange];
+    });
+}
+
+// The list widget shows the remaining time of the playing episode from the time anchor.
+- (void)_reloadListsTimelineForPlaybackChange {
+    if ([WidgetKitHelper isSmartListWidgetInstalled]) {
+        [WidgetKitHelper reloadListsTimeline];
+    }
 }
 
 - (void)_scheduleDebouncedNowPlayingExport {
@@ -983,7 +1305,11 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 }
 
 - (BOOL)_hasNextEpisodeForPlaybackManager:(PlaybackManager *)pm audioSession:(AudioSession *)as {
-    CDEpisode *episode = pm.playingEpisode;
+    return [self _hasNextEpisodeAfter:pm.playingEpisode audioSession:as];
+}
+
+// nextPlayableEpisode follows the audio session's episode; callers pass that episode.
+- (BOOL)_hasNextEpisodeAfter:(CDEpisode *)episode audioSession:(AudioSession *)as {
     if (!episode) {
         return NO;
     }
@@ -1003,7 +1329,10 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 }
 
 - (CDEpisode *)_previousEpisodeForPlaybackManager:(PlaybackManager *)pm audioSession:(AudioSession *)as {
-    CDEpisode *currentEpisode = pm.playingEpisode;
+    return [self _previousEpisodeBefore:pm.playingEpisode audioSession:as];
+}
+
+- (CDEpisode *)_previousEpisodeBefore:(CDEpisode *)currentEpisode audioSession:(AudioSession *)as {
     if (!currentEpisode) {
         return nil;
     }
@@ -1123,7 +1452,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
     // Same as the full pass: only the capped episodes, no full numberOfEpisodes count.
     NSMutableArray *episodeDicts = [NSMutableArray array];
-    for (CDEpisode *episode in [list sortedEpisodesWithLimit:kMaxEpisodesPerList]) {
+    NSArray<CDEpisode *> *listEpisodes = [list sortedEpisodesWithLimit:kMaxEpisodesPerList];
+    NS_VALID_UNTIL_END_OF_SCOPE NSArray *prefetchedFeeds = [self _prefetchFeedsForEpisodes:listEpisodes inContext:list.managedObjectContext];
+    for (CDEpisode *episode in listEpisodes) {
         if ((NSInteger)episodeDicts.count >= kMaxEpisodesPerList) break;
         [episodeDicts addObject:[self _episodeDictForEpisode:episode
                                                withImageSize:kImageSizeMedium
@@ -1291,6 +1622,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                 // the widget never displays a total > the capped list).
                 CFAbsoluteTime fT = CFAbsoluteTimeGetCurrent();
                 NSArray *episodes = [list sortedEpisodesWithLimit:kMaxEpisodesPerList];
+                NS_VALID_UNTIL_END_OF_SCOPE NSArray *prefetchedFeeds = [self _prefetchFeedsForEpisodes:episodes inContext:backgroundContext];
                 fetchSeconds += CFAbsoluteTimeGetCurrent() - fT;
 
                 NSMutableArray *episodeDicts = [NSMutableArray array];
@@ -1424,6 +1756,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                     epReq.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:NO] ];
                     epReq.fetchLimit = kMaxEpisodesPerList;
                     NSArray *episodes = [ctx executeFetchRequest:epReq error:nil];
+                    NS_VALID_UNTIL_END_OF_SCOPE NSArray *prefetchedFeeds = [self _prefetchFeedsForEpisodes:episodes inContext:ctx];
 
                     NSMutableArray *episodeDicts = [NSMutableArray array];
                     for (CDEpisode *ep in episodes) {
@@ -1567,6 +1900,11 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         [self _appendListeningDeltaSinceLastTimestampAtDate:now];
     }
     self.lastListeningTimestamp = now;
+    if (!self.lastListeningLogFlushDate) {
+        self.lastListeningLogFlushDate = now;
+    } else if ([now timeIntervalSinceDate:self.lastListeningLogFlushDate] >= kListeningLogFlushInterval) {
+        [self _flushListeningLog];
+    }
 }
 
 - (BOOL)_appendListeningDeltaSinceLastTimestampAtDate:(NSDate *)date {
@@ -1579,13 +1917,33 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         return NO;
     }
 
-    NSMutableDictionary *log = [[self _readListeningLog] mutableCopy] ?: [NSMutableDictionary dictionary];
+    // Main thread only. Accumulated per day and written by -_flushListeningLog.
+    if (!self.pendingListeningSecondsByDay) {
+        self.pendingListeningSecondsByDay = [NSMutableDictionary dictionary];
+    }
     NSString *todayKey = [self _dateKeyForDate:date];
-    double current = [log[todayKey] doubleValue];
-    log[todayKey] = @(current + delta);
+    self.pendingListeningSecondsByDay[todayKey] = @([self.pendingListeningSecondsByDay[todayKey] doubleValue] + delta);
+    return YES;
+}
+
+// Adds the accumulated listening time to the log file. Called on the main thread at
+// kListeningLogFlushInterval during playback, on pause/end/background, and before the
+// stats pass reads the file.
+- (void)_flushListeningLog {
+    self.lastListeningLogFlushDate = [NSDate date];
+    if (self.pendingListeningSecondsByDay.count == 0 || !self.containerURL) {
+        return;
+    }
+    NSDictionary<NSString *, NSNumber *> *pending = [self.pendingListeningSecondsByDay copy];
+    [self.pendingListeningSecondsByDay removeAllObjects];
+
+    NSMutableDictionary *log = [[self _readListeningLog] mutableCopy] ?: [NSMutableDictionary dictionary];
+    for (NSString *dayKey in pending) {
+        log[dayKey] = @([log[dayKey] doubleValue] + [pending[dayKey] doubleValue]);
+    }
 
     NSCalendar *cal = [NSCalendar currentCalendar];
-    NSDate *cutoff = [cal dateByAddingUnit:NSCalendarUnitDay value:-8 toDate:date options:0];
+    NSDate *cutoff = [cal dateByAddingUnit:NSCalendarUnitDay value:-8 toDate:[NSDate date] options:0];
     NSString *cutoffKey = [self _dateKeyForDate:cutoff];
     NSMutableArray *keysToRemove = [NSMutableArray array];
     for (NSString *key in log) {
@@ -1597,22 +1955,21 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
     NSURL *logURL = [self.containerURL URLByAppendingPathComponent:kListeningLogFile];
     [log writeToURL:logURL atomically:YES];
-    return YES;
 }
 
 - (void)_refreshStatsDuringPlaybackIfNeeded {
-    if (![WidgetKitHelper isStatsWidgetInstalled]) return;
     PlaybackManager *pm = [PlaybackManager playbackManager];
     if (pm.isPaused || !pm.playingEpisode) {
-        BOOL wroteListeningDelta = [self _appendListeningDeltaSinceLastTimestampAtDate:[NSDate date]];
+        BOOL addedListeningDelta = [self _appendListeningDeltaSinceLastTimestampAtDate:[NSDate date]];
         self.lastListeningTimestamp = nil;
         self.lastPlaybackStatsRefreshDate = nil;
-        if (wroteListeningDelta) {
+        if (addedListeningDelta && [WidgetKitHelper isStatsWidgetInstalled]) {
             [self exportStatsSnapshot];
             [WidgetKitHelper reloadStatsTimeline];
         }
         return;
     }
+    if (![WidgetKitHelper isStatsWidgetInstalled]) return;
 
     // Same background-playback rule as the lists export: don't run the heavy stats
     // Core Data counts while the app is kept alive in the background by playback.
@@ -1710,6 +2067,24 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 }
 
 #pragma mark - Episode Dictionary Builder
+
+// Loads the feeds of the given episodes together with their properties in one round trip.
+// Otherwise -displayTitle walks the properties relationship fault by fault in the export
+// context: about six single-row queries per exported episode. The caller keeps the result
+// alive while it builds the dictionaries.
+- (NSArray *)_prefetchFeedsForEpisodes:(NSArray<CDEpisode *> *)episodes inContext:(NSManagedObjectContext *)context {
+    NSMutableSet<NSManagedObjectID *> *feedIDs = [NSMutableSet set];
+    for (CDEpisode *episode in episodes) {
+        NSManagedObjectID *feedID = episode.feed.objectID;
+        if (feedID) [feedIDs addObject:feedID];
+    }
+    if (feedIDs.count == 0 || !context) return @[];
+    NSFetchRequest *request = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
+    request.predicate = [NSPredicate predicateWithFormat:@"SELF IN %@", feedIDs.allObjects];
+    request.returnsObjectsAsFaults = NO;
+    request.relationshipKeyPathsForPrefetching = @[ @"properties" ];
+    return [context executeFetchRequest:request error:nil] ?: @[];
+}
 
 - (NSDictionary *)_episodeDictForEpisode:(CDEpisode *)episode
                             withImageSize:(NSInteger)size
@@ -1847,6 +2222,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     if (![WidgetKitHelper isStatsWidgetInstalled]) return;
 
     self.statsRefreshInProgress = YES;
+    [self _flushListeningLog];
     [self _updateStatsDayIfNeededForDate:[NSDate date]];
 
     NSString *dayKey = [self.cachedStatsDayKey copy];

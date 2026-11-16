@@ -16,6 +16,7 @@
 #import <StoreKit/StoreKit.h>
 #import <UserNotifications/UserNotifications.h>
 #import "SubscriptionManager.h"
+#import "EpisodeLoadingManager.h"
 #import "ICSpotlightIndexer.h"
 
 #import "UIManager.h"
@@ -70,7 +71,7 @@ static NSString* const ICPlaybackHandoffActivityType = @"com.iteconomy.instacast
 #define kDonate20ProductID @"donate_to_developer_20"
 #define kDonate100ProductID @"donate_to_developer_100"
 
-@interface InstacastSceneDelegate () <CPNowPlayingTemplateObserver>
+@interface InstacastSceneDelegate () <CPNowPlayingTemplateObserver, CPInterfaceControllerDelegate>
 @property (strong) VDModalInfo* mInfo;
 @property (strong) VDModalInfo* loadingInfo;
 @property (nonatomic, strong) DirectoryFeedViewController* feedView;
@@ -78,6 +79,14 @@ static NSString* const ICPlaybackHandoffActivityType = @"com.iteconomy.instacast
 @property (nonatomic, strong) NSDateFormatter* carPlayDateFormatter;
 @property (nonatomic, strong) NSMapTable<CPListItem*, id>* carPlayLegacyItemHandlers;
 @property (nonatomic) BOOL carPlayLastKnownIsPlaying;
+@property (nonatomic) BOOL carPlayDataRefreshScheduled;
+@property (nonatomic) CFAbsoluteTime carPlayLastDataRefreshTime;
+@property (nonatomic) BOOL carPlayRootNeedsRefresh;
+// Changes collected until the next coalesced refresh: which podcasts' episodes changed,
+// whether the podcast list itself changed, or a change whose scope is unknown.
+@property (nonatomic, strong) NSMutableSet<NSManagedObjectID*>* carPlayPendingChangedFeedIDs;
+@property (nonatomic) BOOL carPlayPendingFeedListChange;
+@property (nonatomic) BOOL carPlayPendingUnscopedChange;
 @property (nonatomic, copy) NSSet<UIOpenURLContext*>* pendingOpenURLContexts;
 @property (nonatomic, strong) NSMutableArray<NSUserActivity*>* pendingUserActivities;
 @property (nonatomic, copy) NSDictionary* pendingSharePlayActivity;
@@ -204,9 +213,9 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
             // macOS ("Designed for iPad"): nur Minimum setzen, frei resizebar
             windowScene.sizeRestrictions.minimumSize = minSize;
         } else if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
-            // iPadOS Stage Manager: Start bei iPhone-Grösse, in sceneDidBecomeActive freigegeben
-            windowScene.sizeRestrictions.minimumSize = minSize;
-            windowScene.sizeRestrictions.maximumSize = startSize;
+            // Let iPadOS choose and restore the window. Compact split views
+            // must not inherit the taller Catalyst window minimum.
+            windowScene.sizeRestrictions.minimumSize = CGSizeMake(320, 480);
         }
 #endif
 
@@ -837,17 +846,6 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
         [InstacastBackupImporter retryPendingDeferredRestoreIfNeeded];
         [[TranscriptionQueue shared] resumeIfNeeded];
     }
-#if !TARGET_OS_MACCATALYST
-    // iPadOS Stage Manager: maximumSize freigeben (war startSize für initiale Grösse)
-    if ([scene isKindOfClass:[UIWindowScene class]]) {
-        UIWindowScene *windowScene = (UIWindowScene *)scene;
-        if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
-            CGSize screenSize = UIScreen.mainScreen.bounds.size;
-            CGFloat maxDimension = MAX(screenSize.width, screenSize.height);
-            windowScene.sizeRestrictions.maximumSize = CGSizeMake(maxDimension, maxDimension);
-        }
-    }
-#endif
 }
 
 
@@ -955,10 +953,10 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
         if ([App respondsToSelector:@selector(registerForRemoteNotifications)]) {
             [App registerForRemoteNotifications];
         }
-        
-        if (![App isRegisteredForRemoteNotifications]) {
-            _flags.apnRegisterSuccess = 0;
-        }
+        // The result arrives in -application:didRegisterForRemoteNotificationsWithDeviceToken:.
+        // -isRegisteredForRemoteNotifications was asked here only to set the flag to the value
+        // it already has, and it waits synchronously for the push service on the main
+        // thread: 25.9 s inside didFinishLaunching on a cold-booted simulator (measured).
     }
 }
 
@@ -1106,6 +1104,9 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
 
     self.carPlayRootTemplate = [self carPlayMainMenuTemplate];
     [self carPlaySetRootTemplate:self.carPlayRootTemplate onInterfaceController:interfaceController animated:YES];
+    // -templateWillAppear:animated: rebuilds the main menu when it was changed while covered.
+    interfaceController.delegate = self;
+    self.carPlayRootNeedsRefresh = NO;
 
     NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
     [nc addObserver:self selector:@selector(carPlayFeedsDidUpdate:) name:DatabaseManagerDidUpdateObservedFeedNotification object:nil];
@@ -1169,6 +1170,15 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
     [[PlaybackManager playbackManager] removeTaskObserver:self forKeyPath:@"chapters"];
 
     [self carPlayRestoreSleepTimerAfterDisconnectIfNeeded];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(carPlayPerformCoalescedDataRefresh) object:nil];
+    self.carPlayDataRefreshScheduled = NO;
+    self.carPlayRootNeedsRefresh = NO;
+    [self.carPlayPendingChangedFeedIDs removeAllObjects];
+    self.carPlayPendingFeedListChange = NO;
+    self.carPlayPendingUnscopedChange = NO;
+    if (self.interfaceController.delegate == self) {
+        self.interfaceController.delegate = nil;
+    }
     self.carPlayRootTemplate = nil;
     self.interfaceController = nil;
     self.carPlayLegacyItemHandlers = nil;
@@ -1224,6 +1234,9 @@ static NSString* const kCarPlayTemplateKindBookmarks = @"bookmarks";
 static NSString* const kCarPlayTemplateKindChapters = @"chapters";
 static NSString* const kCarPlayTemplateSourceKey = @"source";
 static NSUInteger const kCarPlayEpisodeLimit = 100;
+static CFTimeInterval const kCarPlayDataRefreshInterval = 1.0;
+// While a refresh or the episode loader commits batch after batch.
+static CFTimeInterval const kCarPlayBulkUpdateRefreshInterval = 5.0;
 
 - (CPListTemplate*)carPlayDatabaseUnavailableTemplateForError:(NSError*)error
 {
@@ -1396,14 +1409,24 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (void)carPlayFeedsDidUpdate:(NSNotification*)notification
 {
-    [self carPlayDataDidUpdate:notification];
+    // The observed feed list changed (titles, order, subscriptions). Episode lists of a
+    // podcast learn about their own changes through the context notification.
+    [self carPlayNoteChangedFeedIDs:nil feedListChanged:YES unscoped:NO];
 }
 
 - (void)carPlayDataDidUpdate:(NSNotification*)notification
 {
+    // Bookmarks, playlists, menu configuration, downloads: no podcast scope.
+    [self carPlayNoteChangedFeedIDs:nil feedListChanged:YES unscoped:YES];
+}
+
+- (void)carPlayNoteChangedFeedIDs:(NSSet<NSManagedObjectID*>*)feedIDs
+                  feedListChanged:(BOOL)feedListChanged
+                         unscoped:(BOOL)unscoped
+{
     if (![NSThread isMainThread]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self carPlayDataDidUpdate:notification];
+            [self carPlayNoteChangedFeedIDs:feedIDs feedListChanged:feedListChanged unscoped:unscoped];
         });
         return;
     }
@@ -1412,9 +1435,97 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         return;
     }
 
+    if (feedIDs.count > 0) {
+        if (!self.carPlayPendingChangedFeedIDs) {
+            self.carPlayPendingChangedFeedIDs = [NSMutableSet set];
+        }
+        [self.carPlayPendingChangedFeedIDs unionSet:feedIDs];
+    }
+    self.carPlayPendingFeedListChange |= feedListChanged;
+    self.carPlayPendingUnscopedChange |= unscoped;
+
+    // Core Data posts one change per commit: about five per second while episodes load and
+    // at least one per feed during a refresh. A rebuild creates up to 100 list items with
+    // their artwork (and restarts the playing indicator), so the first change is applied at
+    // once and a burst collapses into one rebuild per interval.
+    if (self.carPlayDataRefreshScheduled) {
+        return;
+    }
+    BOOL bulkUpdateRunning = [SubscriptionManager sharedSubscriptionManager].refreshing ||
+                             [EpisodeLoadingManager sharedManager].isLoading;
+    CFTimeInterval interval = bulkUpdateRunning ? kCarPlayBulkUpdateRefreshInterval : kCarPlayDataRefreshInterval;
+    CFAbsoluteTime elapsed = CFAbsoluteTimeGetCurrent() - self.carPlayLastDataRefreshTime;
+    if (elapsed >= interval) {
+        [self carPlayPerformCoalescedDataRefresh];
+        return;
+    }
+    self.carPlayDataRefreshScheduled = YES;
+    [self performSelector:@selector(carPlayPerformCoalescedDataRefresh)
+               withObject:nil
+               afterDelay:(interval - elapsed)
+                  inModes:@[ NSRunLoopCommonModes ]];
+}
+
+- (void)carPlayPerformCoalescedDataRefresh
+{
+    self.carPlayDataRefreshScheduled = NO;
+    self.carPlayLastDataRefreshTime = CFAbsoluteTimeGetCurrent();
+    NSSet<NSManagedObjectID*>* changedFeedIDs = [self.carPlayPendingChangedFeedIDs copy] ?: [NSSet set];
+    BOOL feedListChanged = self.carPlayPendingFeedListChange;
+    BOOL unscoped = self.carPlayPendingUnscopedChange;
+    [self.carPlayPendingChangedFeedIDs removeAllObjects];
+    self.carPlayPendingFeedListChange = NO;
+    self.carPlayPendingUnscopedChange = NO;
+    if (!self.interfaceController) {
+        return;
+    }
+
     [self carPlayUpdateNowPlayingTemplateConfiguration];
-    [self carPlayRefreshRootTemplate];
-    [self carPlayRefreshVisibleTemplateIfNeeded];
+    // Building the main menu fetches whole lists for their counts. While another template
+    // covers it, only remember the change; -templateWillAppear:animated: rebuilds it.
+    if (self.carPlayRootTemplate && self.interfaceController.topTemplate != self.carPlayRootTemplate) {
+        self.carPlayRootNeedsRefresh = YES;
+    }
+    if ([self carPlayVisibleTemplateIsAffectedByChangedFeedIDs:changedFeedIDs
+                                               feedListChanged:feedListChanged
+                                                      unscoped:unscoped]) {
+        [self carPlayRefreshVisibleTemplateIfNeeded];
+    }
+}
+
+// A podcast's episode list shows only that podcast's episodes; during a refresh most changes
+// belong to other podcasts. Lists across podcasts (smart lists, Up Next, the main menu) can
+// change with any episode.
+- (BOOL)carPlayVisibleTemplateIsAffectedByChangedFeedIDs:(NSSet<NSManagedObjectID*>*)changedFeedIDs
+                                         feedListChanged:(BOOL)feedListChanged
+                                                unscoped:(BOOL)unscoped
+{
+    if (unscoped) {
+        return YES;
+    }
+    CPTemplate* topTemplate = self.interfaceController.topTemplate;
+    if (![topTemplate isKindOfClass:[CPListTemplate class]]) {
+        return NO;
+    }
+    NSDictionary* info = [((CPListTemplate*)topTemplate).userInfo isKindOfClass:[NSDictionary class]] ? ((CPListTemplate*)topTemplate).userInfo : nil;
+    NSString* kind = info[kCarPlayTemplateKindKey];
+    if ([kind isEqualToString:kCarPlayTemplateKindFeedEpisodes]) {
+        CDFeed* feed = info[kCarPlayTemplateSourceKey];
+        return [feed isKindOfClass:[CDFeed class]] && [changedFeedIDs containsObject:feed.objectID];
+    }
+    if ([kind isEqualToString:kCarPlayTemplateKindPodcasts]) {
+        return feedListChanged || changedFeedIDs.count > 0;
+    }
+    return feedListChanged || changedFeedIDs.count > 0;
+}
+
+#pragma mark CPInterfaceControllerDelegate
+
+- (void)templateWillAppear:(CPTemplate*)aTemplate animated:(BOOL)animated
+{
+    if (aTemplate == self.carPlayRootTemplate && self.carPlayRootNeedsRefresh) {
+        [self carPlayRefreshRootTemplate];
+    }
 }
 
 - (void)carPlayAudioSessionDidRestorePlayback:(NSNotification*)notification
@@ -1445,38 +1556,85 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     BOOL containsBookmarkChange = NO;
     BOOL containsEpisodeChange = NO;
     BOOL containsPodcastOrListChange = NO;
+    BOOL containsUnscopedChange = NO;
+    BOOL containsFeedChange = NO;
+    NSMutableSet<NSManagedObjectID*>* changedFeedIDs = [NSMutableSet set];
 
+    CDEpisode* currentEpisode = [AudioSession sharedAudioSession].episode ?: [PlaybackManager playbackManager].playingEpisode;
     for (NSString* key in changeKeys) {
         NSSet* objects = userInfo[key];
         for (NSManagedObject* object in objects) {
+            if (key == NSUpdatedObjectsKey) {
+                // Must be read here, synchronously; later the dictionary is empty.
+                NSDictionary* changedValues = object.changedValuesForCurrentEvent;
+                if (changedValues.count == 0) {
+                    // Touched without a changed value: nothing a list shows is different.
+                    continue;
+                }
+                if (object == currentEpisode && changedValues.count == 1 && changedValues[@"position"]) {
+                    NSInteger previousPosition = [[object committedValuesForKeys:@[@"position"]][@"position"] integerValue];
+                    BOOL membershipChanged = !currentEpisode.consumed &&
+                        ((previousPosition > 0) != (currentEpisode.position > 0));
+                    CPTemplate* topTemplate = self.interfaceController.topTemplate;
+                    NSDictionary* info = [topTemplate.userInfo isKindOfClass:[NSDictionary class]] ? topTemplate.userInfo : nil;
+                    id source = info[kCarPlayTemplateSourceKey];
+                    BOOL orderChanged = [source isKindOfClass:[CDEpisodeList class]] &&
+                        ([((CDEpisodeList*)source).orderBy isEqualToString:@"timeLeft"] ||
+                         [((CDEpisodeList*)source).orderBy isEqualToString:@"position"]);
+                    if (!membershipChanged && !orderChanged) {
+                        // Playback ticks already update the current row's progress.
+                        continue;
+                    }
+                }
+            }
             if ([object isKindOfClass:[CDBookmark class]]) {
                 containsBookmarkChange = YES;
+                containsUnscopedChange = YES;
             }
-            else if ([object isKindOfClass:[CDEpisode class]]) {
+            else if ([object isKindOfClass:[CDEpisode class]] || [object isKindOfClass:[CDChapter class]]) {
                 containsEpisodeChange = YES;
+                CDEpisode* episode = [object isKindOfClass:[CDEpisode class]] ? (CDEpisode*)object : ((CDChapter*)object).episode;
+                NSManagedObjectID* feedID = episode.feed.objectID;
+                if (feedID) {
+                    [changedFeedIDs addObject:feedID];
+                } else {
+                    // A deleted episode may have lost its feed already.
+                    containsUnscopedChange = YES;
+                }
             }
-            else if ([object isKindOfClass:[CDChapter class]]) {
-                containsEpisodeChange = YES;
+            else if ([object isKindOfClass:[CDFeed class]]) {
+                // Refresh bookkeeping (lastUpdate, etag, content hash) changes the feed on
+                // every refresh; a podcast's episode list depends on its episodes only.
+                containsPodcastOrListChange = YES;
+                containsFeedChange = YES;
             }
-            else if ([object isKindOfClass:[CDFeed class]] ||
-                     [object isKindOfClass:[CDEpisodeList class]] ||
+            else if ([object isKindOfClass:[CDEpisodeList class]] ||
                      [object isKindOfClass:[CDPlaylist class]]) {
                 containsPodcastOrListChange = YES;
+                containsUnscopedChange = YES;
             }
-        }
-        if (containsBookmarkChange && containsEpisodeChange && containsPodcastOrListChange) {
-            break;
         }
     }
 
     if (containsBookmarkChange || containsEpisodeChange || containsPodcastOrListChange) {
-        [self carPlayDataDidUpdate:notification];
+        // The list counts read SQLite. Let the context finish its save before querying.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self carPlayNoteChangedFeedIDs:changedFeedIDs feedListChanged:containsFeedChange unscoped:containsUnscopedChange];
+        });
     }
 }
 
 - (void)carPlayCacheDidUpdate:(NSNotification*)notification
 {
-    [self carPlayDataDidUpdate:notification];
+    // A finished or failed download changes the row of one episode (download symbol) and
+    // the lists across podcasts; clearing the cache touches everything.
+    CDEpisode* episode = [notification.userInfo[@"episode"] isKindOfClass:[CDEpisode class]] ? notification.userInfo[@"episode"] : nil;
+    NSManagedObjectID* feedID = episode.feed.objectID;
+    if (feedID) {
+        [self carPlayNoteChangedFeedIDs:[NSSet setWithObject:feedID] feedListChanged:NO unscoped:NO];
+    } else {
+        [self carPlayDataDidUpdate:notification];
+    }
 }
 
 - (void)carPlayPlaybackMetadataDidUpdate
@@ -1600,6 +1758,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         return;
     }
 
+    self.carPlayRootNeedsRefresh = NO;
     [self.carPlayRootTemplate updateSections:[self carPlayMainMenuSections]];
 }
 
@@ -1623,20 +1782,20 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     else if ([kind isEqualToString:kCarPlayTemplateKindFeedEpisodes]) {
         CDFeed* feed = info[kCarPlayTemplateSourceKey];
         if ([feed isKindOfClass:[CDFeed class]]) {
-            [listTemplate updateSections:[self carPlaySectionsForEpisodes:[[feed sortedEpisodes] copy]]];
+            [listTemplate updateSections:[self carPlaySectionsForEpisodes:[[feed sortedEpisodes] copy] showsPodcastTitle:NO]];
         }
     }
     else if ([kind isEqualToString:kCarPlayTemplateKindListEpisodes]) {
         CDEpisodeList* list = info[kCarPlayTemplateSourceKey];
         if ([list isKindOfClass:[CDEpisodeList class]]) {
-            [listTemplate updateSections:[self carPlaySectionsForEpisodes:[list sortedEpisodes]]];
+            [listTemplate updateSections:[self carPlaySectionsForEpisodes:[list sortedEpisodes] showsPodcastTitle:YES]];
         }
     }
     else if ([kind isEqualToString:kCarPlayTemplateKindAllLists]) {
         [listTemplate updateSections:[self carPlayAllListsSections]];
     }
     else if ([kind isEqualToString:kCarPlayTemplateKindUpNext]) {
-        [listTemplate updateSections:[self carPlaySectionsForEpisodes:[AudioSession sharedAudioSession].playlist]];
+        [listTemplate updateSections:[self carPlaySectionsForEpisodes:[AudioSession sharedAudioSession].playlist showsPodcastTitle:YES]];
     }
     else if ([kind isEqualToString:kCarPlayTemplateKindBookmarks]) {
         [listTemplate updateSections:[self carPlayBookmarksSections]];
@@ -1671,6 +1830,8 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (void)carPlayUpdateEpisodeItemsInTemplate:(CPListTemplate*)listTemplate
 {
+    NSDictionary* info = ([listTemplate.userInfo isKindOfClass:[NSDictionary class]]) ? (NSDictionary*)listTemplate.userInfo : nil;
+    BOOL showsPodcastTitle = ![info[kCarPlayTemplateKindKey] isEqualToString:kCarPlayTemplateKindFeedEpisodes];
     for (CPListSection* section in listTemplate.sections) {
         for (id<CPListTemplateItem> listItem in section.items) {
             if (![listItem isKindOfClass:[CPListItem class]]) {
@@ -1686,7 +1847,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
             BOOL isCurrent = [self carPlayEpisodeIsCurrent:episode];
 
             if (isCurrent) {
-                NSString* detailText = [self carPlayEpisodeDetailText:episode];
+                NSString* detailText = [self carPlayEpisodeDetailText:episode showsPodcastTitle:showsPodcastTitle];
                 if (![(item.detailText ?: @"") isEqualToString:(detailText ?: @"")]) {
                     [item setDetailText:detailText];
                 }
@@ -1695,8 +1856,10 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
             if (isCurrent) {
                 item.playbackProgress = [self carPlayPlaybackProgressForEpisode:episode];
             }
-            if (item.playing) {
-                item.playing = NO;
+            // Same rule as the player and the CarPlay chapter list: the current entry
+            // carries the indicator, also while paused.
+            if (item.playing != isCurrent) {
+                item.playing = isCurrent;
             }
         }
     }
@@ -1723,6 +1886,17 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     }
 }
 
+// "1 Folge", "2 Folgen": the unit follows the number.
+- (NSString*)carPlayCountText:(NSUInteger)count singular:(NSString*)singular plural:(NSString*)plural
+{
+    return [NSString stringWithFormat:@"%lu %@", (unsigned long)count, (count == 1) ? singular : plural];
+}
+
+- (NSString*)carPlayEpisodeCountText:(NSUInteger)count
+{
+    return [self carPlayCountText:count singular:@"Episode".ls plural:@"Episodes".ls];
+}
+
 - (CPListTemplate*)carPlayMainMenuTemplate
 {
     CPListTemplate* template = [[CPListTemplate alloc] initWithTitle:@"InstacastPlus" sections:[self carPlayMainMenuSections]];
@@ -1735,7 +1909,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 {
     NSMutableArray* items = [NSMutableArray array];
 
-    CPListItem* podcastsItem = [[CPListItem alloc] initWithText:@"Podcasts".ls detailText:[NSString stringWithFormat:@"%lu %@", (unsigned long)DMANAGER.feeds.count, @"Podcasts".ls]];
+    CPListItem* podcastsItem = [[CPListItem alloc] initWithText:@"Podcasts".ls detailText:[self carPlayCountText:DMANAGER.feeds.count singular:@"Podcast".ls plural:@"Podcasts".ls]];
     [self carPlayAssignSelectionHandlerForItem:podcastsItem handler:^{
         [self carPlayShowPodcasts];
     }];
@@ -1756,21 +1930,21 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         }
     }
 
-    CPListItem* listsItem = [[CPListItem alloc] initWithText:@"Lists".ls detailText:[NSString stringWithFormat:@"%lu %@", (unsigned long)DMANAGER.lists.count, @"Lists".ls]];
+    CPListItem* listsItem = [[CPListItem alloc] initWithText:@"Lists".ls detailText:[self carPlayCountText:DMANAGER.lists.count singular:@"List".ls plural:@"Lists".ls]];
     [self carPlayAssignSelectionHandlerForItem:listsItem handler:^{
         [self carPlayShowAllLists];
     }];
     [self carPlaySetTrailingSymbolImage:[UIImage imageNamed:@"Menu Lists"] forListItem:listsItem];
     [items addObject:listsItem];
 
-    CPListItem* upNextItem = [[CPListItem alloc] initWithText:@"Play Next".ls detailText:[NSString stringWithFormat:@"%lu %@", (unsigned long)[AudioSession sharedAudioSession].playlist.count, @"Episodes".ls]];
+    CPListItem* upNextItem = [[CPListItem alloc] initWithText:@"Play Next".ls detailText:[self carPlayEpisodeCountText:[AudioSession sharedAudioSession].playlist.count]];
     [self carPlayAssignSelectionHandlerForItem:upNextItem handler:^{
         [self carPlayShowUpNext];
     }];
     [self carPlaySetTrailingSymbolImage:[UIImage systemImageNamed:@"list.bullet.indent"] forListItem:upNextItem];
     [items addObject:upNextItem];
 
-    CPListItem* bookmarksItem = [[CPListItem alloc] initWithText:@"Bookmarks".ls detailText:[NSString stringWithFormat:@"%lu %@", (unsigned long)DMANAGER.bookmarks.count, @"Bookmarks".ls]];
+    CPListItem* bookmarksItem = [[CPListItem alloc] initWithText:@"Bookmarks".ls detailText:(DMANAGER.bookmarks.count == 1) ? @"1 Bookmark".ls : [self carPlayCountText:DMANAGER.bookmarks.count singular:@"Bookmarks".ls plural:@"Bookmarks".ls]];
     [self carPlayAssignSelectionHandlerForItem:bookmarksItem handler:^{
         [self carPlayShowBookmarks];
     }];
@@ -1786,7 +1960,6 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
             }
         }];
         [self carPlaySetTrailingSymbolImage:[UIImage imageNamed:@"Menu Downloads"] forListItem:downloadsItem];
-        [self carPlayRefreshEpisodeCountForList:downloadedList item:downloadsItem];
         [items addObject:downloadsItem];
     }
 
@@ -1804,39 +1977,9 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     return nil;
 }
 
-- (NSString*)carPlayEpisodeCountDetailTextForList:(CDList*)list
+- (NSString*)carPlayEpisodeCountDetailTextForList:(CDEpisodeList*)list
 {
-    if (!list) {
-        return [NSString stringWithFormat:@"%lu %@", (unsigned long)0, @"Episodes".ls];
-    }
-
-    // CDEpisodeList invalidates cached count aggressively; numberOfEpisodes can transiently be 0.
-    // Use sortedEpisodes as a synchronous fallback for immediate display.
-    NSUInteger count = [list numberOfEpisodes];
-    if (count == 0) {
-        NSArray* episodes = [list sortedEpisodes];
-        if ([episodes isKindOfClass:[NSArray class]]) {
-            count = episodes.count;
-        }
-    }
-
-    return [NSString stringWithFormat:@"%lu %@", (unsigned long)count, @"Episodes".ls];
-}
-
-- (void)carPlayRefreshEpisodeCountForList:(CDList*)list item:(CPListItem*)item
-{
-    if (!list || !item) {
-        return;
-    }
-
-    [list calculateNumberOfEpisodesCompletion:^(NSUInteger numberOfEpisodes) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            NSString* detail = [NSString stringWithFormat:@"%lu %@", (unsigned long)numberOfEpisodes, @"Episodes".ls];
-            if (![(item.detailText ?: @"") isEqualToString:(detail ?: @"")]) {
-                [item setDetailText:detail];
-            }
-        });
-    }];
+    return [self carPlayEpisodeCountText:[list countEpisodesInStore]];
 }
 
 - (CPListItem*)carPlayRootListItemForEpisodeList:(CDEpisodeList*)list
@@ -1848,7 +1991,6 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         [self carPlayShowEpisodesForList:list];
     }];
     [self carPlaySetTrailingSymbolImage:(UIImage*)list.image forListItem:item];
-    [self carPlayRefreshEpisodeCountForList:list item:item];
 
     return item;
 }
@@ -1894,7 +2036,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         [feed calculateCountsWithCompletion:^(__unused NSInteger unplayedCount, NSInteger episodesCount) {
             NSString* detail = episodesCount < 0
                 ? @"Nicht verfügbar".ls
-                : [NSString stringWithFormat:@"%ld %@", (long)episodesCount, @"Episodes".ls];
+                : [self carPlayEpisodeCountText:(NSUInteger)episodesCount];
             [item setDetailText:detail];
         }];
     }
@@ -1903,7 +2045,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 - (CPListItem*)carPlayListItemForFeed:(CDFeed*)feed
 {
     NSString* detail = feed.countsLoaded
-        ? [NSString stringWithFormat:@"%ld %@", (long)feed.episodesCount, @"Episodes".ls]
+        ? [self carPlayEpisodeCountText:(NSUInteger)feed.episodesCount]
         : @"Loading…".ls;
     UIImage* cachedImage = nil;
     if (feed.imageURL) {
@@ -1951,7 +2093,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 - (void)carPlayShowUpNext
 {
     NSArray* playlist = [AudioSession sharedAudioSession].playlist;
-    CPListTemplate* template = [[CPListTemplate alloc] initWithTitle:@"Play Next".ls sections:[self carPlaySectionsForEpisodes:playlist]];
+    CPListTemplate* template = [[CPListTemplate alloc] initWithTitle:@"Play Next".ls sections:[self carPlaySectionsForEpisodes:playlist showsPodcastTitle:YES]];
     template.userInfo = [self carPlayTemplateInfoWithKind:kCarPlayTemplateKindUpNext source:nil];
     [self carPlayConfigureLegacySelectionDelegateIfNeededForTemplate:template];
     [self carPlayPushTemplate:template animated:YES];
@@ -1967,14 +2109,15 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (NSArray<CPListSection*>*)carPlayBookmarksSections
 {
-    NSMutableDictionary* latestBookmarksByEpisode = [NSMutableDictionary dictionary];
+    // Every bookmark is a jump target of its own; an episode can have several.
+    NSMutableArray<CDBookmark*>* playableBookmarks = [NSMutableArray array];
     for (CDBookmark* bookmark in DMANAGER.bookmarks) {
         if (bookmark.episodeHash.length > 0) {
-            latestBookmarksByEpisode[bookmark.episodeHash] = bookmark;
+            [playableBookmarks addObject:bookmark];
         }
     }
 
-    NSArray* uniqueBookmarks = [latestBookmarksByEpisode.allValues sortedArrayUsingComparator:^NSComparisonResult(CDBookmark* obj1, CDBookmark* obj2) {
+    NSArray<CDBookmark*>* sortedBookmarks = [playableBookmarks sortedArrayUsingComparator:^NSComparisonResult(CDBookmark* obj1, CDBookmark* obj2) {
         NSString* feed1 = obj1.feedTitle ?: @"";
         NSString* feed2 = obj2.feedTitle ?: @"";
         NSComparisonResult feedResult = [feed1 localizedCaseInsensitiveCompare:feed2];
@@ -1983,11 +2126,21 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         }
         NSString* episode1 = obj1.episodeTitle ?: @"";
         NSString* episode2 = obj2.episodeTitle ?: @"";
-        return [episode1 localizedCaseInsensitiveCompare:episode2];
+        NSComparisonResult episodeResult = [episode1 localizedCaseInsensitiveCompare:episode2];
+        if (episodeResult != NSOrderedSame) {
+            return episodeResult;
+        }
+        if (obj1.position == obj2.position) {
+            return NSOrderedSame;
+        }
+        return (obj1.position < obj2.position) ? NSOrderedAscending : NSOrderedDescending;
     }];
-
-    NSMutableArray* items = [NSMutableArray arrayWithCapacity:uniqueBookmarks.count];
-    for (CDBookmark* bookmark in uniqueBookmarks) {
+    NSUInteger limit = CPListTemplate.maximumItemCount;
+    NSMutableArray* items = [NSMutableArray arrayWithCapacity:MIN(sortedBookmarks.count, limit)];
+    for (CDBookmark* bookmark in sortedBookmarks) {
+        if (items.count >= limit) {
+            break;
+        }
         CDEpisode* episode = [DMANAGER episodeWithObjectHash:bookmark.episodeHash];
         if (!episode) {
             continue;
@@ -2001,7 +2154,15 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         [self carPlayAssignSelectionHandlerForItem:item handler:^{
             CDEpisode* selectedEpisode = [DMANAGER episodeWithObjectHash:bookmark.episodeHash];
             if (selectedEpisode) {
-                [self carPlayPlayEpisode:selectedEpisode at:MAX(0, bookmark.position)];
+                PlaybackManager* playbackManager = [PlaybackManager playbackManager];
+                NSTimeInterval position = MAX(0, bookmark.position);
+                if (playbackManager.playingEpisode == selectedEpisode && playbackManager.ready) {
+                    [playbackManager seekToTime:position tolerance:NO];
+                    [self carPlayPlayEpisode:selectedEpisode at:position];
+                } else {
+                    [[AudioSession sharedAudioSession] playEpisode:selectedEpisode queueUpCurrent:NO at:position autostart:YES];
+                    [self carPlayShowNowPlayingTemplate];
+                }
             }
         }];
 
@@ -2024,7 +2185,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (void)carPlayShowEpisodesForFeed:(CDFeed*)feed
 {
-    CPListTemplate* template = [[CPListTemplate alloc] initWithTitle:feed.title sections:[self carPlaySectionsForEpisodes:[feed sortedEpisodes]]];
+    CPListTemplate* template = [[CPListTemplate alloc] initWithTitle:feed.title sections:[self carPlaySectionsForEpisodes:[feed sortedEpisodes] showsPodcastTitle:NO]];
     template.userInfo = [self carPlayTemplateInfoWithKind:kCarPlayTemplateKindFeedEpisodes source:feed];
     [self carPlayConfigureLegacySelectionDelegateIfNeededForTemplate:template];
     [self carPlayPushTemplate:template animated:YES];
@@ -2032,22 +2193,27 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (void)carPlayShowEpisodesForList:(CDEpisodeList*)list
 {
-    CPListTemplate* template = [[CPListTemplate alloc] initWithTitle:list.name sections:[self carPlaySectionsForEpisodes:[list sortedEpisodes]]];
+    CPListTemplate* template = [[CPListTemplate alloc] initWithTitle:list.name sections:[self carPlaySectionsForEpisodes:[list sortedEpisodes] showsPodcastTitle:YES]];
     template.userInfo = [self carPlayTemplateInfoWithKind:kCarPlayTemplateKindListEpisodes source:list];
     [self carPlayConfigureLegacySelectionDelegateIfNeededForTemplate:template];
     [self carPlayPushTemplate:template animated:YES];
 }
 
-- (NSArray<CPListSection*>*)carPlaySectionsForEpisodes:(NSArray*)episodes
+- (NSArray<CPListSection*>*)carPlaySectionsForEpisodes:(NSArray*)episodes showsPodcastTitle:(BOOL)showsPodcastTitle
 {
-    NSUInteger limit = MIN(episodes.count, kCarPlayEpisodeLimit);
+    NSUInteger limit = MIN(episodes.count, MIN(kCarPlayEpisodeLimit, CPListTemplate.maximumItemCount));
     NSMutableArray* items = [NSMutableArray arrayWithCapacity:limit];
 
     for (NSUInteger index = 0; index < limit; index++) {
         CDEpisode* episode = episodes[index];
-        [items addObject:[self carPlayListItemForEpisode:episode]];
+        [items addObject:[self carPlayListItemForEpisode:episode showsPodcastTitle:showsPodcastTitle]];
     }
 
+    if (episodes.count > limit) {
+        // The list is cut off: say so instead of ending silently.
+        NSString* header = [NSString stringWithFormat:@"%lu of %lu Episodes".ls, (unsigned long)limit, (unsigned long)episodes.count];
+        return @[[[CPListSection alloc] initWithItems:items header:header sectionIndexTitle:nil]];
+    }
     return @[[[CPListSection alloc] initWithItems:items]];
 }
 
@@ -2075,7 +2241,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     return MIN(MAX(progress, 0.0), 1.0);
 }
 
-- (NSString*)carPlayEpisodeDetailText:(CDEpisode*)episode
+- (NSString*)carPlayEpisodeDetailText:(CDEpisode*)episode showsPodcastTitle:(BOOL)showsPodcastTitle
 {
     NSMutableArray* markers = [NSMutableArray array];
     if (episode.consumed) {
@@ -2086,7 +2252,8 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     }
 
     NSMutableArray* parts = [NSMutableArray array];
-    NSString* podcastTitle = episode.feed.title;
+    // In a podcast's own list the title is already the list title.
+    NSString* podcastTitle = showsPodcastTitle ? episode.feed.title : nil;
     if (podcastTitle.length > 0) {
         [parts insertObject:podcastTitle atIndex:0];
     }
@@ -2152,7 +2319,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     return downloadedImage;
 }
 
-- (CPListItem*)carPlayListItemForEpisode:(CDEpisode*)episode
+- (CPListItem*)carPlayListItemForEpisode:(CDEpisode*)episode showsPodcastTitle:(BOOL)showsPodcastTitle
 {
     NSURL* artworkURL = [self carPlayArtworkURLForEpisode:episode];
     UIImage* cachedImage = nil;
@@ -2160,13 +2327,13 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:artworkURL size:80 grayscale:NO];
     }
 
-    CPListItem* item = [self carPlayListItemWithText:episode.title detailText:[self carPlayEpisodeDetailText:episode] image:cachedImage];
+    CPListItem* item = [self carPlayListItemWithText:episode.title detailText:[self carPlayEpisodeDetailText:episode showsPodcastTitle:showsPodcastTitle] image:cachedImage];
     item.userInfo = episode;
 
     [self carPlaySetTrailingSymbolImage:[self carPlayEpisodeAccessoryImage:episode] forListItem:item];
 
     item.playbackProgress = [self carPlayPlaybackProgressForEpisode:episode];
-    item.playing = NO;
+    item.playing = [self carPlayEpisodeIsCurrent:episode];
     item.playingIndicatorLocation = CPListItemPlayingIndicatorLocationTrailing;
 
     [self carPlayAssignSelectionHandlerForItem:item handler:^{
@@ -2240,9 +2407,9 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 {
     PlaybackManager* playbackManager = [PlaybackManager playbackManager];
     CDEpisode* currentEpisode = [AudioSession sharedAudioSession].episode ?: playbackManager.playingEpisode;
-    NSArray* storedChapters = (currentEpisode != nil) ? [currentEpisode sortedChapters] : @[];
     BOOL hasRuntimeChapters = (playbackManager.chapters.count > 0);
-    BOOL hasStoredChapters = (!hasRuntimeChapters && storedChapters.count > 0);
+    // Runs on every playback tick: only the count matters here, not the order.
+    BOOL hasStoredChapters = (!hasRuntimeChapters && currentEpisode.chapters.count > 0);
 
     CPNowPlayingTemplate* nowPlayingTemplate = [CPNowPlayingTemplate sharedTemplate];
     NSString* chaptersTitle = @"Chapters".ls;

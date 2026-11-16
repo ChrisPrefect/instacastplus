@@ -387,6 +387,8 @@
 		DDD7F5C14DD2671EA92810C5 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 27C03CE231950A5FA4157032 /* SwiftUI.framework */; };
 		DE1D0D255AA49D937BE7EFB2 /* WatchManifestStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9B35941D2E5BD237BD72CC1 /* WatchManifestStore.swift */; };
 		DF013769E8097C30D565554B /* WidgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */; };
+		5A1D3C7E9B2F4A6810C0FFE1 /* WidgetPlaybackIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1D3C7E9B2F4A6810C0FFEE /* WidgetPlaybackIntents.swift */; };
+		5A1D3C7E9B2F4A6810C0FFE2 /* WidgetPlaybackIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1D3C7E9B2F4A6810C0FFEE /* WidgetPlaybackIntents.swift */; };
 		E2BF2DBFB7B6377BA63CE29E /* WidgetDataExporter.m in Sources */ = {isa = PBXBuildFile; fileRef = E2BE7ED19B3EBFB2FF9E42DB /* WidgetDataExporter.m */; };
 		E6F07FC95B90C494C0ABD87A /* NowPlayingProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0D3AB08CCCD63037D9F524 /* NowPlayingProvider.swift */; };
 		EA0EAB67BB9A49BDB816D31E /* LocalGGUFModelRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8091F01C47CD4B72B3981202 /* LocalGGUFModelRunner.swift */; };
@@ -945,6 +947,7 @@
 		7B01C59626F02D3A649D0055 /* WidgetKitHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetKitHelper.swift; sourceTree = "<group>"; };
 		7D97762C4DA733C845EACD81 /* WatchEpisode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchEpisode.swift; sourceTree = "<group>"; };
 		7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetModels.swift; sourceTree = "<group>"; };
+		5A1D3C7E9B2F4A6810C0FFEE /* WidgetPlaybackIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetPlaybackIntents.swift; sourceTree = "<group>"; };
 		7E61474F17CD3017CF8E8287 /* InstacastWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = InstacastWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		8091F01C47CD4B72B3981202 /* LocalGGUFModelRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalGGUFModelRunner.swift; sourceTree = "<group>"; };
 		80CE58E26A1BA7BA9BE30A0E /* SharedContainerReader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedContainerReader.swift; sourceTree = "<group>"; };
@@ -2133,6 +2136,7 @@
 			children = (
 				6D294C45DC205F05467440EC /* SharedConstants.swift */,
 				7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */,
+				5A1D3C7E9B2F4A6810C0FFEE /* WidgetPlaybackIntents.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -2811,6 +2815,7 @@
 				A1B2C3D4E5F6A7B800000033 /* ICSpotlightIndexer.m in Sources */,
 				9535C53CC4BD2DFAA4A46985 /* SharedConstants.swift in Sources */,
 				DF013769E8097C30D565554B /* WidgetModels.swift in Sources */,
+				5A1D3C7E9B2F4A6810C0FFE1 /* WidgetPlaybackIntents.swift in Sources */,
 				165F30F6E6A9447BBE29BD6E /* TranscriptionEngine.swift in Sources */,
 				3F95B365F085435221B62942 /* AudioAnalyzer.swift in Sources */,
 				C4245D14C313FB7C21BFAC5D /* ChapterGenerator.swift in Sources */,
@@ -2873,6 +2878,7 @@
 				B11A4DA81C178356BE3E0D86 /* StatsWidget.swift in Sources */,
 				F278616A7519258ABDD48C9F /* SharedConstants.swift in Sources */,
 				85F0D18A72FD825D7C180C98 /* WidgetModels.swift in Sources */,
+				5A1D3C7E9B2F4A6810C0FFE2 /* WidgetPlaybackIntents.swift in Sources */,
 				AE12279A77DE7A93EEDD0DED /* WidgetControlIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2984,7 +2990,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 51;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatch/Info.plist;
@@ -3066,7 +3072,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 51;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
@@ -3131,7 +3137,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 51;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
@@ -3192,7 +3198,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 51;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatch/Info.plist;
@@ -3222,7 +3228,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 51;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatchWidgets/Info.plist;
@@ -3256,7 +3262,7 @@
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 51;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWidgets/Info.plist;
@@ -3333,7 +3339,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 51;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatchWidgets/Info.plist;
@@ -3367,7 +3373,7 @@
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 51;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWidgets/Info.plist;

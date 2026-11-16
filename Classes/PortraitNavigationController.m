@@ -29,7 +29,7 @@
         return UIInterfaceOrientationMaskAll;
         }
         
-        return UIInterfaceOrientationMaskPortrait;
+        return UIInterfaceOrientationMaskAllButUpsideDown;
     }
 
     - (UIViewController*) _fullscreenVideoControllerWithCurrentViewController:(UIViewController*)viewController

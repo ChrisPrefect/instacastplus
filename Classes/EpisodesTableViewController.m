@@ -22,6 +22,7 @@
 #import "CDEpisode+ShowNotes.h"
 
 #import "EpisodeViewController.h"
+#import "PlaybackManager.h"
 #import "PlaybackViewController.h"
 #import "EpisodePlayComboButton.h"
 
@@ -195,7 +196,7 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
             [self _updateToolbarLabels];
             break;
         case ICEpisodeListDeferredUpdateFullReload:
-            [self.tableView reloadData];
+            [self reloadDataAndPreserveSelection];
             break;
         case ICEpisodeListDeferredUpdateVisibleCells:
             [self _updateVisiblePlaylistIndicators];
@@ -254,22 +255,16 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
 
 - (void) _playbackEpisodeDidChange:(NSNotification*)notification
 {
-    if ([self _deferTableUpdateDuringSwipe:ICEpisodeListDeferredUpdateFullReload]) {
-        return;
-    }
     if (self.tableView.window) {
-        [self.tableView reloadData];
+        [self reloadDataAndPreserveSelection];
     }
 }
 
 - (void) _appleWatchEpisodeStatesDidChange:(NSNotification*)notification
 {
     (void)notification;
-    if ([self _deferTableUpdateDuringSwipe:ICEpisodeListDeferredUpdateFullReload]) {
-        return;
-    }
     if (self.tableView.window) {
-        [self.tableView reloadData];
+        [self reloadDataAndPreserveSelection];
     }
 }
 
@@ -968,6 +963,7 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
         [[ICiCloudSyncManager sharedManager] beginLocalOutboxBatch];
         [self _setEpisodeObjectIDs:episodeObjectIDs
                 asConsumed:consumed
+         resetUnplayedPosition:NO
               startingAt:0
 feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
              cacheEpisodes:cacheEpisodes
@@ -977,6 +973,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
 - (void) _setEpisodeObjectIDs:(NSArray<NSManagedObjectID*>*)episodeObjectIDs
            asConsumed:(BOOL)consumed
+    resetUnplayedPosition:(BOOL)resetUnplayedPosition
             startingAt:(NSUInteger)startIndex
 feedObjectIDsNeedingAutoDownload:(NSMutableSet<NSManagedObjectID*>*)feedObjectIDsNeedingAutoDownload
          cacheEpisodes:(NSMutableOrderedSet<CDEpisode*>*)cacheEpisodes
@@ -986,6 +983,7 @@ feedObjectIDsNeedingAutoDownload:(NSMutableSet<NSManagedObjectID*>*)feedObjectID
     NSMutableArray<NSDictionary*>* previousStates = [NSMutableArray array];
     NSMutableSet<NSManagedObjectID*>* batchFeedObjectIDs = [NSMutableSet set];
     NSMutableOrderedSet<CDEpisode*>* batchCacheEpisodes = [NSMutableOrderedSet orderedSet];
+    NSMutableArray<NSString*>* episodeHashesToReset = resetUnplayedPosition ? [NSMutableArray array] : nil;
     [DMANAGER.objectContext.undoManager disableUndoRegistration];
     for (NSUInteger index = startIndex; index < endIndex; index++) {
         NSError* existingObjectError = nil;
@@ -994,19 +992,23 @@ feedObjectIDsNeedingAutoDownload:(NSMutableSet<NSManagedObjectID*>*)feedObjectID
         if (existingObjectError || ![episode isKindOfClass:[CDEpisode class]] || episode.isDeleted) {
             continue;
         }
-        if (episode.consumed != consumed) {
+        if (episode.consumed != consumed || (resetUnplayedPosition && episode.position != 0)) {
             [previousStates addObject:@{
                 @"episode": episode,
                 @"previousConsumed": @(episode.consumed),
                 @"previousPosition": @(episode.position),
             }];
             episode.consumed = consumed;
-            if (consumed) {
+            if (consumed || resetUnplayedPosition) {
                 episode.position = 0;
             }
         }
 
-        if (consumed) {
+        if (resetUnplayedPosition) {
+            if (episode.objectHash.length > 0) {
+                [episodeHashesToReset addObject:episode.objectHash];
+            }
+        } else if (consumed) {
             if ([episode.feed boolForKey:AutoDeleteAfterMarkedAsPlayed] && !episode.starred) {
                 [batchCacheEpisodes addObject:episode];
             }
@@ -1031,6 +1033,9 @@ feedObjectIDsNeedingAutoDownload:(NSMutableSet<NSManagedObjectID*>*)feedObjectID
         return;
     }
     [DMANAGER.objectContext.undoManager enableUndoRegistration];
+    if (episodeHashesToReset.count > 0) {
+        [[PlaybackManager playbackManager] discardPlaybackPositionsForEpisodeHashes:episodeHashesToReset];
+    }
     [feedObjectIDsNeedingAutoDownload unionSet:batchFeedObjectIDs];
     [cacheEpisodes addObjectsFromArray:batchCacheEpisodes.array];
 
@@ -1038,6 +1043,7 @@ feedObjectIDsNeedingAutoDownload:(NSMutableSet<NSManagedObjectID*>*)feedObjectID
         dispatch_async(dispatch_get_main_queue(), ^{
             [self _setEpisodeObjectIDs:episodeObjectIDs
                     asConsumed:consumed
+             resetUnplayedPosition:resetUnplayedPosition
                      startingAt:endIndex
 feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
                  cacheEpisodes:cacheEpisodes
@@ -1060,7 +1066,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
                                             automatic:YES
                                             saveError:nil
                                             modalInfo:modalInfo
-                                          reloadTable:YES];
+                                          reloadTable:!resetUnplayedPosition];
 }
 
 - (void) _archiveAllPlayed
@@ -2479,6 +2485,13 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 - (void) showEditingOptionsForSelection:(id)sender
 {
     NSArray* selectedIndexPathes = [self.tableView indexPathsForSelectedRows];
+    NSArray<CDEpisode*>* displayedEpisodes = self.episodes;
+    NSMutableArray<NSManagedObjectID*>* selectedEpisodeObjectIDs = [NSMutableArray arrayWithCapacity:selectedIndexPathes.count];
+    for (NSIndexPath* indexPath in selectedIndexPathes) {
+        if (indexPath.section == 0 && indexPath.row < displayedEpisodes.count) {
+            [selectedEpisodeObjectIDs addObject:displayedEpisodes[indexPath.row].objectID];
+        }
+    }
     
     typedef void(^ForEachEpisodeBlock)(CDEpisode* episode);
     void (^foreachSelectedEpisode)(ForEachEpisodeBlock) = ^(ForEachEpisodeBlock block) {
@@ -2518,13 +2531,18 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
                                               style:UIAlertActionStyleDefault
                                             handler:^(UIAlertAction * action) {
                                                 STRONG_SELF
-                                                [self perform:^(id sender) {
-                                                    foreachSelectedEpisode(^(CDEpisode* episode){
-                                                        episode.consumed = NO;
-                                                    });
-                                                    PlaySoundFile(@"AffirmIn", NO);
-                                                } afterDelay:0.3];
+                                                if (!self) return;
                                                 self.alertController = nil;
+                                                if (selectedEpisodeObjectIDs.count == 0) return;
+                                                [[ICiCloudSyncManager sharedManager] beginLocalOutboxBatch];
+                                                [self _setEpisodeObjectIDs:selectedEpisodeObjectIDs
+                                                                asConsumed:NO
+                                                         resetUnplayedPosition:YES
+                                                                startingAt:0
+                                                feedObjectIDsNeedingAutoDownload:[NSMutableSet set]
+                                                             cacheEpisodes:[NSMutableOrderedSet orderedSet]
+                                                                 modalInfo:nil];
+                                                PlaySoundFile(@"AffirmIn", NO);
                                             }]];
     
     
@@ -2879,7 +2897,8 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
     CGSize imageSize = (self.showsImage) ? CGSizeMake(56, 56) : CGSizeZero;
 
-    CGFloat h = [EpisodesTableViewCell proposedHeightWithObjectValue:episode tableSize:self.tableView.bounds.size imageSize:imageSize embedded:NO editing:self.editing];
+    CGSize contentSize = UIEdgeInsetsInsetRect(tableView.bounds, tableView.safeAreaInsets).size;
+    CGFloat h = [EpisodesTableViewCell proposedHeightWithObjectValue:episode tableSize:contentSize imageSize:imageSize embedded:NO editing:self.editing];
 
     return h;
 }

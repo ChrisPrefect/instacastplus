@@ -48,7 +48,14 @@ static const NSTimeInterval kNowPlayingExportThrottleInterval = 0.75;
     self.exportedPaused=[PlaybackManager playbackManager].paused;
 }
 - (void)_trackListeningTime {}
+- (void)_flushListeningLog {}
+// Time-anchor resync (live widget progress): not part of these sleep-timer scenarios.
+- (BOOL)_nowPlayingSnapshotDiffersFromPlayback { return NO; }
+- (void)_scheduleNowPlayingResync {}
+- (void)_reloadListsTimelineForPlaybackChange {}
 - (void)_refreshStatsDuringPlaybackIfNeeded {}
+// Widget buttons waiting for their episode to load: none in these sleep-timer scenarios.
+- (void)_performActionAwaitingEpisodeLoadIfReady {}
 HANDLERS
 @end
 #define CHECK(c) do {if(!(c)){fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#c);status=1;}}while(0)
@@ -59,6 +66,8 @@ int main(int argc,const char** argv){@autoreleasepool {
  AudioSession* s=[AudioSession sharedAudioSession];s.episode=[Episode new];s.episode.objectHash=@"test";
  PlaybackManager* p=[PlaybackManager playbackManager];p.player=[PlayerStub new];p.player.currentItem=[ItemStub new];p.state=RunningState;p.playingEpisode=s.episode;
  p.player.rate=([mode isEqual:@"pause"] || [mode isEqual:@"ticks"] || [mode isEqual:@"sensors"]) ? 1 : 0;
+ // isPaused follows the playback state machine (since 08.11.2026), not the player rate.
+ if(p.player.rate==0) p.state=PausedState;
  if(![mode isEqual:@"set-paused"]) [s setTimerWithDuration:1200];
  WidgetDataExporter* exporter=[WidgetDataExporter new];[exporter startObserving];
  [p _sendUpdateNotification];

@@ -393,22 +393,26 @@
 {
     _userAction = YES;
     CDList* list = [DMANAGER.lists objectAtIndex:indexPath.row];
+    NSString* uid = list.uid;
+    NSError* error = [DMANAGER removeList:list];
+    if (error) {
+        _userAction = NO;
+        [self presentAlertControllerWithTitle:@"Error".ls message:error.localizedDescription
+                                       button:@"OK".ls animated:YES completion:NULL];
+        return;
+    }
 
-    // Remove from MainMenuListUIDs if present
-    if (list.uid) {
+    [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
+    _userAction = NO;
+
+    if (uid) {
         NSMutableArray* mainMenuUIDs = [([USER_DEFAULTS objectForKey:@"MainMenuListUIDs"] ?: @[]) mutableCopy];
-        if ([mainMenuUIDs containsObject:list.uid]) {
-            [mainMenuUIDs removeObject:list.uid];
+        if ([mainMenuUIDs containsObject:uid]) {
+            [mainMenuUIDs removeObject:uid];
             [USER_DEFAULTS setObject:mainMenuUIDs forKey:@"MainMenuListUIDs"];
             [[NSNotificationCenter defaultCenter] postNotificationName:@"MainMenuListUIDsDidChangeNotification" object:nil];
         }
     }
-
-    [DMANAGER removeList:list];
-
-    // Delete the row from the data source.
-    [tableView deleteRowsAtIndexPaths:[NSArray arrayWithObject:indexPath] withRowAnimation:UITableViewRowAnimationFade];
-    _userAction = NO;
 
     [self _updateEditButton];
 }

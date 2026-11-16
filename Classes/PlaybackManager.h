@@ -51,6 +51,7 @@
 - (void) openWithEpisode:(CDEpisode*)episode at:(NSTimeInterval)time autostart:(BOOL)autostart;
 - (void) close;
 - (void) closeAfterFinishedPlayback;
+- (void) discardPlaybackPositionsForEpisodeHashes:(NSArray<NSString*>*)episodeHashes;
 - (void) play;
 - (void) pause;
 - (void) playPause;

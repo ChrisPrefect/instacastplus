@@ -98,6 +98,22 @@ struct WatchStorageStatusMeasurements: Sendable {
     let wantedBytes: Int64
 }
 
+extension WatchStorageStatusMeasurements {
+    /// Same content for the phone: counts and app sizes are equal, and the device's free and
+    /// used space moved by less than 1 MB (it changes continuously with other apps).
+    func reportsSameState(as other: WatchStorageStatusMeasurements) -> Bool {
+        let tolerance: Int64 = 1_000_000
+        return episodeCount == other.episodeCount &&
+            downloadedCount == other.downloadedCount &&
+            downloadedBytes == other.downloadedBytes &&
+            wantedBytes == other.wantedBytes &&
+            downloadBytes == other.downloadBytes &&
+            totalBytes == other.totalBytes &&
+            abs(freeBytes - other.freeBytes) < tolerance &&
+            abs(usedBytes - other.usedBytes) < tolerance
+    }
+}
+
 struct WatchStorageLocalFileInspection: Sendable {
     let resolvedURL: URL?
     let fileExists: Bool

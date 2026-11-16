@@ -23,6 +23,7 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 @interface SleepTimerSettingsViewController ()
 @property (nonatomic, weak) UILabel* thresholdValueLabel;
 @property (nonatomic, weak) UILabel* motionIndicatorLabel;
+@property (nonatomic) BOOL motionClientActive;
 @end
 
 @implementation SleepTimerSettingsViewController {
@@ -73,12 +74,21 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 {
     [super viewDidAppear:animated];
     [self.tableView reloadData];
+    // The motion row shows live sensor activity while this screen is visible.
+    if (!self.motionClientActive) {
+        self.motionClientActive = YES;
+        [App beginMotionDetectionClient];
+    }
 }
 
 - (void)viewWillDisappear:(BOOL)animated
 {
     [super viewWillDisappear:animated];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeBackMotionIndicator) object:nil];
+    if (self.motionClientActive) {
+        self.motionClientActive = NO;
+        [App endMotionDetectionClient];
+    }
 }
 
 - (void) updateAppearance {

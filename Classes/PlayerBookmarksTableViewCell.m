@@ -48,7 +48,7 @@
     self.textLabel.textColor = ICTextColor;
     self.timeLabel.textColor = ICMutedTextColor;
 
-    CGRect b = self.bounds;
+    CGRect b = UIEdgeInsetsInsetRect(self.bounds, UIEdgeInsetsMake(0, self.safeAreaInsets.left, 0, self.safeAreaInsets.right));
     
     CGSize titleSize = [self.textLabel.attributedText boundingRectWithSize:CGSizeMake(CGRectGetWidth(b)-15-15-15-55, 200)
                                                                    options:NSStringDrawingUsesLineFragmentOrigin
@@ -57,11 +57,11 @@
     
     CGFloat editingOffset = (self.editing) ? 30 : 0;
     
-    CGRect titleRect = CGRectMake(15+editingOffset, 11, CGRectGetWidth(b)-15-15-15-55, titleSize.height);
+    CGRect titleRect = CGRectMake(CGRectGetMinX(b)+15+editingOffset, 11, CGRectGetWidth(b)-15-15-15-55, titleSize.height);
     self.textLabel.frame = [self.contentView convertRect:titleRect fromView:self];
     
 
-    CGRect timeRect = CGRectMake(CGRectGetWidth(b)-15-55+editingOffset, 12.f, 55, 17.f);
+    CGRect timeRect = CGRectMake(CGRectGetMaxX(b)-15-55+editingOffset, 12.f, 55, 17.f);
     self.timeLabel.frame = [self.contentView convertRect:timeRect fromView:self];
     self.timeLabel.alpha = (self.editing) ? 0 : 1;
 }

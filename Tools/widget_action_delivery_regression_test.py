@@ -53,11 +53,12 @@ try PendingWidgetActionStore.enqueue(
 """
 
 method_start = exporter.index("- (void)_widgetControlAction:")
-method_end = exporter.index("- (void)_handleWidgetAction:", method_start)
+# The queue consumer ends where the direct (AudioPlaybackIntent) entry point begins.
+method_end = exporter.index("- (void)performWidgetControlAction:", method_start)
 methods = exporter[method_start:method_end]
 constants = "\n".join(re.findall(
     r"static NSString\* const kPendingAction\w+\s*=\s*@\"[^\"]+\";", exporter
-))
+) + re.findall(r"static const NSTimeInterval kPendingWidgetActionMaxAge\s*=\s*[\d.]+;", exporter))
 
 harness = r'''
 #import <Foundation/Foundation.h>
@@ -181,12 +182,24 @@ int main(int argc, const char **argv) { @autoreleasepool {
         @"Chapter index and timeline must remain bound to their own ordered action payload");
 
     Exporter *legacy = fresh(root, @"legacy");
-    NSData *payload = [NSJSONSerialization dataWithJSONObject:@{@"action":@"playpause", @"timestamp":@0} options:0 error:nil];
+    NSData *payload = [NSJSONSerialization dataWithJSONObject:@{@"action":@"playpause", @"timestamp":@([NSDate date].timeIntervalSince1970)} options:0 error:nil];
     [payload writeToURL:[legacy.containerURL URLByAppendingPathComponent:@"widget_pending_action.json"] atomically:YES];
     [legacy _widgetControlAction:notice];
     [legacy _consumePendingWidgetActionNotification:notice];
     settle();
     require([actions(legacy) isEqual:@[@"playpause"]], @"The pre-upgrade single action must join the same once-only consumption path");
+
+    // A tap that could not reach the app (not running) must not fire when it is opened later.
+    Exporter *stale = fresh(root, @"stale");
+    NSURL *staleFolder = [stale.containerURL URLByAppendingPathComponent:@"widget_pending_actions" isDirectory:YES];
+    [[NSFileManager defaultManager] createDirectoryAtURL:staleFolder withIntermediateDirectories:YES attributes:nil error:nil];
+    NSData *stalePayload = [NSJSONSerialization dataWithJSONObject:@{@"action":@"playpause", @"timestamp":@([NSDate date].timeIntervalSince1970 - 3600)} options:0 error:nil];
+    [stalePayload writeToURL:[staleFolder URLByAppendingPathComponent:@"00000000000000000001-stale.json"] atomically:YES];
+    enqueue(binary, stale, @"skipforward", 0);
+    [stale _consumePendingWidgetActionNotification:notice];
+    settle();
+    require([actions(stale) isEqual:@[@"skipforward"]], @"A stale queued tap must be dropped while a fresh one still executes");
+    require([[[NSFileManager defaultManager] contentsOfDirectoryAtPath:staleFolder.path error:nil] count] == 0, @"Dropped stale taps must be removed from the queue");
     printf("Widget delivery runtime checks: %lu failures\n", (unsigned long)failures);
     return failures ? 1 : 0;
 } }

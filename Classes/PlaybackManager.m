@@ -1458,6 +1458,8 @@ didReceiveResponse:(NSURLResponse *)response
 #endif
 @property (nonatomic, readwrite) BOOL streamingCacheActive;
 @property (nonatomic, readwrite) double streamingCacheProgress;
+@property (nonatomic) double lastNotifiedStreamingCacheProgress;
+@property (nonatomic) CFAbsoluteTime lastStreamingCacheNotificationTime;
 @property (nonatomic, readwrite) BOOL streamingCacheComplete;
 - (BOOL)_cancelStreamingCacheForEpisode:(CDEpisode*)episode leaseToken:(NSString*)leaseToken;
 - (BOOL)_cancelStreamingCacheForEpisodeHash:(NSString*)episodeHash leaseToken:(NSString*)leaseToken;
@@ -2337,14 +2339,31 @@ didReceiveResponse:(NSURLResponse *)response
             }
             BOOL cacheActive = (state == ICStreamingCacheLoaderStateActive);
             BOOL cacheComplete = (state == ICStreamingCacheLoaderStateSucceeded);
+            BOOL stateChanged = (strongSelf.streamingCacheActive != cacheActive) ||
+                                (strongSelf.streamingCacheComplete != cacheComplete);
+            double cacheProgress = cacheComplete ? 1.0 : (cacheActive ? progress : 0.0);
             strongSelf.streamingCacheActive = cacheActive;
-            strongSelf.streamingCacheProgress = cacheComplete ? 1.0 : (cacheActive ? progress : 0.0);
+            strongSelf.streamingCacheProgress = cacheProgress;
             strongSelf.streamingCacheComplete = cacheComplete;
             if (cacheComplete) {
                 [strongSelf _verifyGeneratedChapterAudioForCurrentAsset];
             }
-            [strongSelf _sendUpdateNotification];
+            // The loader reports every received chunk, dozens of times per second while a
+            // stream starts, and every observer of the update notification ran that often.
+            // Progress is announced in steps of at least one percent and at most twice per
+            // second (measured: 28 notifications per second at stream start); a change of
+            // the cache state is announced at once.
+            CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+            BOOL progressStep = fabs(cacheProgress - strongSelf.lastNotifiedStreamingCacheProgress) >= 0.01 &&
+                                now - strongSelf.lastStreamingCacheNotificationTime >= 0.5;
+            if (stateChanged || progressStep) {
+                strongSelf.lastNotifiedStreamingCacheProgress = cacheProgress;
+                strongSelf.lastStreamingCacheNotificationTime = now;
+                [strongSelf _sendUpdateNotification];
+            }
         };
+        self.lastNotifiedStreamingCacheProgress = 0.0;
+        self.lastStreamingCacheNotificationTime = 0;
         self.streamingCacheActive = YES;
         self.mediaAsset = [AVURLAsset URLAssetWithURL:self.streamCacheLoader.assetURL options:nil];
         [self.mediaAsset.resourceLoader setDelegate:self.streamCacheLoader queue:self.streamCacheLoader.resourceLoaderQueue];
@@ -2621,8 +2640,12 @@ didReceiveResponse:(NSURLResponse *)response
             NSInteger dur = (duration.timescale != 0) ? duration.value/duration.timescale : 0;
             
             // add duration parameter to episode if there is none
-            episode.duration = (int32_t)dur;
-            [DMANAGER save];
+            // Runs once per second for as long as the duration stays below 5 s (e.g. a
+            // source without a determinable length): write and save only a new value.
+            if (episode.duration != (int32_t)dur) {
+                episode.duration = (int32_t)dur;
+                [DMANAGER save];
+            }
         }
         // handle auto skip end
         /*NSInteger periodFeedEnd = [episode.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", episode.feed.uid]];
@@ -3102,6 +3125,21 @@ didReceiveResponse:(NSURLResponse *)response
 - (void) closeAfterFinishedPlayback
 {
     [self closeAndSaveCurrentPosition:NO];
+}
+
+- (void) discardPlaybackPositionsForEpisodeHashes:(NSArray<NSString*>*)episodeHashes
+{
+    NSString* playingEpisodeHash = self.playingEpisode.objectHash;
+    if (playingEpisodeHash && [episodeHashes containsObject:playingEpisodeHash]) {
+        [self closeAndSaveCurrentPosition:NO];
+    }
+
+    NSDictionary* playbackPositions = [USER_DEFAULTS dictionaryForKey:kDefaultTemporaryPlaybackPositions];
+    NSMutableDictionary* remainingPositions = [playbackPositions mutableCopy];
+    [remainingPositions removeObjectsForKeys:episodeHashes];
+    if (remainingPositions.count != playbackPositions.count) {
+        [USER_DEFAULTS setObject:remainingPositions forKey:kDefaultTemporaryPlaybackPositions];
+    }
 }
 
 - (void) closeAndSaveCurrentPosition:(BOOL)saveCurrentPosition

@@ -15,6 +15,7 @@
 @interface PlaybackControlsViewController : UIViewController
 
 + (id) playbackControlViewController;
++ (CGFloat)minimumContentHeight;
 
 @property (nonatomic, weak) IBOutlet UIImageView* backgroundView;
 @property (nonatomic, weak) IBOutlet UIView* controllerButtonGroup;

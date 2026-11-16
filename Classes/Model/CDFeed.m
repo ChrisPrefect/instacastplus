@@ -371,7 +371,9 @@ static NSArray<NSDictionary*>* ICGroupedFeedCountRows(NSManagedObjectContext* co
         return;
     }
 
-    NSArray<CDFeed*>* candidates = gFeedsPendingCountLoad.array;
+    // -[NSOrderedSet array] is a live proxy of the set, not a snapshot: it would be
+    // empty after removeAllObjects and no feed would ever get its counts.
+    NSArray<CDFeed*>* candidates = [NSArray arrayWithArray:gFeedsPendingCountLoad.array];
     [gFeedsPendingCountLoad removeAllObjects];
     NSMutableDictionary<NSString*, CDFeed*>* feedsByUID = [NSMutableDictionary dictionaryWithCapacity:candidates.count];
     NSMutableDictionary<NSString*, NSNumber*>* generationsByUID = [NSMutableDictionary dictionaryWithCapacity:candidates.count];

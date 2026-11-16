@@ -780,8 +780,9 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
         return UITableViewAutomaticDimension;
     }
 
+    CGSize contentSize = UIEdgeInsetsInsetRect(tableView.bounds, tableView.safeAreaInsets).size;
     return [EpisodesTableViewCell proposedHeightWithObjectValue:episode
-                                                      tableSize:tableView.bounds.size
+                                                      tableSize:contentSize
                                                       imageSize:CGSizeMake(56, 56)
                                                        embedded:NO
                                                         editing:tableView.editing

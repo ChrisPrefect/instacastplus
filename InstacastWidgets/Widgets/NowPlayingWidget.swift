@@ -35,8 +35,11 @@ struct NowPlayingWidgetView: View {
         guard let chapters = data.chapters, !chapters.isEmpty else { return nil }
 
         // Resolve from position so chapter selection/seek updates are reflected
-        // even when exported chapterIndex lags behind briefly.
-        let currentPosition = TimeInterval(max(0, episode.position))
+        // even when exported chapterIndex lags behind briefly. The episode position is whole
+        // seconds: right after a jump to a chapter starting at 1363.87 s it read 1363 and the
+        // previous chapter stayed highlighted until the next minute flip. Use the exact
+        // anchored position when there is one.
+        let currentPosition = data.projectedPosition(at: entry.date) ?? TimeInterval(max(0, episode.position))
         var resolvedIndex = 0
         for (index, chapter) in chapters.enumerated() {
             if currentPosition >= chapter.startTime {
@@ -163,8 +166,7 @@ struct NowPlayingWidgetView: View {
                     // Progress
                     if episode.duration > 0 {
                         HStack(spacing: 8) {
-                            ProgressBarView(progress: episode.progress, tintColor: accentColor)
-                                .frame(height: 3)
+                            playbackProgressBar(data: data, episode: episode, height: 3)
 
                             Text(episode.formattedTimeLeft)
                                 .font(.system(size: 13))
@@ -175,8 +177,9 @@ struct NowPlayingWidgetView: View {
                 }
             }
 
-            // Controls row
-            HStack(spacing: 16) {
+            // Controls row. 16 pt spacing did not fit the medium width (≈314 pt usable): "1x"
+            // wrapped onto two lines, and with a running sleep timer the row overflowed the widget.
+            HStack(spacing: 10) {
                 let canGoPrev = data.hasPreviousEpisode == true
                 let canGoNext = data.hasNextEpisode == true
 
@@ -217,6 +220,8 @@ struct NowPlayingWidgetView: View {
                 Button(intent: CycleSpeedIntent()) {
                     Text(data.playbackSpeed ?? "1x")
                         .font(.system(size: 15, weight: .medium))
+                        .lineLimit(1)
+                        .fixedSize()
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(accentColor.opacity(0.12))
@@ -234,7 +239,7 @@ struct NowPlayingWidgetView: View {
                                 if data.isPaused, let remaining = data.sleepTimerFormatted {
                                     Text(remaining)
                                 } else if let stopDate = data.sleepTimerStopDate {
-                                    Text(stopDate, style: .timer)
+                                    sleepTimerCountdown(until: stopDate)
                                 }
                             }
                             .font(.system(size: 13))
@@ -297,8 +302,7 @@ struct NowPlayingWidgetView: View {
             // Progress bar + time
             if episode.duration > 0 {
                 VStack(spacing: 3) {
-                    ProgressBarView(progress: episode.progress, tintColor: accentColor)
-                        .frame(height: 4)
+                    playbackProgressBar(data: data, episode: episode, height: 4)
 
                     HStack {
                         Text(WEpisode.formatTime(Int(episode.position)))
@@ -320,6 +324,8 @@ struct NowPlayingWidgetView: View {
                 Button(intent: CycleSpeedIntent()) {
                     Text(data.playbackSpeed ?? "1x")
                         .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .lineLimit(1)
+                        .fixedSize()
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(accentColor.opacity(0.15))
@@ -375,7 +381,7 @@ struct NowPlayingWidgetView: View {
                                 if data.isPaused, let remaining = data.sleepTimerFormatted {
                                     Text(remaining)
                                 } else if let stopDate = data.sleepTimerStopDate {
-                                    Text(stopDate, style: .timer)
+                                    sleepTimerCountdown(until: stopDate)
                                 }
                             }
                             .font(.system(size: 12))
@@ -398,7 +404,7 @@ struct NowPlayingWidgetView: View {
                !chapters.isEmpty,
                let currentIdx = resolvedCurrentChapterIndex(data: data, episode: episode) {
                 Divider()
-                chapterListView(chapters: chapters, currentIndex: currentIdx, episodeDuration: episode.duration, timelineIdentifier: data.chapterTimelineIdentifier ?? "")
+                chapterListView(chapters: chapters, currentIndex: currentIdx, episodeID: episode.id, timelineIdentifier: data.chapterTimelineIdentifier ?? "")
             }
 
             Spacer(minLength: 0)
@@ -408,7 +414,7 @@ struct NowPlayingWidgetView: View {
 
     // MARK: - Chapter List (Large widget)
 
-    private func chapterListView(chapters: [WChapter], currentIndex: Int, episodeDuration: Int32, timelineIdentifier: String) -> some View {
+    private func chapterListView(chapters: [WChapter], currentIndex: Int, episodeID: String, timelineIdentifier: String) -> some View {
         // Show previous chapter + current + next chapters (max 5 visible, centered on current)
         let maxVisible = 5
         let startIdx: Int
@@ -429,7 +435,8 @@ struct NowPlayingWidgetView: View {
                 let chapter = chapters[idx]
                 let isCurrent = idx == currentIndex
 
-                Button(intent: SkipToChapterIntent(chapterIndex: idx, chapterTimelineIdentifier: timelineIdentifier)) {
+                Button(intent: SkipToChapterIntent(chapterIndex: idx, chapterTimelineIdentifier: timelineIdentifier,
+                                                    episodeID: episodeID, chapterStartTime: chapter.startTime)) {
                     HStack(spacing: 8) {
                         // Chapter indicator
                         if isCurrent {
@@ -462,13 +469,46 @@ struct NowPlayingWidgetView: View {
                     .background(isCurrent ? accentColor.opacity(0.12) : Color.clear)
                     .cornerRadius(5)
                 }
+                // Always enabled: without the loaded timeline (relaunch, stored chapters) the app
+                // selects the chapter by episode and start time.
                 .buttonStyle(.plain)
-                .disabled(timelineIdentifier.isEmpty)
             }
         }
     }
 
     // MARK: - Helpers
+
+    /// Sleep timer countdown with a bounded width. `Text(date, style: .timer)` takes its widest
+    /// possible width in a widget, which pushed the controls row past the widget's edge (speed
+    /// label squeezed to nothing, content shifted) and left the live progress bar without a valid
+    /// width, crashing the widget renderer (NaN view origin, 16.11.2026).
+    @ViewBuilder
+    private func sleepTimerCountdown(until stopDate: Date) -> some View {
+        if stopDate > entry.date {
+            Text(timerInterval: entry.date...stopDate, countsDown: true, showsHours: false)
+                .multilineTextAlignment(.leading)
+                .frame(width: 40, alignment: .leading)
+        }
+    }
+
+    /// While playback runs the bar fills by itself between timeline reloads, at the playback
+    /// rate (Apple: "Displaying dynamic dates in widgets"); paused it shows the exported position.
+    @ViewBuilder
+    private func playbackProgressBar(data: WNowPlaying, episode: WEpisode, height: CGFloat) -> some View {
+        if let interval = data.liveProgressInterval(at: entry.date) {
+            ProgressView(timerInterval: interval, countsDown: false) {
+                EmptyView()
+            } currentValueLabel: {
+                EmptyView()
+            }
+            .progressViewStyle(.linear)
+            .tint(accentColor)
+            .frame(height: height)
+        } else {
+            ProgressBarView(progress: episode.progress, tintColor: accentColor)
+                .frame(height: height)
+        }
+    }
 
     /// Shows chapter artwork if available, otherwise podcast artwork
     private func artworkView(data: WNowPlaying, episode: WEpisode, size: CGFloat) -> some View {

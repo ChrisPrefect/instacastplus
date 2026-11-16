@@ -56,6 +56,11 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
     CMAcceleration previousAcceleration;
     NSTimeInterval previousAccelerationTimestamp;
     NSUInteger motionSampleCount;
+    dispatch_queue_t _motionQueue;
+    BOOL _motionDetectionRunning;
+    BOOL _motionReferenceValid;
+    NSUInteger _motionDetectionClientCount;
+    BOOL _sleepTimerCountdownRunning;
     UIInterfaceOrientation orientationLast;
 }
 
@@ -92,9 +97,13 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
         // Init on background thread — CMMotionManager reads CoreMotion.plist synchronously
         // which blocks for seconds on device due to sandbox permission errors.
         if (!isiOSAppOnMac) {
-            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                [self deviceMotionDetection];
-            });
+            // The accelerometer only runs while something consumes it (see -updateMotionDetection).
+            _motionQueue = dispatch_queue_create("com.iteconomy.instacast.motion", DISPATCH_QUEUE_SERIAL);
+            NSNotificationCenter* center = NSNotificationCenter.defaultCenter;
+            [center addObserver:self selector:@selector(_sleepTimerStateDidChange:) name:AudioSessionSleepTimerDidChangeNotification object:nil];
+            [center addObserver:self selector:@selector(_sleepTimerStateDidChange:) name:AudioSessionSleepTimerDidExpireNotification object:nil];
+            [center addObserver:self selector:@selector(updateMotionDetection) name:NSUserDefaultsDidChangeNotification object:nil];
+            [center addObserver:self selector:@selector(updateMotionDetection) name:UIApplicationDidBecomeActiveNotification object:nil];
         }
         [self volumeChangeNotification];
 	}
@@ -328,17 +337,91 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
     [[NSNotificationCenter defaultCenter] postNotificationName:kApplicationDidTimeoutNotification object:nil];
 }
 
+// Consumers of the accelerometer: the motion-extended sleep timer while its countdown runs,
+// the smart home motion topic, and the live indicator in the sleep timer settings.
+- (BOOL)_motionDetectionNeeded
+{
+    if (_motionDetectionClientCount > 0) return YES;
+    if ([USER_DEFAULTS boolForKey:SmarthomeMQTTEnabled]) return YES;
+    return [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive] &&
+           [USER_DEFAULTS boolForKey:DeviceMovementIntelligentSleep] &&
+           _sleepTimerCountdownRunning;
+}
+
+// Both notifications are posted by the audio session on the main thread, after it
+// changed its countdown; reading the sender avoids creating the session early.
+- (void)_sleepTimerStateDidChange:(NSNotification*)notification
+{
+    AudioSession* session = [notification.object isKindOfClass:[AudioSession class]] ? notification.object : nil;
+    _sleepTimerCountdownRunning = (session.stopDate != nil);
+    [self updateMotionDetection];
+}
+
+- (void)updateMotionDetection
+{
+    if (!_motionQueue) return;
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self updateMotionDetection];
+        });
+        return;
+    }
+    BOOL needed = [self _motionDetectionNeeded];
+    if (needed == _motionDetectionRunning) return;
+    _motionDetectionRunning = needed;
+    // A fresh start has no baseline: the first sample only sets the reference.
+    _motionReferenceValid = NO;
+    // CMMotionManager reads CoreMotion.plist synchronously, which blocks for seconds
+    // on device: create, start and stop it off the main thread, in order.
+    dispatch_async(_motionQueue, ^{
+        if (needed) {
+            [self deviceMotionDetection];
+        } else {
+            [self.motionManager stopAccelerometerUpdates];
+        }
+    });
+}
+
+- (void)beginMotionDetectionClient
+{
+    _motionDetectionClientCount++;
+    [self updateMotionDetection];
+}
+
+- (void)endMotionDetectionClient
+{
+    if (_motionDetectionClientCount > 0) _motionDetectionClientCount--;
+    [self updateMotionDetection];
+}
+
 -(void)deviceMotionDetection
 {
-    self.motionManager = [[CMMotionManager alloc] init];
-    self.motionManager.accelerometerUpdateInterval = 0.3;
+    if (!self.motionManager) {
+        self.motionManager = [[CMMotionManager alloc] init];
+        self.motionManager.accelerometerUpdateInterval = 0.3;
+    }
 
     if ([self.motionManager isAccelerometerAvailable])
     {
         NSOperationQueue *queue = [[NSOperationQueue alloc] init];
         [self.motionManager startAccelerometerUpdatesToQueue:queue withHandler:^(CMAccelerometerData *accelerometerData, NSError *error) {
             dispatch_async(dispatch_get_main_queue(), ^{
+                if (!self->_motionDetectionRunning) return;
                 CMAcceleration acc = accelerometerData.acceleration;
+                if (!self->_motionReferenceValid && accelerometerData) {
+                    // The first sample after a start is the device at rest, not a movement:
+                    // compared with the zero (or an old) reference it would always count as
+                    // motion and reset the timer and the smart home state on every start.
+                    self->motionSampleCount++;
+                    self->_motionReferenceValid = YES;
+                    self->lastAccelX = acc.x;
+                    self->lastAccelY = acc.y;
+                    self->lastAccelZ = acc.z;
+                    self->lastAccelTimestamp = accelerometerData.timestamp;
+                    self->previousAcceleration = acc;
+                    self->previousAccelerationTimestamp = accelerometerData.timestamp;
+                    return;
+                }
                 CMAcceleration reference = { self->lastAccelX, self->lastAccelY, self->lastAccelZ };
                 NSTimeInterval referenceTimestamp = self->lastAccelTimestamp;
                 self->motionSampleCount++;

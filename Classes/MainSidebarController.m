@@ -50,6 +50,7 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
     self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
     self.tableView.rowHeight = ROW_HEIGHT;
     self.tableView.scrollEnabled = NO;
+    self.tableView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
 
     // Remove default section header padding (iOS 15+)
     self.tableView.sectionHeaderTopPadding = 0;
@@ -121,20 +122,26 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
         }
     }
 
-    CGFloat totalContentHeight = itemCount * (ROW_HEIGHT + 1) + totalTopSpacing;
-    CGFloat headerHeight = floorf((h - totalContentHeight) / 2);
-    headerHeight = MAX(headerHeight, 94 + 15);
-
-    // If content doesn't fit, reduce headerHeight so items remain visible
-    if (headerHeight + totalContentHeight > h) {
-        headerHeight = MAX(h - totalContentHeight, 20);
-        self.tableView.scrollEnabled = YES;
-    } else {
-        self.tableView.scrollEnabled = NO;
+    UIEdgeInsets safeArea = self.view.safeAreaInsets;
+    CGFloat totalContentHeight = itemCount * ROW_HEIGHT + totalTopSpacing;
+    CGFloat availableHeight = MAX(0, h - safeArea.top - safeArea.bottom);
+    CGFloat padding = MAX(16, floor((availableHeight - totalContentHeight) / 2));
+    UIEdgeInsets inset = UIEdgeInsetsMake(safeArea.top + padding, 0, safeArea.bottom + padding, 0);
+    BOOL scrollEnabled = totalContentHeight + 32 > availableHeight;
+    BOOL wasScrollable = self.tableView.scrollEnabled;
+    BOOL wasAtTop = self.tableView.contentOffset.y <= -self.tableView.contentInset.top + 1;
+    if (!UIEdgeInsetsEqualToEdgeInsets(self.tableView.contentInset, inset)) {
+        self.tableView.contentInset = inset;
     }
-
-    self.tableView.contentInset = UIEdgeInsetsMake(headerHeight, 0, 0, 0);
-
+    self.tableView.scrollEnabled = scrollEnabled;
+    self.tableView.alwaysBounceVertical = scrollEnabled;
+    self.tableView.verticalScrollIndicatorInsets = UIEdgeInsetsMake(safeArea.top, 0, safeArea.bottom, 0);
+    if (!self.tableView.dragging && !self.tableView.decelerating) {
+        CGFloat offset = self.tableView.contentOffset.y;
+        CGFloat maximumOffset = MAX(-inset.top, totalContentHeight + inset.bottom - h);
+        offset = (!scrollEnabled || !wasScrollable || wasAtTop) ? -inset.top : MIN(MAX(offset, -inset.top), maximumOffset);
+        [self.tableView setContentOffset:CGPointMake(0, offset) animated:NO];
+    }
 }
 
 #pragma mark - Table view data source
@@ -225,7 +232,7 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
         [sectionItems enumerateObjectsUsingBlock:^(MainSidebarItem* item, NSUInteger row, BOOL *stop2) {
             if (item.tag == self.selectedItemTag) {
                 NSIndexPath* indexPath = [NSIndexPath indexPathForRow:row inSection:section];
-                [self.tableView selectRowAtIndexPath:indexPath animated:NO scrollPosition:UITableViewScrollPositionMiddle];
+                [self.tableView selectRowAtIndexPath:indexPath animated:NO scrollPosition:UITableViewScrollPositionNone];
                 *stop1 = YES;
                 *stop2 = YES;
             }

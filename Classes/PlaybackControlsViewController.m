@@ -28,6 +28,12 @@
 static CGFloat const ICPlayerTransportImageScale = 1.2f;
 static CGFloat const ICPlayerSkipPointSize = 40.8f;
 static CGFloat const ICPlayerVolumeImageScale = 1.3f;
+static CGFloat const ICPlayerTimeRowHeight = 52.f;
+static CGFloat const ICPlayerTransportRowHeight = 64.f;
+static CGFloat const ICPlayerVolumeRowHeight = 44.f;
+static CGFloat const ICPlayerToolRowHeight = 44.f;
+static CGFloat const ICPlayerToolRowSpacing = 8.f;
+static CGFloat const ICPlayerToolBottomSpacing = 12.f;
 
 static UIImage* ICPlayerToolSymbol(NSString* name, CGFloat pointSize)
 {
@@ -83,7 +89,7 @@ static UIImage* ICPlayerTransportImage(NSString* name)
     // 3x height, 4.5x width (3x * 1.5)
     CGFloat expandX = thumbInSelf.size.width * 1.5;
     CGFloat expandY = thumbInSelf.size.height;
-    return CGRectInset(thumbInSelf, -expandX, -expandY);
+    return CGRectIntersection(self.bounds, CGRectInset(thumbInSelf, -expandX, -expandY));
 }
 
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
@@ -165,6 +171,7 @@ static UIImage* ICPlayerTransportImage(NSString* name)
 @property (nonatomic, strong) UIImage* transcriptImageNormal;
 @property (nonatomic, strong) UIImage* transcriptImageActive;
 @property (nonatomic) BOOL forwardChapterSkipActive;
+@property (nonatomic) CGFloat playButtonWidthRatio;
 @end
 
 @implementation PlaybackControlsViewController {
@@ -179,12 +186,16 @@ static UIImage* ICPlayerTransportImage(NSString* name)
     return [[self alloc] initWithNibName:@"PlayerControlView" bundle:nil];
 }
 
++ (CGFloat)minimumContentHeight
+{
+    return ICPlayerTimeRowHeight + ICPlayerTransportRowHeight + ICPlayerVolumeRowHeight + ICPlayerToolRowSpacing + ICPlayerToolRowHeight + ICPlayerToolBottomSpacing;
+}
 
 - (void) createVolumeViews
 {
     CGRect b = self.view.bounds;
     CGFloat sliderWidth = CGRectGetWidth(b) - 120;
-    CGFloat sliderHeight = 87;
+    CGFloat sliderHeight = ICPlayerVolumeRowHeight;
 
     // Container: same frame as original volumeView, intercepts touches only near thumb
     ICVolumeThumbHitView *hitView = [[ICVolumeThumbHitView alloc] initWithFrame:CGRectMake(57.5, 82.333, sliderWidth, sliderHeight)];
@@ -232,9 +243,10 @@ static UIImage* ICPlayerTransportImage(NSString* name)
         ErrLog(@"[TranscriptControl] transcript symbol not found: captions.bubble");
     }
     [transcriptButton setImage:self.transcriptImageNormal forState:UIControlStateNormal];
+    transcriptButton.imageView.contentMode = UIViewContentModeScaleAspectFit;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    transcriptButton.contentEdgeInsets = UIEdgeInsetsMake(14, 14, 14, 14);
+    transcriptButton.contentEdgeInsets = UIEdgeInsetsMake(10, 10, 10, 10);
 #pragma clang diagnostic pop
     [transcriptButton addTarget:self action:@selector(toggleTranscript:) forControlEvents:UIControlEventTouchUpInside];
     transcriptButton.accessibilityLabel = @"Transcript".ls;
@@ -268,7 +280,7 @@ static UIImage* ICPlayerTransportImage(NSString* name)
     CGFloat iconCenterY = (CGRectGetMidY(minIconRect) + CGRectGetMidY(maxIconRect)) / 2.0f;
     CGFloat offset = iconCenterY - CGRectGetMidY(trackRectInPlayer);
     if (ABS(offset) > 0.1f) {
-        self.volumeHitView.frame = CGRectOffset(self.volumeHitView.frame, 0, offset);
+        self.volumeView.frame = CGRectOffset(self.volumeView.frame, 0, offset);
     }
 }
 
@@ -317,6 +329,13 @@ static UIImage* ICPlayerTransportImage(NSString* name)
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+    self.playButtonWidthRatio = CGRectGetWidth(self.playButton.bounds) / CGRectGetWidth(self.playButton.superview.bounds);
+    if (@available(iOS 27.1, *)) {
+        __weak typeof(self) weakSelf = self;
+        [self.view addInteraction:[[UIHingeInteraction alloc] initWithUpdateHandler:^(UIHingeInteraction *interaction, UIHingeInteractionUpdate *update) {
+            [weakSelf.view setNeedsLayout];
+        }]];
+    }
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
@@ -507,17 +526,35 @@ static UIImage* ICPlayerTransportImage(NSString* name)
 - (void) viewWillLayoutSubviews {
     [super viewWillLayoutSubviews];
 
-    UIEdgeInsets safeAreaInsets = UIEdgeInsetsMake(20, 0, 0, 0);
-    safeAreaInsets = self.view.safeAreaInsets;
+    CGRect content = UIEdgeInsetsInsetRect(self.view.bounds, self.view.safeAreaInsets);
+    CGFloat width = CGRectGetWidth(content);
+    CGFloat left = CGRectGetMinX(content);
+    CGFloat toolsY = CGRectGetMaxY(content) - ICPlayerToolBottomSpacing - ICPlayerToolRowHeight;
+    CGFloat volumeY = toolsY - ICPlayerToolRowSpacing - ICPlayerVolumeRowHeight;
+    CGFloat transportY = CGRectGetMinY(content) + ICPlayerTimeRowHeight;
+    CGFloat extraHeight = MAX(0, volumeY - transportY - ICPlayerTransportRowHeight);
 
-    CGRect b = self.view.bounds;
-    self.toolsView.frame = CGRectMake(0, CGRectGetHeight(b)-safeAreaInsets.bottom-50, CGRectGetWidth(b), 50);
+    UIView *timeRow = self.timeSlider.superview;
+    timeRow.frame = CGRectMake(left, CGRectGetMinY(content), width, ICPlayerTimeRowHeight);
+    self.timeSlider.frame = CGRectMake(20, 8, width - 40, 24);
+    self.elapsedTimeLabel.frame = CGRectMake(20, 32, 70, 20);
+    self.remainingTimeLabel.frame = CGRectMake(width - 90, 32, 70, 20);
 
-    // Reposition toolbar buttons: Speed and Timer 50% bigger than the others
-    CGFloat smallSize = 84;
-    CGFloat bigSize = 101; // 20% bigger than original for Speed and Timer
+    self.controllerButtonGroup.frame = CGRectMake(left, transportY + extraHeight / 2, width, ICPlayerTransportRowHeight);
+    self.backButton.frame = CGRectMake(0, 0, width / 3, ICPlayerTransportRowHeight);
+    self.forwardButton.frame = CGRectMake(width * 2 / 3, 0, width / 3, ICPlayerTransportRowHeight);
+    CGRect playFrame = self.playButton.frame;
+    playFrame.origin.y = 0;
+    playFrame.size.height = ICPlayerTransportRowHeight;
+    self.playButton.frame = playFrame;
+
+    self.volumeMinButton.frame = CGRectMake(left + 20, volumeY, 44, ICPlayerVolumeRowHeight);
+    self.volumeMaxButton.frame = CGRectMake(CGRectGetMaxX(content) - 64, volumeY, 44, ICPlayerVolumeRowHeight);
+    self.volumeHitView.frame = CGRectMake(left + 64, volumeY, width - 128, ICPlayerVolumeRowHeight);
+    self.volumeView.frame = self.volumeHitView.bounds;
+    self.toolsView.frame = CGRectMake(left, toolsY, width, ICPlayerToolRowHeight);
+
     CGFloat toolsWidth = CGRectGetWidth(self.toolsView.bounds);
-    CGFloat toolsHeight = CGRectGetHeight(self.toolsView.bounds);
     NSMutableArray *toolButtons = [NSMutableArray array];
     for (UIView *subview in self.toolsView.subviews) {
         if (subview.hidden) {
@@ -526,43 +563,59 @@ static UIImage* ICPlayerTransportImage(NSString* name)
         [toolButtons addObject:subview];
     }
     [toolButtons sortUsingComparator:^NSComparisonResult(UIView *v1, UIView *v2) {
-        return [@(v1.frame.origin.x) compare:@(v2.frame.origin.x)];
+        NSInteger order1 = [v1 isKindOfClass:PlayerSpeedButton.class] ? 1 :
+            ([v1 isKindOfClass:PlayerTimerButton.class] ? 2 : (v1 == self.bookmarkButton ? 3 : 0));
+        NSInteger order2 = [v2 isKindOfClass:PlayerSpeedButton.class] ? 1 :
+            ([v2 isKindOfClass:PlayerTimerButton.class] ? 2 : (v2 == self.bookmarkButton ? 3 : 0));
+        return [@(order1) compare:@(order2)];
     }];
     if (toolButtons.count == 0) {
         return;
     }
-    CGFloat totalButtonWidth = 0;
+    CGFloat slotWidth = toolsWidth / toolButtons.count;
+    CGFloat buttonWidth = MIN(84, slotWidth);
+    CGFloat xPos = (slotWidth - buttonWidth) / 2;
     for (UIView *button in toolButtons) {
-        if ([button isKindOfClass:[PlayerSpeedButton class]] || [button isKindOfClass:[PlayerTimerButton class]]) {
-            totalButtonWidth += bigSize;
-        } else {
-            totalButtonWidth += smallSize;
-        }
-    }
-    CGFloat spacing = (toolsWidth - totalButtonWidth) / (toolButtons.count + 1);
-    CGFloat xPos = spacing;
-    for (UIView *button in toolButtons) {
-        CGFloat size;
-        if ([button isKindOfClass:[PlayerSpeedButton class]] || [button isKindOfClass:[PlayerTimerButton class]]) {
-            size = bigSize;
-        } else {
-            size = smallSize;
-        }
-        CGFloat yPos = (toolsHeight - size) / 2.0;
-        button.frame = CGRectMake(xPos, yPos, size, size);
-        xPos += size + spacing;
+        button.frame = CGRectMake(xPos, 0, buttonWidth, ICPlayerToolRowHeight);
+        xPos += slotWidth;
     }
 
     // Position chapter title label between the two time labels
-    CGFloat labelX = CGRectGetMaxX(self.elapsedTimeLabel.frame) + 4;
-    CGFloat labelW = CGRectGetMinX(self.remainingTimeLabel.frame) - 4 - labelX;
-    self.chapterTitleLabel.frame = CGRectMake(labelX, CGRectGetMinY(self.elapsedTimeLabel.frame), labelW, CGRectGetHeight(self.elapsedTimeLabel.frame));
+    CGRect elapsed = [self.elapsedTimeLabel convertRect:self.elapsedTimeLabel.bounds toView:self.view];
+    CGRect remaining = [self.remainingTimeLabel convertRect:self.remainingTimeLabel.bounds toView:self.view];
+    CGFloat labelX = CGRectGetMaxX(elapsed) + 4;
+    self.chapterTitleLabel.frame = CGRectMake(labelX, CGRectGetMinY(elapsed), CGRectGetMinX(remaining) - 4 - labelX, CGRectGetHeight(elapsed));
 }
 
 - (void)viewDidLayoutSubviews
 {
     [super viewDidLayoutSubviews];
+    [self _layoutPlayButtonAroundFold];
     [self _alignVolumeSliderTrack];
+}
+
+- (void)_layoutPlayButtonAroundFold
+{
+    UIView *container = self.playButton.superview;
+    CGRect frame = self.playButton.frame;
+    frame.size.width = CGRectGetWidth(container.bounds) * self.playButtonWidthRatio;
+    frame.origin.x = (CGRectGetWidth(container.bounds) - CGRectGetWidth(frame)) / 2;
+    if (@available(iOS 27.1, *)) {
+        for (UIViewReservedRegion *region in [container reservedRegionsOfKind:UIViewReservedRegionKind.divisionRegionKind]) {
+            if (!region.active || CGRectGetWidth(region.frame) >= CGRectGetHeight(region.frame) || !CGRectIntersectsRect(frame, region.frame)) continue;
+            CGFloat width = MIN(CGRectGetWidth(frame), CGRectGetHeight(frame));
+            CGFloat right = CGRectGetMaxX(region.frame) + 8;
+            CGFloat left = CGRectGetMinX(region.frame) - 8 - width;
+            if (right + width <= CGRectGetMinX(self.forwardButton.frame)) {
+                frame.origin.x = right;
+                frame.size.width = width;
+            } else if (left >= CGRectGetMaxX(self.backButton.frame)) {
+                frame.origin.x = left;
+                frame.size.width = width;
+            }
+        }
+    }
+    self.playButton.frame = frame;
 }
 
 - (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator

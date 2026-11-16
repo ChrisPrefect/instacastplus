@@ -11,6 +11,7 @@
 #import "SubscriptionsTableViewController.h"
 
 #import "SubscriptionManager.h"
+#import "EpisodeLoadingManager.h"
 #import "SubscriptionTableViewCell.h"
 #import "FeedEpisodesTableViewController.h"
 
@@ -29,6 +30,9 @@
 #import "ICFTSController.h"
 #import "DirectorySearchViewController.h"
 #import "InstacastAppDelegate.h"
+
+NSString* const ICSubscriptionsAddButtonAccessibilityIdentifier = @"SubscriptionsAddPodcastButton";
+NSString* const ICSubscriptionsAddButtonDidAppearNotification = @"ICSubscriptionsAddButtonDidAppearNotification";
 
 @interface SubscriptionsTableViewController () <UIGestureRecognizerDelegate, NSFetchedResultsControllerDelegate, UISearchBarDelegate>
 @property (nonatomic, strong) ToolbarLabelsViewController* toolbarLabelsViewController;
@@ -433,6 +437,7 @@
             [self addAction:nil];
         }]];
     self.floatingAddButton.accessibilityLabel = @"Add Podcast".ls;
+    self.floatingAddButton.accessibilityIdentifier = ICSubscriptionsAddButtonAccessibilityIdentifier;
 
     UIButtonConfiguration* sortConfig = [UIButtonConfiguration glassButtonConfiguration];
     sortConfig.image = [UIImage systemImageNamed:@"arrow.up.arrow.down"];
@@ -575,6 +580,11 @@
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self _updateToolbarItemsAnimated:NO];
+    if (@available(iOS 26.0, *)) {
+        if (self.floatingAddButton.window) {
+            [[NSNotificationCenter defaultCenter] postNotificationName:ICSubscriptionsAddButtonDidAppearNotification object:self];
+        }
+    }
 }
 
 - (void)viewDidLayoutSubviews {
@@ -598,7 +608,11 @@
                 // During a refresh every merged feed fires this notification; a full
                 // reloadData every 0.2s contends with the merge writes for the store
                 // lock. Stretch the coalescing window while the refresh is running.
-                NSTimeInterval delay = [SubscriptionManager sharedSubscriptionManager].refreshing ? 1.0 : 0.2;
+                // The episode loader commits about five batches per second and each one
+                // posts this notification, too: same window while it is running.
+                BOOL bulkUpdateRunning = [SubscriptionManager sharedSubscriptionManager].refreshing ||
+                                         [EpisodeLoadingManager sharedManager].isLoading;
+                NSTimeInterval delay = bulkUpdateRunning ? 1.0 : 0.2;
                 [self performSelector:@selector(_performCoalescedReload) withObject:nil afterDelay:delay];
             }
         } else {
@@ -622,7 +636,7 @@
         return UIInterfaceOrientationMaskAll;
     }
     
-    return UIInterfaceOrientationMaskPortrait;
+    return UIInterfaceOrientationMaskAllButUpsideDown;
 }
 
 #pragma mark -

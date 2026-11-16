@@ -360,7 +360,7 @@
 "Show in Main Menu" = "Im Hauptmenü anzeigen";
 "Deactivate attributes of episodes that should not be included in this episode list." = "Deaktivieren Sie Eigenschaften von Folgen, die nicht mit in die Liste aufgenommen werden sollen.";
 "Descending" = "Absteigend";
-"Downloaded" = "heruntergeladen";
+"Downloaded" = "Heruntergeladen";
 "Duration" = "Dauer";
 "Edit List" = "Liste bearbeiten";
 "Enable 'Continuous Playback' to copy remaining episodes to Up Next when playback starts." = "Aktivieren Sie 'Kontinuierliche Wiedergabe', um verbleibende Folgen bei Wiedergabe nach 'Nächste Folgen' zu kopieren.";
@@ -371,22 +371,22 @@
 "Include Podcasts" = "Podcasts berücksichtigen";
 "Keyword" = "Schlüsselwort";
 "Last Downloaded" = "Zuletzt geladen";
-"Last Played" = "zuletzt gespielt";
+"Last Played" = "Zuletzt gespielt";
 "New List" = "Neue Liste";
 "Not Downloaded" = "Nicht Geladen";
 "Not Starred" = "Kein Favorit";
 "Order By" = "Sortiert nach";
 "Order Options" = "Sortieroptionen";
-"Played" = "gespielt";
+"Played" = "Gespielt";
 "Publish Date" = "Veröffentlicht";
 "Remove" = "Entfernen";
 "Save" = "Speichern";
 "Starred" = "Favorit";
 "Time Left" = "Abspielzeit übrig";
-"Unfinished" = "angespielt";
-"Unplayed" = "ungespielt";
-"Unplayed & Started" = "ungespielt & angespielt";
-"Started" = "angespielt";
+"Unfinished" = "Angespielt";
+"Unplayed" = "Ungespielt";
+"Unplayed & Started" = "Ungespielt & angespielt";
+"Started" = "Angespielt";
 "Video" = "Video";
 
 /* SubscriptionsTableViewController.m */
@@ -407,6 +407,7 @@
 /* BookmarksCollectionViewController.m */
 "%d Bookmarks" = "%d Lesezeichen";
 "%d Episodes" = "%d Folgen";
+"%lu of %lu Episodes" = "%lu von %lu Folgen";
 "1 Bookmark" = "1 Lesezeichen";
 "Bookmarks from %@" = "Podcast-Lesezeichen von %@";
 "Can not send email. Please add a mail account to the Mail app." = "Kann E-Mail nicht versenden. Bitte erstellen Sie ein E-Mail Benutzerkonto.";

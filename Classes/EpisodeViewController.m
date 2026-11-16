@@ -676,7 +676,8 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
 
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations
 {
-    return UIInterfaceOrientationMaskPortrait;
+    return UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad
+        ? UIInterfaceOrientationMaskAll : UIInterfaceOrientationMaskAllButUpsideDown;
 }
 
 - (UIInterfaceOrientation)preferredInterfaceOrientationForPresentation

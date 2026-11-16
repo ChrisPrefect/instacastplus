@@ -1937,9 +1937,18 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
     fetchRequest.predicate = [NSPredicate predicateWithFormat:@"uid BEGINSWITH %@", @"default."];
     NSArray* lists = [self.objectContext executeFetchRequest:fetchRequest error:nil];
 
+    // German default names were lower case until 4.0.1 ("heruntergeladen", "ungespielt",
+    // "angespielt") next to "Favoriten". Lists still carrying exactly that old default name
+    // get the current one; a list the user renamed keeps its name.
+    NSDictionary<NSString*, NSDictionary<NSString*, NSString*>*>* previousDefaultNamesByUID = @{
+        @"default.unplayed":   @{ @"ungespielt": @"Unplayed".ls },
+        @"default.started":    @{ @"angespielt": @"Started".ls },
+        @"default.downloaded": @{ @"heruntergeladen": @"Downloaded".ls },
+    };
+
     BOOL changed = NO;
     for (CDEpisodeList* list in lists) {
-        NSString* localizedName = keyToLocalized[list.name];
+        NSString* localizedName = keyToLocalized[list.name] ?: previousDefaultNamesByUID[list.uid][list.name];
         if (localizedName && ![list.name isEqualToString:localizedName]) {
             list.name = localizedName;
             changed = YES;
@@ -3164,17 +3173,38 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     [self save];
 }
 
-- (void) removeList:(CDList*)list
+- (NSError*) removeList:(CDList*)list
 {
 #if TARGET_OS_IPHONE
-    [self.objectContext deleteObject:list];
-    [self save];
-    [_listsController performFetch:nil];
+    NSManagedObjectContext* context = self.objectContext;
+    [context processPendingChanges];
+    NSUndoManager* previousUndoManager = context.undoManager;
+    NSUndoManager* deletionUndoManager = [[NSUndoManager alloc] init];
+    deletionUndoManager.groupsByEvent = NO;
+    context.undoManager = deletionUndoManager;
+    [deletionUndoManager beginUndoGrouping];
+
+    // The table represents one row per UID, including stores with duplicate records.
+    NSString* uid = list.uid;
+    for (CDList* candidate in [[_listsController fetchedObjects] copy]) {
+        if (candidate != list && [candidate.uid isEqualToString:uid]) {
+            [context deleteObject:candidate];
+        }
+    }
+    [context deleteObject:list];
+    [context processPendingChanges];
+    [deletionUndoManager endUndoGrouping];
+    NSError* error = [self saveReturningError];
+    if (error) {
+        [deletionUndoManager undo];
+        [context processPendingChanges];
+    }
+    context.undoManager = previousUndoManager;
+    return error;
 #else
     [_listsController removeObject:list];
+    return [self saveReturningError];
 #endif
-    
-    [self save];
 }
 
 - (void) reorderListFromIndex:(NSInteger)fromIndex toIndex:(NSInteger)toIndex

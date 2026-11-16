@@ -626,7 +626,8 @@ static NSString* kUpNextCell = @"UpNextCell";
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     CDEpisode* episode = [AudioSession sharedAudioSession].playlist[indexPath.row];
-    return [EpisodesTableViewCell proposedHeightWithObjectValue:episode tableSize:self.tableView.bounds.size imageSize:CGSizeMake(56, 56) embedded:NO editing:NO];
+    CGSize contentSize = UIEdgeInsetsInsetRect(tableView.bounds, tableView.safeAreaInsets).size;
+    return [EpisodesTableViewCell proposedHeightWithObjectValue:episode tableSize:contentSize imageSize:CGSizeMake(56, 56) embedded:NO editing:NO];
 }
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath

@@ -170,7 +170,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>50</string>
+	<string>51</string>
 	<key>INIntentsSupported</key>
 	<array>
 		<string>INPlayMediaIntent</string>
@@ -247,6 +247,8 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>

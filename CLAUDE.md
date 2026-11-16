@@ -34,6 +34,8 @@ Der Mac-Build ist **Mac Catalyst** (`TARGET_OS_MACCATALYST` = 1), nicht „Desig
 
 Die iOS-App nie mit `CODE_SIGNING_ALLOWED=NO` für den Simulator bauen: Das entfernt alle Entitlements, `CKContainer.init` trapt dann beim Launch und die App Group fehlt.
 
+**Duo-Drehungen auch am Device-Hub-Rahmen prüfen.** Am 09.11.2026 zeigte Device Hub 27.2 nach Drehen und Falten auch den Homescreen und Apples Einstellungen kopfstehend, während der direkte Framebuffer-Screenshot aufrecht war. `Device > Orientation > Portrait` stellte die Vorschau wieder her; danach Innen-/Außenwechsel erneut prüfen. Eine zusätzliche App-Freigabe von `PortraitUpsideDown` änderte den Fehler nicht. Keine App-Rotation gegen einen verdrehten Simulatorrahmen erzwingen. `UIDevice.orientation` und die Szenenausrichtung haben innen zudem unterschiedliche Bezugsachsen.
+
 **Transkriptions-Testbuilds auf Chris' iPhone brauchen auch bei Release die explizite Freigabe.** Ein normaler Release-Build blendet Transkriptions-Einstellungen und Aktionen absichtlich aus. Beim Testbuild `-configuration Release 'GCC_PREPROCESSOR_DEFINITIONS=$(inherited) IC_TRANSCRIPTION_TESTFLIGHT_BUILD=1'` übergeben; die öffentlichen Release-Defaults unverändert lassen. Vor der Installation das tatsächliche optimierte iPhone-Bundle prüfen: `python3 Tools/transcription_build_availability_regression_test.py <InstacastPlus.app> --expected enabled`. Bei einem öffentlichen Release lautet die Erwartung `--expected disabled`. Ein erfolgreicher Build oder vorhandene Settings-Quelldateien belegen die Freigabe nicht.
 
 ## TestFlight
@@ -46,13 +48,13 @@ xcodebuild -project Instacast.xcodeproj -scheme Instacast -configuration Release
 xcodebuild -exportArchive -archivePath build/TestFlight/InstacastPlus-<v>-<b>.xcarchive -exportOptionsPlist build/TestFlight/ExportOptionsUpload.plist -allowProvisioningUpdates
 ```
 
-**Vor jedem Upload das CloudKit-Schema diffen.** Debug-Builds legen neue Record-Typen automatisch in der Development-Umgebung an, TestFlight läuft gegen Production. Ein dort fehlender Typ killt den Sync aller Nutzer komplett (`CKError 12`) und ist im eigenen Log nie sichtbar:
+**CloudKit vor Routine-Uploads lokal vergleichen (Vorgabe 09.11.2026).** Der bestätigte Schema-Stand vom 02.11.2026 liegt dauerhaft in `Tools/CloudKit/production-schema.ckdb`. `source-baseline.json` hält den Hash dieses Snapshots und die zuletzt lokal geprüften CloudKit-Quellen fest:
 
 ```bash
-for env in production development; do xcrun cktool export-schema --team-id L95F4M2LHG --container-id iCloud.com.iteconomy.instacastplus --environment $env --output-file /tmp/$env.ckdb; done; diff /tmp/production.ckdb /tmp/development.ckdb
+python3 Tools/cloudkit_local_schema.py
 ```
 
-Deployen lässt sich das nur über die CloudKit Console, `cktool` kann Production nicht schreiben.
+Bei unveränderten Quellen direkt weiter releasen. Für Routine-Uploads keine CloudKit-Anmeldung, SMS-Abfrage oder Live-Exporte verlangen. Bei geänderten Quellen lokal prüfen, ob Record-Typen, Felder oder Indizes betroffen sind; bei unverändertem Schema die geprüften Quellstände mit `python3 Tools/cloudkit_local_schema.py --record-reviewed-sources` übernehmen. Der gespeicherte Stand ist ein historischer Snapshot, keine aktuelle Remote-Verifikation. Echte Schema-Änderungen gesondert behandeln und den Produktionssnapshot erst nach bestätigtem Deployment aktualisieren. Debug ergänzt Development automatisch; fehlende Production-Typen können den Sync mit `CKError 12` stoppen.
 
 Bei Änderungen an Watch, Playback, Downloads oder Info.plists immer das **Archiv** prüfen statt der Source-Plist — Xcode verändert eingebettete Bundles beim Processing:
 
@@ -68,7 +70,7 @@ plutil -p <archive>/Products/Applications/InstacastPlus.app/Watch/InstacastWatch
 - Ein `signingCertificate`-Eintrag in einer ExportOptions-Plist überlebt keinen Zertifikatswechsel. Entweder aktuellen SHA1 eintragen oder `signingStyle = automatic` verwenden (`build/TestFlight/ExportOptionsUpload-manual.plist`).
 - Per API erzeugte Certs laufen auf die Identität des API-Keys (`Apple Development: Created via API (7QUKV6MHZ2)`). Xcode bevorzugt sie bei automatischem Signing, und danach muss jedes von Xcode verwaltete Profil einmal mit `-allowProvisioningUpdates` aufgefrischt werden, sonst bricht der Build mit „doesn't include signing certificate".
 
-**M2-Mac (02.11.2026):** Hier fehlte der private Distributionsschlüssel; Cloud Signing ist für den Account nicht freigegeben. Für Exporte deshalb `build/TestFlight/ExportOptionsUpload-manual.plist` verwenden: Zertifikat `2PHTWBB7V2` (bis 02.11.2027) und vier neue Profile `… App Store M2 2026-11-02`, einschließlich Siri und Group Activities. Die Signier-Keychain und ihre geschützten Zugangsdaten liegen unter `~/.appstoreconnect/signing/2026-11-02/`; private Schlüssel und Passwortdateien niemals ausgeben. Die Keychain muss für den Export entsperrt sein. Das ältere Distributionszertifikat wurde nicht widerrufen.
+**M2-Mac (Stand 09.11.2026):** Cloud Signing ist für den Account nicht freigegeben. Für Exporte deshalb `build/TestFlight/ExportOptionsUpload-manual.plist` verwenden: Zertifikat `2PHTWBB7V2` (bis 02.11.2027) und vier Profile `… App Store M2 2026-11-02`, einschließlich Siri und Group Activities. Die Distributionsidentität liegt inzwischen im Anmeldeschlüsselbund (`security find-identity -v -p codesigning`); die frühere separate Signier-Keychain wurde entfernt. Geschützte Sicherungen liegen unter `~/.appstoreconnect/signing/2026-11-02/`; private Schlüssel und Passwortdateien niemals ausgeben. Das ältere Distributionszertifikat wurde nicht widerrufen.
 
 ## Fallen im Kern
 
@@ -81,6 +83,14 @@ plutil -p <archive>/Products/Applications/InstacastPlus.app/Watch/InstacastWatch
 **Änderungs-Dictionaries synchron lesen.** `changedValuesForCurrentEvent` muss direkt in der Notification ausgewertet werden; in einem async-Block ist es leer. Das betrifft sowohl den iCloud-Observer als auch den Widget-Export.
 
 ## Playback
+
+**Der System-Lautstärkeregler lässt sich nicht im Simulator prüfen.** `MPVolumeView` unterstützt dort keine Lautstärkeregelung und enthielt unter iOS 27.2 keinen `UISlider`. Sichtbarkeit und echte Drag-Bedienung zusätzlich mit einer realen Audioroute prüfen; der Catalyst-Lauf vom 09.11.2026 deckt beides ab. [Apple-Dokumentation](https://developer.apple.com/documentation/mediaplayer/mpvolumeview).
+
+**Ein quadratischer Button beweist keine unverzerrte Grafik.** `gobackward`/`goforward` wurden bereits beim Zeichnen in das quadratische Skip-Bitmap um etwa 10 Prozent verbreitert; ein späteres Aspect-Fit der Image-View erkennt oder repariert das nicht. `moon.zzz` wurde erst im quadratischen `PlayerTimerButton.imageRectForContentRect:` um etwa 16 Prozent verbreitert. Beide Stufen proportional zeichnen und im E2E zusätzlich die Alpha-Ausdehnung des echten Skip-Bitmaps mit dem nativen SF-Symbol vergleichen.
+
+**Die Player-Buttonreihenfolge nicht aus aktuellen Frames ableiten.** Beim Verkleinern eines Catalyst-Fensters verschob Autoresizing die Buttons unterschiedlich; das Sortieren nach x vertauschte Geschwindigkeit und Lesezeichen dauerhaft. Die fachliche Reihenfolge bleibt Route/Transkript, Geschwindigkeit, Sleeptimer, Lesezeichen. Im E2E auch den Wechsel groß → Minimum → groß prüfen.
+
+**Der Duo-Player kann beim Scrollen seine Navigationsleiste umordnen.** Beim Chevron-Tap änderte sich der Ursprung der Info-View von y=58 auf y=0 und der Cover-Header wurde 58 Punkte höher. Das Scrollziel deshalb während dieser echten Größenänderung nachführen. Beim Falten begrenzt UIKit den alten Offset schon vor dem nächsten Layout: Eine zuvor am oberen Rand geöffnete Liste über die koordinierte Größenänderung verankern, beim manuellen Ziehen freigeben. Im E2E nicht nur einen positiven Offset prüfen: Die Kapitelüberschrift muss den nutzbaren oberen Rand erreichen; anschließend muss man wieder zum Cover scrollen können. Abschnittsköpfe in den Bounds ihrer bereits seitlich eingerückten `contentView` anordnen, sonst liegen „Bearbeiten“ und „Fertig“ hinter den Duo-Systembuttons.
 
 **`episode.duration` ist die gemessene Mediendauer, nicht `itunes:duration`** (Entscheid 02.09.). Bei Feeds mit dynamischer Werbung ist die Datei länger als die Feed-Angabe. Die Folge war: Restzeit 0, Neustart bei 0:00, aber `consumed == NO` — die Folge klebte für immer in „Ungespielt". Der Player schreibt die Dauer bei `AVPlayerItemStatusReadyToPlay` diff-gated, und der Feed-Merge setzt `itunes:duration` nur noch, solange `lastPlayed == nil` ist. Die Dauer ist nicht Teil des iCloud-Payloads. Bewusste Folge: Bei einer schon geöffneten Folge wird eine spätere Feed-Korrektur ignoriert.
 
@@ -202,7 +212,7 @@ Haptik immer über `PlayHapticFeedback` (respektiert die Einstellung), leicht f�
 ## macOS (Mac Catalyst)
 
 - **`isiOSAppOnMac` ist bei Catalyst immer `false`**, es meldet nur „Designed for iPad"-Apps. Jedes Gate, das nur darauf prüft, greift auf dem Mac nicht — betroffen sind unter anderem `requestAuthorizationWithOptions:`, der Widget-Exporter und die Fenstergrösse. Ein echtes Mac-Gate prüft `TARGET_OS_MACCATALYST` bzw. `ProcessInfo.isMacCatalystApp`. **Ob der aktuelle Zustand Absicht ist, ist ungeklärt — vor einer Umstellung mit Chris klären.**
-- **`[sdk=macosx*]`-Einstellungen greifen nicht**, weil ein Catalyst-Build das iPhoneOS-SDK verwendet. Es gilt deshalb `Instacast.entitlements` inklusive App Groups, und `InstacastMac.entitlements` ist wirkungslos.
+- **Catalyst mit Xcode 27.2 verwendet hier das macOS-SDK.** Die `[sdk=macosx*]`-Einstellungen greifen: Bundle `com.iteconomy.instacastplus.mac`, Entitlements aus `InstacastMac.entitlements`. CloudKit, App Group und die eigene Keychain-Gruppe gehören ins signierte Bundle; CloudKit und Keychain zusätzlich gegen das Apple-Profil prüfen. Ohne CloudKit trappte der Erststart; ohne Keychain-Gruppe führte das Öffnen der iCloud-Einstellungen nach Fehler `-34018` zu rekursiven Reloads und Stack Overflow. Immer das gebaute Bundle prüfen.
 - `llama.xcframework` hat keine Catalyst-Slice, weshalb die Build-Files auf iOS gefiltert sind: **auf dem Mac gibt es kein lokales GGUF-Kapitelmodell.** `TranscriptionEngine` blendet diese Modelle deshalb aus dem Katalog aus und muss dabei den Default-Kapitelmodell-Identifier mitziehen, sonst trappt die Modellauswahl auf einem fehlenden Default. WhisperKit, FoundationModels und Speech laufen auf dem Mac.
 - `BGContinuedProcessingTask` gibt es auf Catalyst nicht; die betroffenen Stellen sind ausgeklammert und der Mac nutzt den normalen `BGProcessingTask`-Pfad.
 - Watch-App und Widget-Extension werden über Platform-Filter aus dem Mac-Build gehalten.

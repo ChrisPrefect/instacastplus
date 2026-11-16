@@ -719,10 +719,12 @@ static UIImage* ICPlayerSleepTimerImage(void)
     AudioSession* session = [AudioSession sharedAudioSession];
     if (session.timerValue == PlaybackStopTimeNoValue)
     {
-        CGFloat size = 28.f;
-        return CGRectMake(contentRect.origin.x + (contentRect.size.width - size) / 2,
-                          contentRect.origin.y + (contentRect.size.height - size) / 2,
-                          size, size);
+        CGSize imageSize = ICPlayerSleepTimerImage().size;
+        CGFloat imageScale = 28.f / MAX(imageSize.width, imageSize.height);
+        CGSize size = CGSizeMake(imageSize.width * imageScale, imageSize.height * imageScale);
+        return CGRectMake(contentRect.origin.x + (contentRect.size.width - size.width) / 2,
+                          contentRect.origin.y + (contentRect.size.height - size.height) / 2,
+                          size.width, size.height);
     }
     else
     {

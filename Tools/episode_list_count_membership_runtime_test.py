@@ -25,7 +25,7 @@ def method(signature: str) -> str:
 
 METHODS = "\n".join(method(signature) for signature in (
     "- (NSPredicate*) _episodesMainPredicate",
-    "- (NSUInteger) _countEpisodesViaStore",
+    "- (NSUInteger) countEpisodesInStore",
     "- (void) calculateNumberOfEpisodesCompletion:",
     "- (NSUInteger)explicitEpisodeRelationshipCountInContext:",
     "- (NSPredicate*)_episodesPredicateConsideringExplicitRelationshipWithError:",
@@ -85,7 +85,7 @@ static ProbeDatabase *DMANAGER;
 @property(strong) NSNumber *cachedEpisodesCount;
 @property(strong) NSMutableArray<void (^)(NSUInteger)> *pendingCountCompletions;
 - (NSPredicate *)_episodesMainPredicate;
-- (NSUInteger)_countEpisodesViaStore;
+- (NSUInteger)countEpisodesInStore;
 - (void)calculateNumberOfEpisodesCompletion:(void (^)(NSUInteger))completion;
 - (NSUInteger)explicitEpisodeRelationshipCountInContext:(NSManagedObjectContext *)context episodeList:(CDEpisodeList *)list;
 @end
@@ -120,7 +120,7 @@ static BOOL check(CDEpisodeList *list, NSString *orderBy, BOOL includePlayed, NS
         NSLog(@"Could not save fixture: %@", error);
         return NO;
     }
-    NSUInteger storeCount = [list _countEpisodesViaStore];
+    NSUInteger storeCount = [list countEpisodesInStore];
     __block BOOL completed = NO;
     __block NSUInteger asyncCount = NSNotFound;
     [list calculateNumberOfEpisodesCompletion:^(NSUInteger count) {

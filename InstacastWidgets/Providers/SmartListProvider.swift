@@ -9,7 +9,7 @@ struct SmartListEntry: TimelineEntry, Sendable {
     let date: Date
     let listName: String
     let listId: String
-    let episodes: [WEpisode]
+    var episodes: [WEpisode]
     let compact: Bool
     let order: SmartListOrder
     /// True when the app has never exported list data yet (widget freshly added, app not opened).
@@ -76,7 +76,20 @@ struct SmartListProvider: AppIntentTimelineProvider {
                 entry.needsData = true
             }
         }
-        return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(10 * 60)))
+        // The episode playing right now: its remaining time follows the playback instead of the
+        // last list export (which the app defers during background playback). Refreshed when the
+        // shown minute changes; reloads while the app is the Now Playing app are not budgeted.
+        let now = Date()
+        var refreshDate = now.addingTimeInterval(10 * 60)
+        if let playback = SharedContainerReader.readNowPlaying(), let playing = playback.episode,
+           let index = entry.episodes.firstIndex(where: { $0.id == playing.id }),
+           let position = playback.projectedPosition(at: now) {
+            entry.episodes[index] = entry.episodes[index].withPosition(Int32(position.rounded(.down)))
+            if let displayChange = playback.nextDisplayChange(after: now), displayChange < refreshDate {
+                refreshDate = displayChange
+            }
+        }
+        return Timeline(entries: [entry], policy: .after(refreshDate))
     }
 
     private func loadEntry(for configuration: SmartListConfigIntent) -> SmartListEntry {

@@ -555,6 +555,10 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     BOOL _dismissEnded;
     CGFloat _startY;
     BOOL _didWillAppear;
+    BOOL _scrollingToChapterList;
+    BOOL _chapterListAnchorActive;
+    BOOL _chapterListTransitionActive;
+    CGFloat _chapterListTargetY;
     NSString* _transcriptLoadingURL;
     NSInteger _previousTranscriptCueIndex;
     CGSize _lastTranscriptBoundsSize;
@@ -858,6 +862,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [layout setMinimumInteritemSpacing:0.0f];
     [layout setMinimumLineSpacing:0.0f];
     self.chapterImagesCollection = [[UICollectionView alloc] initWithFrame:CGRectZero collectionViewLayout:layout];
+    self.chapterImagesCollection.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
     [self.chapterImagesCollection registerClass:[ChapterImageCell class] forCellWithReuseIdentifier: @"chapter_cell"];
     [self.chapterImagesCollection registerNib:[UINib nibWithNibName:@"ChapterImageCell" bundle:nil]  forCellWithReuseIdentifier:@"chapter_cell"];
     self.chapterImagesCollection.backgroundColor = [UIColor clearColor];
@@ -1125,9 +1130,13 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     UIImage* chevronImage = [UIGraphicsGetImageFromCurrentImageContext() imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
     UIGraphicsEndImageContext();
 
-    chevronIndicatorView = [[UIImageView alloc] initWithImage:chevronImage];
+    chevronIndicatorView = [UIButton buttonWithType:UIButtonTypeCustom];
+    [chevronIndicatorView setImage:chevronImage forState:UIControlStateNormal];
     chevronIndicatorView.tintColor = ICMutedTextColor;
-    chevronIndicatorView.contentMode = UIViewContentModeCenter;
+    chevronIndicatorView.imageView.contentMode = UIViewContentModeCenter;
+    chevronIndicatorView.accessibilityLabel = @"Chapters".ls;
+    chevronIndicatorView.accessibilityIdentifier = @"player.chapterList";
+    [chevronIndicatorView addTarget:self action:@selector(showChapterList:) forControlEvents:UIControlEventTouchUpInside];
     [self.chapterView addSubview:chevronIndicatorView];
 
     [self reloadData];
@@ -1138,11 +1147,20 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator
 {
+    _chapterListTransitionActive = _chapterListAnchorActive &&
+        (_scrollingToChapterList || ABS(self.tableView.contentOffset.y - _chapterListTargetY) < 0.5);
     [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
 
     [coordinator animateAlongsideTransition:^(id<UIViewControllerTransitionCoordinatorContext> context) {
         [self layoutHeaderView];
-    } completion:nil];
+    } completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        if (self->_chapterListTransitionActive && self->_chapterListAnchorActive) {
+            [self.tableView layoutIfNeeded];
+            self->_chapterListTargetY = [self _listContentOriginY] - self.tableView.adjustedContentInset.top;
+            [self.tableView setContentOffset:CGPointMake(0, self->_chapterListTargetY) animated:NO];
+        }
+        self->_chapterListTransitionActive = NO;
+    }];
 }
 
 - (void)_setTranscriptAvailableState:(BOOL)available
@@ -2872,6 +2890,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         return;
     }
 
+    _scrollingToChapterList = NO;
+    _chapterListAnchorActive = NO;
     CGFloat topOffsetY = -self.tableView.contentInset.top;
     if (self.tableView.contentOffset.y > topOffsetY + 1.0) {
         self.pendingTranscriptShowAfterScrollToTop = YES;
@@ -2948,20 +2968,60 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [self.viewIfLoaded setNeedsLayout];
 }
 
+- (CGFloat)_listContentOriginY
+{
+    NSInteger section = [self _hasChapters] ? [self _chaptersSection] :
+        ([self _hasBookmarks] ? [self _bookmarksSection] : [self _upNextSection]);
+    if ([self _hasChapters] || [self _hasBookmarks] || [self _hasUpNext]) {
+        return CGRectGetMinY([self.tableView rectForHeaderInSection:section]);
+    }
+    return CGRectGetMinY([self.tableView rectForFooterInSection:[self _chaptersSection]]);
+}
+
+- (void)showChapterList:(UIButton*)sender
+{
+    [self.tableView layoutIfNeeded];
+    self.pendingTranscriptShowAfterScrollToTop = NO;
+    _scrollingToChapterList = YES;
+    _chapterListAnchorActive = YES;
+    _chapterListTargetY = [self _listContentOriginY] - self.tableView.adjustedContentInset.top;
+    [self.tableView setContentOffset:CGPointMake(0, _chapterListTargetY) animated:YES];
+}
+
 - (void) viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
 
+    if (!self.videoViewController && self.chapterImagesCollection &&
+        (!CGSizeEqualToSize(self.chapterImagesCollection.bounds.size, [self _artworkSize]) ||
+         !CGRectEqualToRect(self.transcriptContainerView.frame, [self _contentFrameForArtworkSize:[self _artworkSize]]))) {
+        [self layoutHeaderView];
+    }
+
     // The controls can resize after appearance; keep their covered area scrollable.
     UIEdgeInsets safeAreaInsets = self.view.safeAreaInsets;
-    UIEdgeInsets edgeInsets = UIEdgeInsetsMake(safeAreaInsets.top, 0, self.bottomScrollInset, 0);
+    CGFloat bottomInset = self.bottomScrollInset;
+    if (!self.videoViewController && [self _hasContentBelowImage]) {
+        CGFloat contentBelowImage = self.tableView.contentSize.height - [self _listContentOriginY];
+        bottomInset = MAX(bottomInset, CGRectGetHeight(self.tableView.bounds) - safeAreaInsets.top - contentBelowImage);
+    }
+    UIEdgeInsets edgeInsets = UIEdgeInsetsMake(safeAreaInsets.top, 0, bottomInset, 0);
     if (!UIEdgeInsetsEqualToEdgeInsets(self.tableView.contentInset, edgeInsets)) {
         self.tableView.contentInset = edgeInsets;
     }
-    if (!UIEdgeInsetsEqualToEdgeInsets(self.tableView.scrollIndicatorInsets, edgeInsets)) {
-        self.tableView.scrollIndicatorInsets = edgeInsets;
+    UIEdgeInsets indicatorInsets = UIEdgeInsetsMake(safeAreaInsets.top, 0, self.bottomScrollInset, 0);
+    if (!UIEdgeInsetsEqualToEdgeInsets(self.tableView.scrollIndicatorInsets, indicatorInsets)) {
+        self.tableView.scrollIndicatorInsets = indicatorInsets;
     }
     if (_didWillAppear) {
         self.tableView.contentOffset = CGPointMake(0, -safeAreaInsets.top);
+    }
+    BOOL wasAtChapterList = ABS(self.tableView.contentOffset.y - _chapterListTargetY) < 0.5;
+    if (_chapterListAnchorActive && (_scrollingToChapterList || wasAtChapterList || _chapterListTransitionActive)) {
+        CGFloat y = [self _listContentOriginY] - self.tableView.adjustedContentInset.top;
+        if (ABS(y - _chapterListTargetY) > 0.5) {
+            _chapterListTargetY = y;
+            [self.tableView setContentOffset:CGPointMake(0, y) animated:!_chapterListTransitionActive];
+        }
     }
 
     if (self.transcriptVisible) {
@@ -2973,19 +3033,25 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
 }
 
+- (CGSize)_artworkSize
+{
+    CGRect bounds = self.view.bounds;
+    CGFloat width = MAX(CGRectGetWidth(bounds) - self.view.safeAreaInsets.left - self.view.safeAreaInsets.right, 1);
+    CGFloat chevronHeight = [self _hasContentBelowImage] ? 44 : 0;
+    CGFloat availableHeight = CGRectGetHeight(bounds) - self.view.safeAreaInsets.top - self.bottomScrollInset - chevronHeight;
+    return CGSizeMake(width, MAX(1, MIN(width, availableHeight)));
+}
+
+- (CGRect)_contentFrameForArtworkSize:(CGSize)size
+{
+    UIEdgeInsets safeArea = self.view.safeAreaInsets;
+    return CGRectMake(safeArea.left, 0, size.width, size.height);
+}
+
 - (void) layoutHeaderView
 {
     CGRect b = self.view.bounds;
-    self.rectCollection = self.view.bounds;
-    
-    if (UIInterfaceOrientationIsPortrait([self getDeviceOrientation]))
-    {
-        self.rectCollection = CGRectMake(0, 0, CGRectGetWidth(b), CGRectGetHeight(b));
-    }
-    else
-    {
-        self.rectCollection = CGRectMake(0, 0, CGRectGetHeight(b), CGRectGetWidth(b));
-    }
+    self.rectCollection = b;
     
     if (self.videoViewController)
     {
@@ -3012,7 +3078,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         self.tableView.tableHeaderView = playerView;
     } else {
         
-        CGRect newFrameTemp = CGRectMake(0, 0, CGRectGetWidth(b), CGRectGetWidth(b));
+        CGRect newFrameTemp = (CGRect){CGPointZero, [self _artworkSize]};
         
         UICollectionViewFlowLayout *layout = [[UICollectionViewFlowLayout alloc] init];
         layout.sectionInset = UIEdgeInsetsMake(0, 0, 0, 0);
@@ -3020,57 +3086,41 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [layout setMinimumInteritemSpacing:0.0f];
         [layout setMinimumLineSpacing:0.0f];
         
-        if (UIInterfaceOrientationIsPortrait([self getDeviceOrientation]))
-        {
-            CGFloat size = MAX(CGRectGetWidth(b), 1);
-            newFrameTemp = CGRectMake(0, 0, size, size);
-            layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.width, 1), MAX(self.view.bounds.size.width, 1));
-        }
-        else
-        {
-            CGRect wb = [[self getKeyWindow] bounds];
-            CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
-            CGFloat controllerHeight = (MAX(CGRectGetHeight(wb)-statusbarHeight-44-CGRectGetWidth(wb), 184) + 96);
-            if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
-                controllerHeight -= 60;
-            }
-
-            CGFloat width = MAX(CGRectGetHeight(self.rectCollection), 1);
-            CGFloat height = MAX(CGRectGetWidth(self.rectCollection) - controllerHeight, 1);
-            newFrameTemp = CGRectMake(0, 0, width, height);
-            layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.height, 1), MAX(self.view.bounds.size.width - controllerHeight, 1));
-        }
+        layout.itemSize = newFrameTemp.size;
 
         self.chapterImagesCollection.collectionViewLayout = layout;
-        self.imageView.frame = newFrameTemp;
-        self.chapterImagesCollection.frame = newFrameTemp;
-        self.transcriptContainerView.frame = newFrameTemp;
+        CGRect contentFrame = [self _contentFrameForArtworkSize:newFrameTemp.size];
+        self.imageView.frame = contentFrame;
+        self.chapterImagesCollection.frame = contentFrame;
+        self.transcriptContainerView.frame = contentFrame;
         [self.transcriptContainerView layoutIfNeeded];
-        CGFloat pickerMaxWidth = MIN(280.0, MAX(CGRectGetWidth(newFrameTemp) - 12.0, 80.0));
+        CGRect transcriptBounds = self.transcriptContainerView.bounds;
+        CGFloat pickerMaxWidth = MIN(280.0, MAX(CGRectGetWidth(transcriptBounds) - 12.0, 80.0));
         CGSize pickerSize = [self.transcriptPickerButton sizeThatFits:CGSizeMake(pickerMaxWidth, 24.0)];
         pickerSize.width = MIN(MAX(pickerSize.width + 4.0, 56.0), pickerMaxWidth);
         pickerSize.height = 22.0;
-        self.transcriptPickerButton.frame = CGRectMake(CGRectGetMaxX(newFrameTemp) - pickerSize.width - 6.0,
-                                                       CGRectGetMaxY(newFrameTemp) - pickerSize.height - 1.0,
+        self.transcriptPickerButton.frame = CGRectMake(CGRectGetMaxX(transcriptBounds) - pickerSize.width - 6.0,
+                                                       CGRectGetMaxY(transcriptBounds) - pickerSize.height - 1.0,
                                                        pickerSize.width,
                                                        pickerSize.height);
         // Search button: top-right, aligned with picker button's trailing edge
         CGFloat searchBtnSize = 36;
-        self.transcriptSearchButton.frame = CGRectMake(CGRectGetMaxX(newFrameTemp) - searchBtnSize - 16,
+        self.transcriptSearchButton.frame = CGRectMake(CGRectGetMaxX(transcriptBounds) - searchBtnSize - 16,
                                                         8, searchBtnSize, searchBtnSize);
         // Search bar: full width, only layout internal elements (frame set by open/close animation)
-        [self _layoutTranscriptSearchBarInternalWithWidth:CGRectGetWidth(newFrameTemp) - 32];
+        [self _layoutTranscriptSearchBarInternalWithWidth:CGRectGetWidth(transcriptBounds) - 32];
         CGFloat verticalInset = MAX((CGRectGetHeight(self.transcriptTextView.bounds) * 0.5f) - 36.0f, 0);
         self.transcriptTextView.contentInset = UIEdgeInsetsMake(verticalInset, 0, verticalInset, 0);
 
         BOOL hasContent = [self _hasContentBelowImage];
-        CGFloat chevronAreaHeight = hasContent ? 25.0f : 0.0f;
+        CGFloat chevronAreaHeight = hasContent ? 44.0f : 0.0f;
         CGRect chapterViewFrame = newFrameTemp;
+        chapterViewFrame.size.width = CGRectGetWidth(b);
         chapterViewFrame.size.height += chevronAreaHeight;
         self.chapterView.frame = chapterViewFrame;
 
         chevronIndicatorView.hidden = !hasContent;
-        chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
+        chevronIndicatorView.frame = CGRectMake(CGRectGetMinX(contentFrame), CGRectGetHeight(newFrameTemp), CGRectGetWidth(contentFrame), chevronAreaHeight);
         chevronIndicatorView.tintColor = ICMutedTextColor;
 
         self.tableView.scrollEnabled = YES;
@@ -3094,68 +3144,49 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)orientationDidChange
 {
-    CGRect b = self.rectCollection;
-
     UICollectionViewFlowLayout *layout = [[UICollectionViewFlowLayout alloc] init];
     layout.sectionInset = UIEdgeInsetsMake(0, 0, 0, 0);
     layout.scrollDirection = UICollectionViewScrollDirectionHorizontal;
     [layout setMinimumInteritemSpacing:0.0f];
     [layout setMinimumLineSpacing:0.0f];
 
-    CGRect newFrameTemp = CGRectMake(0, 0, CGRectGetWidth(b), CGRectGetWidth(b));
-
-    if (UIInterfaceOrientationIsPortrait([self getDeviceOrientation]))
-    {
-        CGFloat size = MAX(CGRectGetWidth(b), 1);
-        newFrameTemp = CGRectMake(0, 0, size, size);
-        layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.width, 1), MAX(self.view.bounds.size.width, 1));
-    }
-    else
-    {
-        CGRect wb = [[self getKeyWindow] bounds];
-        CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
-        CGFloat controllerHeight = (MAX(CGRectGetHeight(wb)-statusbarHeight-44-CGRectGetWidth(wb), 184) + 96);
-        if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
-            controllerHeight -= 60;
-        }
-
-        CGFloat width = MAX(CGRectGetHeight(b), 1);
-        CGFloat height = MAX(CGRectGetWidth(b) - controllerHeight, 1);
-        newFrameTemp = CGRectMake(0, 0, width, height);
-        layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.height, 1), MAX(self.view.bounds.size.width - controllerHeight, 1));
-    }
+    CGRect newFrameTemp = (CGRect){CGPointZero, [self _artworkSize]};
+    layout.itemSize = newFrameTemp.size;
 
     self.chapterImagesCollection.collectionViewLayout = layout;
-    self.imageView.frame = newFrameTemp;
-    self.chapterImagesCollection.frame = newFrameTemp;
-    self.transcriptContainerView.frame = newFrameTemp;
+    CGRect contentFrame = [self _contentFrameForArtworkSize:newFrameTemp.size];
+    self.imageView.frame = contentFrame;
+    self.chapterImagesCollection.frame = contentFrame;
+    self.transcriptContainerView.frame = contentFrame;
     [self.transcriptContainerView layoutIfNeeded];
-    CGFloat pickerMaxWidth = MIN(280.0, MAX(CGRectGetWidth(newFrameTemp) - 12.0, 80.0));
+    CGRect transcriptBounds = self.transcriptContainerView.bounds;
+    CGFloat pickerMaxWidth = MIN(280.0, MAX(CGRectGetWidth(transcriptBounds) - 12.0, 80.0));
     CGSize pickerSize = [self.transcriptPickerButton sizeThatFits:CGSizeMake(pickerMaxWidth, 24.0)];
     pickerSize.width = MIN(MAX(pickerSize.width + 4.0, 56.0), pickerMaxWidth);
     pickerSize.height = 22.0;
-    self.transcriptPickerButton.frame = CGRectMake(CGRectGetMaxX(newFrameTemp) - pickerSize.width - 6.0,
-                                                   CGRectGetMaxY(newFrameTemp) - pickerSize.height - 1.0,
+    self.transcriptPickerButton.frame = CGRectMake(CGRectGetMaxX(transcriptBounds) - pickerSize.width - 6.0,
+                                                   CGRectGetMaxY(transcriptBounds) - pickerSize.height - 1.0,
                                                    pickerSize.width,
                                                    pickerSize.height);
     // Search button: top-right, aligned with picker button's trailing edge
     {
         CGFloat searchBtnSize = 36;
-        self.transcriptSearchButton.frame = CGRectMake(CGRectGetMaxX(newFrameTemp) - searchBtnSize - 16,
+        self.transcriptSearchButton.frame = CGRectMake(CGRectGetMaxX(transcriptBounds) - searchBtnSize - 16,
                                                         8, searchBtnSize, searchBtnSize);
     }
-    [self _layoutTranscriptSearchBarInternalWithWidth:CGRectGetWidth(newFrameTemp) - 32];
+    [self _layoutTranscriptSearchBarInternalWithWidth:CGRectGetWidth(transcriptBounds) - 32];
     CGFloat verticalInset = MAX((CGRectGetHeight(self.transcriptTextView.bounds) * 0.5f) - 36.0f, 0);
     self.transcriptTextView.contentInset = UIEdgeInsetsMake(verticalInset, 0, verticalInset, 0);
 
     BOOL hasContent = [self _hasContentBelowImage];
-    CGFloat chevronAreaHeight = hasContent ? 25.0f : 0.0f;
+    CGFloat chevronAreaHeight = hasContent ? 44.0f : 0.0f;
     CGRect chapterViewFrame = newFrameTemp;
+    chapterViewFrame.size.width = CGRectGetWidth(self.view.bounds);
     chapterViewFrame.size.height += chevronAreaHeight;
     self.chapterView.frame = chapterViewFrame;
 
     chevronIndicatorView.hidden = !hasContent;
-    chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
+    chevronIndicatorView.frame = CGRectMake(CGRectGetMinX(contentFrame), CGRectGetHeight(newFrameTemp), CGRectGetWidth(contentFrame), chevronAreaHeight);
 
     self.tableView.scrollEnabled = YES;
 
@@ -3753,13 +3784,14 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
 {
+    CGRect contentBounds = UIEdgeInsetsInsetRect(tableView.bounds, tableView.safeAreaInsets);
     if ([self _hasChapters] && indexPath.section == [self _chaptersSection])
     {
         if (indexPath.row >= [self.chapters count]) {
             return 44;
         }
         CDChapter* chapter = [self.chapters objectAtIndex:indexPath.row];
-        return [ChaptersTableViewCell proposedHeightWithTitle:chapter.title tableBounds:self.tableView.bounds];
+        return [ChaptersTableViewCell proposedHeightWithTitle:chapter.title tableBounds:contentBounds];
     }
     else if ([self _hasBookmarks] && indexPath.section == [self _bookmarksSection])
     {
@@ -3767,7 +3799,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             return 44;
         }
         CDBookmark* bookmark = [self.bookmarks objectAtIndex:indexPath.row];
-        return [PlayerBookmarksTableViewCell proposedHeightWithTitle:bookmark.title tableBounds:self.tableView.bounds];
+        return [PlayerBookmarksTableViewCell proposedHeightWithTitle:bookmark.title tableBounds:contentBounds];
     }
     else if ([self _hasUpNext] && indexPath.section == [self _upNextSection])
     {
@@ -3775,7 +3807,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             return 44;
         }
         CDEpisode* episode = [AudioSession sharedAudioSession].playlist[indexPath.row];
-        return [EpisodesTableViewCell proposedHeightWithObjectValue:episode tableSize:self.tableView.bounds.size imageSize:CGSizeMake(56, 56) embedded:YES editing:self.editing upNextStyle:YES];
+        return [EpisodesTableViewCell proposedHeightWithObjectValue:episode tableSize:contentBounds.size imageSize:CGSizeMake(56, 56) embedded:YES editing:self.editing upNextStyle:YES];
     }
     return 0;
 }
@@ -4104,25 +4136,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (CGSize)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout *)collectionViewLayout sizeForItemAtIndexPath:(NSIndexPath *)indexPath
 {
-    CGRect b = self.rectCollection;
-    CGRect wb = [[self getKeyWindow] bounds];
-    CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
-    CGFloat controllerHeight = (MAX(CGRectGetHeight(wb)-statusbarHeight-44-CGRectGetWidth(wb), 184) + 96);
-    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
-        controllerHeight -= 60;
-    }
-
-    if (UIInterfaceOrientationIsPortrait([self getDeviceOrientation]))
-    {
-        CGFloat size = MAX(CGRectGetWidth(b), 1);
-        return CGSizeMake(size, size);
-    }
-    else
-    {
-        CGFloat width = MAX(CGRectGetHeight(b), 1);
-        CGFloat height = MAX(CGRectGetWidth(b) - controllerHeight, 1);
-        return CGSizeMake(width, height);
-    }
+    return [self _artworkSize];
 }
 
 - (__kindof UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath
@@ -4240,6 +4254,10 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
 {
+    if (scrollView == self.tableView) {
+        _scrollingToChapterList = NO;
+        _chapterListAnchorActive = NO;
+    }
     if (scrollView == self.transcriptTextView) {
         self.transcriptAutoFollowSuspended = YES;
         if (!self.transcriptSearchActive) {
@@ -4275,6 +4293,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView
 {
+    if (scrollView == self.tableView) {
+        _scrollingToChapterList = NO;
+    }
     if (scrollView == self.tableView && self.pendingTranscriptShowAfterScrollToTop) {
         self.pendingTranscriptShowAfterScrollToTop = NO;
         self.transcriptVisible = YES;

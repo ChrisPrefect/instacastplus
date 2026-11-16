@@ -88,7 +88,10 @@
     
     UIBezierPath* bezierPath = BezierPathForRoundedRect(rect, radius);
     bezierPath.lineWidth = 2;
-    [bezierPath strokeWithBlendMode:kCGBlendModeDestinationAtop alpha:1.f];
+    // Measured in the app: a DestinationAtop stroke leaves nothing in this view's backing
+    // store, so the ring never appeared and the indeterminate state was an empty square
+    // (import HUD, pull-to-refresh, search activity). Stroke the ring normally.
+    [bezierPath stroke];
     
     if (progress < 1)
     {
@@ -116,7 +119,7 @@
     
     UIBezierPath* bezierPath = BezierPathForRoundedRect(rect, radius);
     bezierPath.lineWidth = 2;
-    [bezierPath strokeWithBlendMode:kCGBlendModeDestinationAtop alpha:1.f];
+    [bezierPath stroke];
 
     UIBezierPath* clipPath = [UIBezierPath bezierPath];
     [clipPath moveToPoint:CGPointMake(CGRectGetMidX(rect), CGRectGetMinY(rect))];
@@ -161,7 +164,7 @@
     [fillPath fill];
     
     bezierPath.lineWidth = 2;
-    [bezierPath strokeWithBlendMode:kCGBlendModeDestinationAtop alpha:1.f];
+    [bezierPath stroke];
 }
 
 - (void) drawRect:(CGRect)rect

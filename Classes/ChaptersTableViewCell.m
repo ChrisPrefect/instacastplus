@@ -117,7 +117,7 @@ static CGFloat const kChapterTitleFontSize = 16.0f;
 
     self.selectedBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
 	
-	CGRect b = self.bounds;
+	CGRect b = UIEdgeInsetsInsetRect(self.bounds, UIEdgeInsetsMake(0, self.safeAreaInsets.left, 0, self.safeAreaInsets.right));
     CGFloat scale = [ICAppearanceManager sharedManager].fontSizeScale;
     CGFloat numWidth = 20 * scale;
     CGFloat numHeight = 17 * scale;
@@ -130,13 +130,13 @@ static CGFloat const kChapterTitleFontSize = 16.0f;
                                                                    context:nil].size;
     IC_SIZE_INTEGRAL(titleSize);
 
-	CGRect titleRect = CGRectMake(15+numWidth+15, 11, CGRectGetWidth(b)-15-numWidth-15-timeReserve-15, titleSize.height);
+	CGRect titleRect = CGRectMake(CGRectGetMinX(b)+15+numWidth+15, 11, CGRectGetWidth(b)-15-numWidth-15-timeReserve-15, titleSize.height);
 	self.textLabel.frame = [self.contentView convertRect:titleRect fromView:self];
 
-	CGRect numRect = CGRectMake(15, 12.f, numWidth, numHeight);
+	CGRect numRect = CGRectMake(CGRectGetMinX(b)+15, 12.f, numWidth, numHeight);
 	self.numLabel.frame = [self.contentView convertRect:numRect fromView:self];
 
-	CGRect timeRect = CGRectMake(CGRectGetWidth(b)-15-timeWidth, 12.f, timeWidth, timeHeight);
+	CGRect timeRect = CGRectMake(CGRectGetMaxX(b)-15-timeWidth, 12.f, timeWidth, timeHeight);
 	self.timeLabel.frame = [self.contentView convertRect:timeRect fromView:self];
 
     self.linkButton.frame = CGRectMake(CGRectGetWidth(b)-100, 0, 100, CGRectGetHeight(b));

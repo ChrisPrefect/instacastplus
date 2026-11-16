@@ -1,0 +1,16 @@
+{
+  "container": "iCloud.com.iteconomy.instacastplus",
+  "schema_origin": "Normalized reconstruction of the production/development CloudKit Console export recorded in this chat on 2026-11-02; both exports were compared and equal. Not a live verification on 2026-11-09.",
+  "schema_sha256": "80807e236f022daf634ddcd76dbdd136315ae0bbfeee3dfb4d1151e5a862dbec",
+  "schema_verified_at": "2026-11-02",
+  "source_files": {
+    "Classes/ICiCloudSyncManager+EngineRecords.swift": "3d4e9c2f4b87098a798e7e54dc19369f58373693ec59b1dec8b2009a1cb990f1",
+    "Classes/ICiCloudSyncManager+LocalChanges.swift": "caaad62dd5202f3c94ff54941bc981e20df1da98917733561db43cd98743fde6",
+    "Classes/ICiCloudSyncManager+Metadata.swift": "9667df2d3ffb6c2c0691e6198355dcd77b84882c7962c70e867a643f6be78495",
+    "Classes/ICiCloudSyncManager+RemoteApply.swift": "944d8dc53aa8efe3cd8a6423c4c20c067e3b16f554df00a97fedd8d0860ebc26",
+    "Classes/ICiCloudSyncManager.swift": "effc37eb34b0d39eac55c3a3b142ec256b08004993bf7757bd1a83a8b6d23a95",
+    "Classes/ICiCloudSyncTypes.swift": "7d593eb13b102fbad4d793b01a6e9531f8fb8d559d88475d8ce6be2189f89f62"
+  },
+  "source_reviewed_at": "2026-11-09",
+  "team": "L95F4M2LHG"
+}

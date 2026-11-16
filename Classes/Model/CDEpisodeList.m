@@ -302,7 +302,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 // exporter calls that for every list on every Core Data save, and the resulting
 // full two-stage fetches over the whole episode table kept a background thread above
 // 80% CPU until the system killed the app (cpu_resource_fatal, 12.06.).
-- (NSUInteger) _countEpisodesViaStore
+- (NSUInteger) countEpisodesInStore
 {
     NSManagedObjectContext* context = self.managedObjectContext;
     if (!context) {
@@ -503,7 +503,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         // a dangling pointer (both iPad SIGSEGVs of 10.06.2026, triggered on every save
         // during the sync). Count synchronously inside the owning context instead.
         if (self.managedObjectContext.concurrencyType != NSMainQueueConcurrencyType) {
-            return [self _countEpisodesViaStore];
+            return [self countEpisodesInStore];
         }
         [self perform:^(id sender) {
             [self calculateNumberOfEpisodesCompletion:^(NSUInteger numberOfEpisodes) {
@@ -522,7 +522,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 
     // See numberOfEpisodes: never capture a non-main context in the async machinery.
     if (self.managedObjectContext.concurrencyType != NSMainQueueConcurrencyType) {
-        completion([self _countEpisodesViaStore]);
+        completion([self countEpisodesInStore]);
         return;
     }
     
@@ -696,8 +696,16 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 
 - (void) invalidateSortedEpisodes
 {
+    // Sorted results are fetched on demand. The persisted `episodes` relationship is a
+    // legacy materialized cache: no current code path writes it, and while it is
+    // non-empty it overrides the live filter predicate. Invalidation (after every
+    // episode/feed save) must therefore clear it, or a list carrying old cached
+    // members would never update again. Only touch it when it actually holds members:
+    // assigning nil to an empty relationship still dirties the list on every save.
     [self willChangeValueForKey:@"sortedEpisodes"];
-    self.episodes = nil;
+    if ([self.episodes count] > 0) {
+        self.episodes = nil;
+    }
     [self didChangeValueForKey:@"sortedEpisodes"];
 }
 

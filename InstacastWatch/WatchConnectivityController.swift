@@ -25,6 +25,12 @@ final class WatchConnectivityController: NSObject, ObservableObject, WCSessionDe
     private var manifestInboxProcessingRequested = false
     private var storageStatusScanInFlight = false
     private var storageStatusResendRequested = false
+    private var lastSentStorageMeasurements: WatchStorageStatusMeasurements?
+    private var lastSentStoragePlayingHash = ""
+    private var lastSentStorageDate: Date?
+    // Launch, manifest, download and cleanup each request a status; measured: four messages
+    // within one second that differed only by a few KB of free space.
+    private static let storageStatusRepeatInterval: TimeInterval = 10
 
     var supportsDeletionAcknowledgementBatches: Bool {
         phoneWatchEventProtocolVersion >= 2
@@ -273,10 +279,26 @@ final class WatchConnectivityController: NSObject, ObservableObject, WCSessionDe
 
     private func finishStorageStatus(measurements: WatchStorageStatusMeasurements) {
         WatchStorageManager.shared.recordMeasurements(measurements)
+        let playingHash = WatchPlayerController.shared.playingEpisodeHash ?? ""
+        let now = Date()
+        // The phone already holds this status when it was sent moments ago and nothing it
+        // shows has changed; any change of counts, sizes or the playing episode goes out.
+        if let lastMeasurements = lastSentStorageMeasurements,
+           let lastDate = lastSentStorageDate,
+           now.timeIntervalSince(lastDate) < Self.storageStatusRepeatInterval,
+           playingHash == lastSentStoragePlayingHash,
+           measurements.reportsSameState(as: lastMeasurements) {
+            storageStatusScanInFlight = false
+            if storageStatusResendRequested {
+                storageStatusResendRequested = false
+                sendStorageStatus()
+            }
+            return
+        }
         // Sum of what the manifest *wants* on the watch (actual size if known, else the expected size).
         // Comparing this against freeBytes + downloadedBytes shows at a glance whether the desired
         // set can ever fit — the root signal for the eviction/re-download thrash.
-        send(type: "watch.storageStatus", payload: [
+        let sent = send(type: "watch.storageStatus", payload: [
             "freeBytes": measurements.freeBytes,
             // Diagnostics only: the old typed Swift Int value that truncated into negatives on
             // watchOS arm64_32. freeBytes is the raw NSNumber Int64 value used for gating.
@@ -288,10 +310,15 @@ final class WatchConnectivityController: NSObject, ObservableObject, WCSessionDe
             "downloadedCount": measurements.downloadedCount,
             "downloadedBytes": measurements.downloadedBytes,
             "wantedBytes": measurements.wantedBytes,
-            "playingHash": WatchPlayerController.shared.playingEpisodeHash ?? "",
+            "playingHash": playingHash,
             "watchTimestamp": dateFormatter.string(from: Date()),
             "lastCleanupDate": dateFormatter.string(from: Date()),
         ], delivery: .live)
+        if sent {
+            lastSentStorageMeasurements = measurements
+            lastSentStoragePlayingHash = playingHash
+            lastSentStorageDate = now
+        }
 
         storageStatusScanInFlight = false
         if storageStatusResendRequested {

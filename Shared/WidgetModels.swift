@@ -82,6 +82,73 @@ struct WNowPlaying: Codable, Sendable {
     let hasPreviousEpisode: Bool?       // true if queue has a previous episode
     let hasNextEpisode: Bool?           // true if queue has a next episode
     let timestamp: Date
+    // Time anchor: exact position at `positionTimestamp` (seconds since 1970) and the rate media
+    // time advanced at (0 while paused or stalled). Missing in snapshots of older app versions.
+    var positionSeconds: Double? = nil
+    var positionTimestamp: Double? = nil
+    var playbackRate: Double? = nil
+
+    /// The app exports at least every 10 s while it plays. An older anchor means the app no longer
+    /// runs (terminated during playback): the position is then not projected any further.
+    static let maximumAnchorAge: TimeInterval = 120
+
+    private var anchorDate: Date? {
+        positionTimestamp.map { Date(timeIntervalSince1970: $0) }
+    }
+
+    /// Rate the position advances at, at `date`; 0 when nothing can be projected.
+    func liveRate(at date: Date) -> Double {
+        guard !isPaused, let rate = playbackRate, rate > 0, positionSeconds != nil,
+              let anchor = anchorDate, date.timeIntervalSince(anchor) < Self.maximumAnchorAge,
+              let episode, episode.duration > 0 else { return 0 }
+        return rate
+    }
+
+    /// Media position at `date`, projected from the time anchor while playback runs.
+    func projectedPosition(at date: Date) -> Double? {
+        guard let episode, let position = positionSeconds, let anchor = anchorDate else { return nil }
+        let elapsed = max(0, date.timeIntervalSince(anchor))
+        var projected = position + liveRate(at: date) * elapsed
+        if episode.duration > 0 {
+            projected = min(projected, Double(episode.duration))
+        }
+        return max(0, projected)
+    }
+
+    /// Wall-clock interval over which a `ProgressView(timerInterval:)` fills exactly like the
+    /// episode progresses at the current rate; nil while paused (static bar).
+    func liveProgressInterval(at date: Date) -> ClosedRange<Date>? {
+        let rate = liveRate(at: date)
+        guard rate > 0, let episode, let position = positionSeconds, let anchor = anchorDate else { return nil }
+        let start = anchor.addingTimeInterval(-position / rate)
+        let end = start.addingTimeInterval(Double(episode.duration) / rate)
+        guard start < end, end > date else { return nil }
+        return start...end
+    }
+
+    /// When the minute-resolution texts (elapsed, remaining) or the current chapter next change
+    /// while playback runs; nil while nothing moves.
+    func nextDisplayChange(after date: Date) -> Date? {
+        let rate = liveRate(at: date)
+        guard rate > 0, let episode, let position = projectedPosition(at: date) else { return nil }
+        let remaining = Double(episode.duration) - position
+        guard remaining > 0 else { return nil }
+        var mediaSeconds = [60 - position.truncatingRemainder(dividingBy: 60)]
+        let remainingToFlip = remaining.truncatingRemainder(dividingBy: 60)
+        mediaSeconds.append(remainingToFlip > 0 ? remainingToFlip : 60)
+        if let nextChapter = chapters?.first(where: { $0.startTime > position + 0.5 }) {
+            mediaSeconds.append(nextChapter.startTime - position)
+        }
+        let wallSeconds = (mediaSeconds.min() ?? 60) / rate
+        // A little past the boundary so the projection lands on the new value.
+        return date.addingTimeInterval(max(1, wallSeconds + 0.5))
+    }
+
+    /// Copy whose episode position is the projected position at `date` (static texts, chapter).
+    func projected(at date: Date) -> WNowPlaying {
+        guard let episode, let position = projectedPosition(at: date) else { return self }
+        return withEpisode(episode.withPosition(Int32(position.rounded(.down))))
+    }
 
     var hasSleepTimer: Bool {
         if isPaused {
@@ -115,7 +182,10 @@ struct WNowPlaying: Codable, Sendable {
                     skipBackwardSeconds: skipBackwardSeconds, playbackSpeed: playbackSpeed,
                     hasPreviousEpisode: hasPreviousEpisode,
                     hasNextEpisode: hasNextEpisode,
-                    timestamp: timestamp)
+                    timestamp: timestamp,
+                    positionSeconds: positionSeconds,
+                    positionTimestamp: positionTimestamp,
+                    playbackRate: playbackRate)
     }
 }
 

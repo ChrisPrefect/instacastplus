@@ -1535,10 +1535,10 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
         if ([App respondsToSelector:@selector(registerForRemoteNotifications)]) {
             [App registerForRemoteNotifications];
         }
-        
-        if (![App isRegisteredForRemoteNotifications]) {
-            _flags.apnRegisterSuccess = 0;
-        }
+        // The result arrives in -application:didRegisterForRemoteNotificationsWithDeviceToken:.
+        // -isRegisteredForRemoteNotifications was asked here only to set the flag to the value
+        // it already has, and it waits synchronously for the push service on the main
+        // thread: 25.9 s inside didFinishLaunching on a cold-booted simulator (measured).
     }
 }
 

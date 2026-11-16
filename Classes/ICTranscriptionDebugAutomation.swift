@@ -19,7 +19,13 @@ import UIKit
     private static var serverFlowTranscriptController: PlayerInfoViewController_v5?
     #endif
 
+    /// The automation drives transcription tests. A public release build has no transcription
+    /// features (ICAITranscriptionFeaturesAvailable), so it must not poll a command file or
+    /// accept commands by URL, launch argument or dictionary either.
+    private static var isAvailableInThisBuild: Bool { ICAITranscriptionFeaturesAvailable() }
+
     @objc static func startCommandProcessing() {
+        guard isAvailableInThisBuild else { return }
         guard !didStartCommandProcessing else { return }
         didStartCommandProcessing = true
 
@@ -42,6 +48,7 @@ import UIKit
     }
 
     @objc static func handleLaunchArguments() -> Bool {
+        guard isAvailableInThisBuild else { return false }
         guard let command = commandFromLaunchArguments(ProcessInfo.processInfo.arguments) else {
             return false
         }
@@ -55,11 +62,12 @@ import UIKit
     }
 
     @objc static func handleCommandDictionary(_ command: NSDictionary) -> Bool {
-        handleCommandDictionary(command, source: "dictionary", commandID: command["id"] as? String)
+        guard isAvailableInThisBuild else { return false }
+        return handleCommandDictionary(command, source: "dictionary", commandID: command["id"] as? String)
     }
 
     @objc static func handle(_ url: URL) -> Bool {
-        guard url.scheme == "instacastplus", url.host == "transcription-debug" else {
+        guard isAvailableInThisBuild, url.scheme == "instacastplus", url.host == "transcription-debug" else {
             return false
         }
 

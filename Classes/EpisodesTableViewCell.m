@@ -740,6 +740,7 @@
     
     
     CGRect bounds = self.bounds;
+    bounds.size.width -= self.safeAreaInsets.left + self.safeAreaInsets.right;
     CGRect contentBounds = self.contentView.bounds;
     contentBounds.origin = CGPointZero;
     self.panningContentView.frame = contentBounds;
@@ -747,7 +748,8 @@
     
 	CGRect textLabelRect = self.titleLabel.frame;
     CGRect detailLabelRect = self.summaryLabel.frame;
-    CGRect imageViewRect = CGRectMake(10, 5, 56, 56);
+    // UIKit already indents the content view for the editing control.
+    CGRect imageViewRect = CGRectMake(usesTableEditingLayout ? 5 : 10, 5, 56, 56);
     
     // set consume indicator frame
 	CGRect consumeIndicatorFrame = CGRectMake(10, 9, 10, 10);
@@ -762,8 +764,6 @@
 
 	if (usesTableEditingLayout)
     {
-        imageViewRect.origin.x = -CGRectGetMinX(self.contentView.frame)-56;
-        
         textLabelRect.origin.x = 15;
         detailLabelRect.origin.x = 15;
         consumeIndicatorFrame.origin.x = 0;
@@ -781,9 +781,9 @@
     
     if (self.iconView.image)
     {
-        CGFloat imageRightOffset = (!self.showsEditControl) ? CGRectGetWidth(imageViewRect) + 10 : 38;
+        CGFloat imageRightOffset = CGRectGetWidth(imageViewRect) + 10;
         
-        textFieldWidth -= CGRectGetWidth(imageViewRect) + 10;
+        textFieldWidth -= imageRightOffset;
         textLabelRect.origin.x += imageRightOffset;
         consumeIndicatorFrame.origin.x += imageRightOffset;
         videoIndicatorFrame.origin.x += imageRightOffset;

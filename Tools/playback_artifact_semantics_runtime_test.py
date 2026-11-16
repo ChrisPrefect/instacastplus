@@ -39,29 +39,44 @@ precondition(before != Validator.artifactSnapshotIdentifier(at:file))
 precondition(Validator.artifactSnapshotIdentifier(at:nil) == nil)
 print("Checkpoint ranges, generated interval semantics and file replacement snapshot checks passed")
 '''.replace('CHECKPOINT',checkpoint).replace('VALIDATOR',validator).replace('SNAPSHOT',snapshot)
-w=(R/'Classes/WidgetDataExporter.m').read_text();start=w.index('        NSInteger targetIdx =',w.index('} else if ([action isEqualToString:@"skipchapter"])'));end=w.index('\n    }',start);branch=w[start:end]
+w=(R/'Classes/WidgetDataExporter.m').read_text();start=w.index('        NSInteger targetIdx =',w.index('    if ([action isEqualToString:@"skipchapter"]) {'));end=w.index('\n    }',start);branch=w[start:end]
 objc='''#import <Foundation/Foundation.h>
 @interface ICMetadataChapter:NSObject @end
 @implementation ICMetadataChapter @end
 @interface Playback:NSObject
 @property NSArray *chapters;
 @property NSString *chapterTimelineIdentifier;
+@property BOOL ready;
 @property int seeks;
+@property int plays;
 - (void)seekToChapter:(ICMetadataChapter*)chapter;
+- (void)play;
 @end
 @implementation Playback
 - (void)seekToChapter:(ICMetadataChapter*)chapter { self.seeks++; }
+- (void)play { self.plays++; }
 @end
-static void invoke(Playback *pm, NSNumber *chapterIndex, NSString *timelineIdentifier) {
- BOOL scheduleDelayedExport=NO;
+@interface Harness:NSObject
+@property int exports;
+@property int deferred;
+@property NSNumber *deferredStart;
+@end
+@implementation Harness
+- (void)_scheduleControlActionNowPlayingExport { self.exports++; }
+- (void)_performAction:(NSString*)action afterLoadingEpisode:(NSString*)episodeIdentifier chapterStartTime:(NSNumber*)chapterStartTime { self.deferred++; self.deferredStart=chapterStartTime; }
+- (void)invoke:(Playback*)pm index:(NSNumber*)chapterIndex timeline:(NSString*)timelineIdentifier episode:(NSString*)episodeIdentifier start:(NSNumber*)chapterStartTime {
+ NSString *action=@"skipchapter";
  BRANCH
 }
+@end
 int main(){ @autoreleasepool {
- Playback *p=[Playback new];p.chapters=@[[ICMetadataChapter new]];p.chapterTimelineIdentifier=@"episode-A-timeline-1";
- invoke(p,@0,@"episode-A-timeline-1");NSCAssert(p.seeks==1,@"Current action accepted");
- p.chapterTimelineIdentifier=@"episode-A-timeline-2";invoke(p,@0,@"episode-A-timeline-1");NSCAssert(p.seeks==1,@"Old same-episode timeline rejected");
- p.chapterTimelineIdentifier=@"episode-B-timeline-1";invoke(p,@0,@"episode-A-timeline-1");NSCAssert(p.seeks==1,@"Old episode action rejected");
- invoke(p,@0,nil);invoke(p,@-1,p.chapterTimelineIdentifier);invoke(p,@1,p.chapterTimelineIdentifier);NSCAssert(p.seeks==1,@"Missing identity and bad index rejected");
+ Harness *h=[Harness new];
+ Playback *p=[Playback new];p.ready=YES;p.chapters=@[[ICMetadataChapter new]];p.chapterTimelineIdentifier=@"episode-A-timeline-1";
+ [h invoke:p index:@0 timeline:@"episode-A-timeline-1" episode:@"A" start:@12.5];NSCAssert(p.seeks==1&&p.plays==1&&h.deferred==0,@"Current action seeks by index and plays, like the app player");
+ p.chapterTimelineIdentifier=@"episode-A-timeline-2";[h invoke:p index:@0 timeline:@"episode-A-timeline-1" episode:nil start:nil];NSCAssert(p.seeks==1&&h.deferred==0,@"Old same-episode timeline without a start time rejected");
+ [h invoke:p index:@0 timeline:@"episode-A-timeline-1" episode:@"A" start:@12.5];NSCAssert(p.seeks==1&&h.deferred==1&&[h.deferredStart isEqual:@12.5],@"Old timeline never seeks by index; selects by episode and start time");
+ p.chapterTimelineIdentifier=@"episode-A-timeline-1";p.ready=NO;[h invoke:p index:@0 timeline:@"episode-A-timeline-1" episode:@"A" start:@12.5];NSCAssert(p.seeks==1&&h.deferred==2,@"Timeline still loading waits for readiness");
+ p.ready=YES;[h invoke:p index:@0 timeline:nil episode:nil start:nil];[h invoke:p index:@-1 timeline:p.chapterTimelineIdentifier episode:nil start:nil];[h invoke:p index:@1 timeline:p.chapterTimelineIdentifier episode:nil start:nil];NSCAssert(p.seeks==1&&h.deferred==2,@"Missing identity and bad index rejected");
  puts("Widget timeline action freshness checks passed");
 } }
 '''.replace('BRANCH',branch)

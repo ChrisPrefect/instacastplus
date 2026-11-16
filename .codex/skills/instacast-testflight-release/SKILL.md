@@ -34,6 +34,8 @@ If a release blocker appears, read the failing log and fix only the explicit roo
 
 ## Workflow
 
+Use `python3 Tools/cloudkit_local_schema.py` for the routine CloudKit comparison. The production schema snapshot is stored in `Tools/CloudKit/production-schema.ckdb`; its provenance and reviewed source fingerprints are stored beside it. Do not open CloudKit Console or request an Apple SMS code for routine uploads. If sources changed, inspect their schema impact locally and record reviewed fingerprints only when the schema remains unchanged. Do not describe this local comparison as a live production check. A real schema change needs separate handling and a confirmed deployment before updating the production snapshot.
+
 1. Inventory the current filesystem contents and current version/build, including uncommitted and untracked files. Do not revert unrelated local changes. Ignore user-specific Xcode state files unless they block the release. Record enough file state to detect relevant changes before upload; do not use a commit or branch as the release boundary.
 2. Confirm the current ASC build state before choosing the next build number. Do not release expired builds or reuse a build number already uploaded for the current release. Do not re-release build `3.4 (10)`, which was already released by the user on 2026-05-23.
 3. If uploading a new build, increment only the build number with `agvtool new-version -all <next-build>`. Leave `MARKETING_VERSION` unchanged unless the user explicitly requests a version bump.
@@ -75,6 +77,8 @@ xcodebuild -exportArchive -archivePath build/TestFlight/InstacastPlus-<version>-
 
 The script sets or updates `What to Test`, enables `autoNotifyEnabled`, adds the build to the external tester group, submits Beta App Review when ASC reports `READY_FOR_BETA_SUBMISSION`, waits for `externalBuildState=IN_BETA_TESTING`, and attempts a tester notification. If ASC returns `Auto-notify already enabled`, treat testers as notified through auto-notify and report that exact status.
 
+If Apple returns `ENTITY_UNPROCESSABLE.ANOTHER_BUILD_IN_REVIEW`, confirm the pending build through ASC. The upload may be complete and available internally while external review is blocked. Report those states separately; do not claim the new build was submitted or notify external testers. Do not reset another build's review queue merely to finish an upload-only request, or leave a polling process running after reporting the result.
+
 ## App Store Connect API
 
 Use the local ASC API key metadata from project docs:
@@ -97,4 +101,4 @@ Stop and report the real ASC error if processing fails, export compliance is mis
 
 ## Final Response
 
-Report the version, build number, archive/upload status, ASC build ID, processing/external-testing status, tester notification status, `What to Test`, local files changed by the build-number update or any release-blocker fix, and the exact release validation commands that succeeded.
+Report the release result, relevant checks and tester notification directly in chat. Do not create or open separate release reports or confirmation documents. Remove temporary files, duplicate exports and task-opened windows after completion; retain release archives, dSYMs, signing credentials and the local CloudKit schema baseline.

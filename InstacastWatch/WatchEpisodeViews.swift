@@ -282,32 +282,45 @@ private struct WatchEpisodeRow: View {
     let playbackPosition: Int
     let isCurrent: Bool
 
+    private var hasError: Bool {
+        episode.status == .failed || episode.hasPendingRemovalError || episode.hasPlaybackFileRemovalError
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            WatchArtworkView(imageURL: episode.imageURL)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 8) {
+                WatchArtworkView(imageURL: episode.imageURL)
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    if episode.consumed {
-                        Image(systemName: "checkmark")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        if episode.consumed {
+                            Image(systemName: "checkmark")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(episode.title)
+                            .font(.headline)
+                            .lineLimit(2)
+                            .foregroundStyle(episode.consumed ? .secondary : .primary)
                     }
-                    Text(episode.title)
-                        .font(.headline)
-                        .lineLimit(2)
-                        .foregroundStyle(episode.consumed ? .secondary : .primary)
+
+                    Text(secondaryText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    if let fraction = progressFraction {
+                        ThinProgressLine(fraction: fraction, tint: progressTint)
+                    }
+
+                    if !hasError {
+                        statusLine
+                            .font(.caption2)
+                    }
                 }
+            }
 
-                Text(secondaryText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                if let fraction = progressFraction {
-                    ThinProgressLine(fraction: fraction, tint: progressTint)
-                }
-
+            if hasError {
                 statusLine
                     .font(.caption2)
             }
@@ -339,7 +352,7 @@ private struct WatchEpisodeRow: View {
             if episode.hasPlaybackFileRemovalError {
                 Label(statusText, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                    .lineLimit(3)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text(playbackText)
@@ -353,7 +366,7 @@ private struct WatchEpisodeRow: View {
         case .failed:
             Label(statusText, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
-                .lineLimit(3)
+                .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
         case .evicted:
             Label(statusText, systemImage: "arrow.down.circle")
@@ -363,7 +376,7 @@ private struct WatchEpisodeRow: View {
             if episode.hasPendingRemovalError {
                 Label(statusText, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                    .lineLimit(3)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Label(statusText, systemImage: "trash")

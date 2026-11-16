@@ -311,7 +311,13 @@ UIImage* ICSkipIntervalImage(BOOL forward, NSInteger seconds, CGFloat pointSize)
                                                                                               weight:UIImageSymbolWeightRegular];
         UIImage* symbol = [[UIImage systemImageNamed:symbolName withConfiguration:config] imageWithTintColor:color
                                                                                               renderingMode:UIImageRenderingModeAlwaysOriginal];
-        CGRect symbolRect = CGRectInset((CGRect){ .origin = CGPointZero, .size = size }, 1.f, 1.f);
+        CGRect symbolBounds = CGRectInset((CGRect){ .origin = CGPointZero, .size = size }, 1.f, 1.f);
+        CGFloat symbolScale = MIN(CGRectGetWidth(symbolBounds) / symbol.size.width,
+                                  CGRectGetHeight(symbolBounds) / symbol.size.height);
+        CGSize symbolSize = CGSizeMake(symbol.size.width * symbolScale, symbol.size.height * symbolScale);
+        CGRect symbolRect = CGRectMake(CGRectGetMidX(symbolBounds) - symbolSize.width / 2,
+                                       CGRectGetMidY(symbolBounds) - symbolSize.height / 2,
+                                       symbolSize.width, symbolSize.height);
         [symbol drawInRect:symbolRect];
 
         NSString* secondsText = [NSString stringWithFormat:@"%ld", (long)seconds];

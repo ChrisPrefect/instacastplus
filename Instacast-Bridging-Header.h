@@ -35,6 +35,8 @@
 // App Intents (Siri / Shortcuts) support
 #import "CDList.h"
 #import "PlayerSpeedButton.h"
+// Widget playback buttons run as AudioPlaybackIntents in the app process
+#import "WidgetDataExporter.h"
 
 #import "TranscriptionQueueViewController.h"
 #if DEBUG && TARGET_OS_SIMULATOR

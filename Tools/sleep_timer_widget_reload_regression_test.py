@@ -19,6 +19,15 @@ def method(name):
     raise ValueError(name)
 
 normal = method('reloadNowPlayingTimeline')
+# Throttled requests are performed once when the interval ends (they used to be dropped).
+helper_start = source.index('    private static func _reloadWhenIntervalEnds')
+helper_brace = source.index('{', helper_start)
+depth = 0
+for helper_end in range(helper_brace, len(source)):
+    depth += (source[helper_end] == '{') - (source[helper_end] == '}')
+    if not depth:
+        break
+trailing = source[helper_start:helper_end + 1]
 state = (method('reloadNowPlayingTimelineForStateChange')
          if 'func reloadNowPlayingTimelineForStateChange()' in source
          else normal.replace('func reloadNowPlayingTimeline()', 'func reloadNowPlayingTimelineForStateChange()'))
@@ -34,6 +43,8 @@ final class WidgetKitHelper: NSObject {
     private static var _lastReloadNowPlaying: Date?
     private static let _minInterval: TimeInterval = 2
     private static var _stateChangeReloadPending = false
+    private static var _trailingReloadKeys = Set<String>()
+    TRAILING
     NORMAL
     STATE
 }
@@ -45,8 +56,13 @@ precondition(WidgetCenter.shared.reloads == 2, "Latest state must survive the no
 WidgetKitHelper.reloadNowPlayingTimelineForStateChange()
 RunLoop.main.run(until: Date().addingTimeInterval(0.05))
 precondition(WidgetCenter.shared.reloads == 3, "A later explicit cancellation must not be dropped")
+WidgetKitHelper.reloadNowPlayingTimeline()
+WidgetKitHelper.reloadNowPlayingTimeline()
+precondition(WidgetCenter.shared.reloads == 3, "Throttled requests wait for the interval end")
+RunLoop.main.run(until: Date().addingTimeInterval(2.4))
+precondition(WidgetCenter.shared.reloads == 4, "A throttled request reloads once at the interval end instead of being dropped")
 print("Semantic widget reload checks passed")
-'''.replace('NORMAL', normal).replace('STATE', state)
+'''.replace('NORMAL', normal).replace('STATE', state).replace('TRAILING', trailing)
 with tempfile.TemporaryDirectory(prefix='instacast-widget-reload-') as directory:
     path = Path(directory)
     file = path / 'main.swift'

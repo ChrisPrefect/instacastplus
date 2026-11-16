@@ -69,11 +69,12 @@
     self.textLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(15)];
     
     CGRect b = self.bounds;
+    CGRect contentBounds = self.contentView.bounds;
     CGFloat yOffset = 0;
     
     CGRect textRect = self.textLabel.frame;
     textRect.origin.x = 15;
-    textRect.size.width = CGRectGetWidth(b) - 30; // Full width minus margins
+    textRect.size.width = CGRectGetWidth(contentBounds) - 30;
     [self.textLabel sizeToFit];
     textRect.size.height = self.textLabel.frame.size.height;
     textRect.origin.y = yOffset + floorf((CGRectGetHeight(b) - textRect.size.height) / 2);
@@ -86,12 +87,12 @@
     [self.editButton sizeToFit];
     CGRect buttonFrame = self.editButton.frame;
     buttonFrame.size.width += 30;
-    self.editButton.frame = CGRectMake(CGRectGetWidth(b)-CGRectGetWidth(buttonFrame), yOffset, CGRectGetWidth(buttonFrame), CGRectGetHeight(b)-yOffset);
+    self.editButton.frame = CGRectMake(CGRectGetWidth(contentBounds)-CGRectGetWidth(buttonFrame), yOffset, CGRectGetWidth(buttonFrame), CGRectGetHeight(contentBounds)-yOffset);
     
     [self.doneButton sizeToFit];
     buttonFrame = self.doneButton.frame;
     buttonFrame.size.width += 30;
-    self.doneButton.frame = CGRectMake(CGRectGetWidth(b)-CGRectGetWidth(buttonFrame), yOffset, CGRectGetWidth(buttonFrame), CGRectGetHeight(b)-yOffset);
+    self.doneButton.frame = CGRectMake(CGRectGetWidth(contentBounds)-CGRectGetWidth(buttonFrame), yOffset, CGRectGetWidth(buttonFrame), CGRectGetHeight(contentBounds)-yOffset);
 }
 
 - (void) setCanEdit:(BOOL)canEdit

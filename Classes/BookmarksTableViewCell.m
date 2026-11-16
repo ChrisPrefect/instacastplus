@@ -78,6 +78,7 @@
     self.accessoryView.tintColor = ICMutedTextColor;
     
     CGRect bounds = self.bounds;
+    bounds.size.width -= self.safeAreaInsets.left + self.safeAreaInsets.right;
 	CGRect textLabelRect = self.textLabel.frame;
     CGRect detailLabelRect = self.detailTextLabel.frame;
     //CGRect contentRect = self.contentView.frame;

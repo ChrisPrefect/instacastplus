@@ -15,8 +15,9 @@ struct NowPlayingProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping @Sendable (NowPlayingEntry) -> Void) {
-        let data = SharedContainerReader.readNowPlaying() ?? WidgetSampleData.nowPlaying
-        completion(NowPlayingEntry(date: Date(), data: data))
+        let now = Date()
+        let data = SharedContainerReader.readNowPlaying()?.projected(at: now) ?? WidgetSampleData.nowPlaying
+        completion(NowPlayingEntry(date: now, data: data))
     }
 
     func getTimeline(in context: Context, completion: @escaping @Sendable (Timeline<NowPlayingEntry>) -> Void) {
@@ -35,9 +36,18 @@ struct NowPlayingProvider: TimelineProvider {
         // still "valid" for the current time slot — causing stale play/pause state and
         // stale episode info even after an explicit reload. Single entries force WidgetKit
         // to call getTimeline whenever the current entry is consumed or a reload is requested.
-        let entry = NowPlayingEntry(date: Date(), data: data, needsData: needsData)
-        let refreshInterval: TimeInterval = (data?.isPaused == false && data?.episode != nil) ? 60 : 2 * 60
-        let timeline = Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(refreshInterval)))
+        // The progress bar advances by itself (ProgressView(timerInterval:)); texts and the
+        // current chapter use the position projected to now and are refreshed when their shown
+        // value changes. Seeks, pauses, chapter and episode changes reload from the app at once.
+        // Reloads while the app is the Now Playing app do not count against the widget budget.
+        let now = Date()
+        let entry = NowPlayingEntry(date: now, data: data?.projected(at: now), needsData: needsData)
+        let isPlaying = data?.isPaused == false && data?.episode != nil
+        var refreshDate = now.addingTimeInterval(isPlaying ? 60 : 2 * 60)
+        if let displayChange = data?.nextDisplayChange(after: now), displayChange < refreshDate {
+            refreshDate = displayChange
+        }
+        let timeline = Timeline(entries: [entry], policy: .after(refreshDate))
         completion(timeline)
     }
 }

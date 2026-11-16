@@ -430,6 +430,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 - (void) viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
 
+    [self updateSidebarSafeArea];
     if (_didWillAppear) {
         [self setNeedsContentControllerLayoutUpdateAnimated:NO];
     }
@@ -478,9 +479,19 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 
 #pragma mark -
 
+- (void) updateSidebarSafeArea
+{
+    CGFloat coveredHeight = CGRectGetHeight(self.view.bounds) - CGRectGetHeight([self rectForContentControllerWhenShown:NO]);
+    UIEdgeInsets insets = UIEdgeInsetsMake(0, 0, MAX(0, coveredHeight - self.view.safeAreaInsets.bottom), 0);
+    if (!UIEdgeInsetsEqualToEdgeInsets(self.sidebarViewController.additionalSafeAreaInsets, insets)) {
+        self.sidebarViewController.additionalSafeAreaInsets = insets;
+    }
+}
+
 - (void) setNeedsContentControllerLayoutUpdateAnimated:(BOOL)animated
 {
     [super setNeedsContentControllerLayoutUpdateAnimated:animated];
+    [self updateSidebarSafeArea];
     
     UIEdgeInsets safeAreaInsets = UIEdgeInsetsMake(20, 0, 0, 0);
     safeAreaInsets = self.view.safeAreaInsets;
@@ -878,14 +889,11 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 
 - (UIViewController*) _statusBarAdjustingContainerViewControllerForViewController:(UIViewController*)viewController
 {
-    CGRect screenBounds = [UIScreen mainScreen].bounds;
-    BOOL xScreen = (CGRectGetWidth(screenBounds) == 375 && CGRectGetHeight(screenBounds) == 812);
-    CGFloat statusbarHeight = (xScreen) ? 44 : 20;
-    
     StatusBarFixingViewController* vc = [[StatusBarFixingViewController alloc] initWithNibName:nil bundle:nil];
     vc.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     vc.view.frame = CGRectMake(0, 0, 100, 100);
-    viewController.view.frame = CGRectMake(0, statusbarHeight, 100, 100-statusbarHeight);
+    viewController.view.frame = vc.view.bounds;
+    viewController.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [vc addChildViewController:viewController];
     [vc.view addSubview:viewController.view];
     [viewController didMoveToParentViewController:vc];
@@ -1070,7 +1078,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         return UIInterfaceOrientationMaskAll;
     }
     
-    return UIInterfaceOrientationMaskPortrait;
+    return UIInterfaceOrientationMaskAllButUpsideDown;
 }
 
 

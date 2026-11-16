@@ -50,150 +50,21 @@ enum PendingWidgetActionStore {
     }
 }
 
-// MARK: - Playback Control Intents
+// MARK: - Widget-process fallback
 
-// Widget button actions are internal; Shortcuts exposes the app playback intents.
-
-struct PlayPauseIntent: AppIntent {
-    static let title: LocalizedStringResource = "Play/Pause"
-    static let description = IntentDescription("Toggle playback.")
-    static var openAppWhenRun: Bool { false }
-    static var isDiscoverable: Bool { false }
-
-    func perform() async throws -> some IntentResult {
-        try PendingWidgetActionStore.enqueue(action: "playpause")
-        DarwinNotificationHelper.post("playpause")
-        return .result()
-    }
-}
-
-struct SkipForwardIntent: AppIntent {
-    static let title: LocalizedStringResource = "Skip Forward"
-    static let description = IntentDescription("Skip forward.")
-    static var openAppWhenRun: Bool { false }
-    static var isDiscoverable: Bool { false }
-
-    func perform() async throws -> some IntentResult {
-        try PendingWidgetActionStore.enqueue(action: "skipforward")
-        DarwinNotificationHelper.post("skipforward")
-        return .result()
-    }
-}
-
-struct SkipBackwardIntent: AppIntent {
-    static let title: LocalizedStringResource = "Skip Backward"
-    static let description = IntentDescription("Skip backward.")
-    static var openAppWhenRun: Bool { false }
-    static var isDiscoverable: Bool { false }
-
-    func perform() async throws -> some IntentResult {
-        try PendingWidgetActionStore.enqueue(action: "skipbackward")
-        DarwinNotificationHelper.post("skipbackward")
-        return .result()
-    }
-}
-
-struct NextChapterIntent: AppIntent {
-    static let title: LocalizedStringResource = "Next Chapter"
-    static let description = IntentDescription("Go to next chapter.")
-    static var openAppWhenRun: Bool { false }
-    static var isDiscoverable: Bool { false }
-
-    func perform() async throws -> some IntentResult {
-        try PendingWidgetActionStore.enqueue(action: "nextchapter")
-        DarwinNotificationHelper.post("nextchapter")
-        return .result()
-    }
-}
-
-struct PrevChapterIntent: AppIntent {
-    static let title: LocalizedStringResource = "Previous Chapter"
-    static let description = IntentDescription("Go to previous chapter.")
-    static var openAppWhenRun: Bool { false }
-    static var isDiscoverable: Bool { false }
-
-    func perform() async throws -> some IntentResult {
-        try PendingWidgetActionStore.enqueue(action: "prevchapter")
-        DarwinNotificationHelper.post("prevchapter")
-        return .result()
-    }
-}
-
-struct NextEpisodeIntent: AppIntent {
-    static let title: LocalizedStringResource = "Next Episode"
-    static let description = IntentDescription("Play next episode.")
-    static var openAppWhenRun: Bool { false }
-    static var isDiscoverable: Bool { false }
-
-    func perform() async throws -> some IntentResult {
-        try PendingWidgetActionStore.enqueue(action: "nextepisode")
-        DarwinNotificationHelper.post("nextepisode")
-        return .result()
-    }
-}
-
-struct PrevEpisodeIntent: AppIntent {
-    static let title: LocalizedStringResource = "Previous Episode"
-    static let description = IntentDescription("Play previous episode.")
-    static var openAppWhenRun: Bool { false }
-    static var isDiscoverable: Bool { false }
-
-    func perform() async throws -> some IntentResult {
-        try PendingWidgetActionStore.enqueue(action: "previousepisode")
-        DarwinNotificationHelper.post("previousepisode")
-        return .result()
-    }
-}
-
-struct CycleSpeedIntent: AppIntent {
-    static let title: LocalizedStringResource = "Cycle Speed"
-    static let description = IntentDescription("Cycle through playback speeds.")
-    static var openAppWhenRun: Bool { false }
-    static var isDiscoverable: Bool { false }
-
-    func perform() async throws -> some IntentResult {
-        try PendingWidgetActionStore.enqueue(action: "cyclespeed")
-        DarwinNotificationHelper.post("cyclespeed")
-        return .result()
-    }
-}
-
-struct ToggleSleepTimerIntent: AppIntent {
-    static let title: LocalizedStringResource = "Toggle Sleep Timer"
-    static let description = IntentDescription("Start or cancel sleep timer.")
-    static var openAppWhenRun: Bool { false }
-    static var isDiscoverable: Bool { false }
-
-    func perform() async throws -> some IntentResult {
-        try PendingWidgetActionStore.enqueue(action: "togglesleeptimer")
-        DarwinNotificationHelper.post("togglesleeptimer")
-        return .result()
-    }
-}
-
-struct SkipToChapterIntent: AppIntent {
-    static let title: LocalizedStringResource = "Skip to Chapter"
-    static let description = IntentDescription("Jump directly to a specific chapter.")
-    static var openAppWhenRun: Bool { false }
-    static var isDiscoverable: Bool { false }
-
-    @Parameter(title: "Chapter Index")
-    var chapterIndex: Int
-
-    init() {}
-    @Parameter(title: "Chapter Timeline")
-    var chapterTimelineIdentifier: String?
-
-    init(chapterIndex: Int, chapterTimelineIdentifier: String) {
-        self.chapterIndex = chapterIndex
-        self.chapterTimelineIdentifier = chapterTimelineIdentifier
-    }
-
-    func perform() async throws -> some IntentResult {
-        try PendingWidgetActionStore.enqueue(action: "skipchapter", chapterIndex: chapterIndex,
-                                        chapterTimelineIdentifier: chapterTimelineIdentifier)
-
-        DarwinNotificationHelper.post("skipchapter")
-        return .result()
+/// Widget-extension side of the Now Playing widget buttons (the intents themselves live in
+/// Shared/WidgetPlaybackIntents.swift). They are AudioPlaybackIntents that are also compiled
+/// into the app, so the system normally runs them in the app process, launching the app in
+/// the background when needed; the app's counterpart calls WidgetDataExporter directly.
+/// This path only runs if the system executes an intent in the widget process: it queues the
+/// tap for a running app and wakes it via Darwin notification.
+enum WidgetControlActionPerformer {
+    // The system performs the AudioPlaybackIntents in the app; the episode and start time of a
+    // chapter row are only used there.
+    static func perform(_ action: String, chapterIndex: Int? = nil, chapterTimelineIdentifier: String? = nil,
+                        episodeID: String? = nil, chapterStartTime: Double? = nil) async throws {
+        try PendingWidgetActionStore.enqueue(action: action, chapterIndex: chapterIndex,
+                                             chapterTimelineIdentifier: chapterTimelineIdentifier)
+        DarwinNotificationHelper.post(action)
     }
 }

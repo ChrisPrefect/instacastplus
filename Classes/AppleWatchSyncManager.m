@@ -234,6 +234,9 @@ static BOOL ICEnumerateJSONLinesAtURL(NSURL* fileURL,
 @property (nonatomic) NSInteger cachedWatchStorageEvictedCount;
 @property (nonatomic) NSInteger cachedWatchDownloadedCount;
 @property (nonatomic, copy) NSSet<NSString*>* cachedWatchDownloadedEpisodeHashes;
+@property (nonatomic, copy) NSString* lastPlaybackTickEpisodeHash;
+@property (nonatomic) int32_t lastPlaybackTickPosition;
+@property (nonatomic) BOOL lastPlaybackTickConsumed;
 @property (nonatomic, strong) NSMutableSet<NSString*>* pendingLiveStatusEpisodeHashes;
 @property (nonatomic) BOOL pendingGlobalLiveStatusChange;
 @property (nonatomic) BOOL liveStatusNotificationScheduled;
@@ -2102,11 +2105,24 @@ static BOOL ICEnumerateJSONLinesAtURL(NSURL* fileURL,
 - (void)_playbackDidUpdate:(NSNotification*)notification
 {
     CDEpisode* episode = [AudioSession sharedAudioSession].episode ?: [PlaybackManager playbackManager].playingEpisode;
-    if (![self isEpisodeSelectedForWatch:episode]) {
+    // This runs on every playback tick (once per second, far more often while a stream
+    // starts) and the lookup below is a Core Data fetch. Position and consumed are all this
+    // method propagates, so there is nothing to look up while they are unchanged for the
+    // same episode. A change to the watch selection resets the memo
+    // (-_postEpisodeStatesChangedForEpisodeHashes:).
+    NSString* tickEpisodeHash = episode.objectHash;
+    if (tickEpisodeHash.length > 0 && [tickEpisodeHash isEqualToString:self.lastPlaybackTickEpisodeHash] &&
+        self.lastPlaybackTickPosition == episode.position && self.lastPlaybackTickConsumed == episode.consumed) {
         return;
     }
+    self.lastPlaybackTickEpisodeHash = tickEpisodeHash;
+    self.lastPlaybackTickPosition = episode.position;
+    self.lastPlaybackTickConsumed = episode.consumed;
 
-    AppleWatchEpisodeState* state = [self stateForEpisodeHash:episode.objectHash];
+    AppleWatchEpisodeState* state = [self stateForEpisodeHash:tickEpisodeHash];
+    if (!state || state.removingFromWatch) {
+        return;
+    }
     // PlaybackManagerDidUpdateNotification fires EVERY SECOND during playback. Without this
     // diff-gate that meant one Core-Data save plus two WCSession sends per second for the whole
     // playback session. Only propagate when position or consumed actually changed.
@@ -3399,6 +3415,11 @@ static BOOL ICEnumerateJSONLinesAtURL(NSURL* fileURL,
 
     state.lastWatchPosition = position;
     state.lastWatchPositionDate = timestamp;
+    // Listening on the watch is listening: without this the episode never shows up in
+    // "Recently Played" (lastPlayed != nil, ordered by lastPlayed).
+    if (!episode.lastPlayed || [episode.lastPlayed compare:timestamp] == NSOrderedAscending) {
+        episode.lastPlayed = timestamp;
+    }
 
     if (finished || [payload[@"consumed"] boolValue]) {
         [DMANAGER markEpisode:episode asConsumed:YES];
@@ -3418,6 +3439,7 @@ static BOOL ICEnumerateJSONLinesAtURL(NSURL* fileURL,
 - (void)_postEpisodeStatesChangedForEpisodeHashes:(NSArray<NSString*>*)episodeHashes
 {
     [self _invalidateWatchTransferSnapshot];
+    self.lastPlaybackTickEpisodeHash = nil;
     NSMutableOrderedSet<NSString*>* uniqueHashes = [NSMutableOrderedSet orderedSet];
     for (NSString* episodeHash in episodeHashes) {
         if ([episodeHash isKindOfClass:[NSString class]] && episodeHash.length > 0) {

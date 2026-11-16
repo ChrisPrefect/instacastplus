@@ -12,6 +12,7 @@ snapshot_chunk=exporter[exporter.index('        // Sleep timer\n'):exporter.inde
 sensor='''
 // Feed one deterministic sample into the production CoreMotion callback.
 NSString* ApplicationDidDetectMotionNotification=@"motion";
+NSString* SmarthomeMQTTEnabled=@"SmarthomeMQTTEnabled";
 typedef struct { double x,y,z; } CMAcceleration;
 @interface CMAccelerometerData:NSObject
 @property CMAcceleration acceleration;
@@ -21,38 +22,53 @@ typedef struct { double x,y,z; } CMAcceleration;
 @interface CMMotionManager:NSObject
 @property double accelerometerUpdateInterval;
 @property (copy) void(^handler)(CMAccelerometerData*,NSError*);
+@property NSInteger startCount,stopCount;
 @end
 @implementation CMMotionManager
 - (BOOL)isAccelerometerAvailable {return YES;}
 - (void)startAccelerometerUpdatesToQueue:(NSOperationQueue*)queue withHandler:(void(^)(CMAccelerometerData*,NSError*))handler {
-    self.handler=handler;
+    self.handler=handler;self.startCount++;
     CMAccelerometerData* data=[CMAccelerometerData new];data.acceleration=(CMAcceleration){1,0,0};handler(data,nil);
 }
+- (void)stopAccelerometerUpdates {self.handler=nil;self.stopCount++;}
 @end
 @interface SensorProbe:NSObject {
     NSTimer* myidleTimer; double lastAccelX,lastAccelY,lastAccelZ;
     NSTimeInterval lastAccelTimestamp,previousAccelerationTimestamp;
     CMAcceleration previousAcceleration;
     NSUInteger motionSampleCount;
+    dispatch_queue_t _motionQueue;
+    BOOL _motionDetectionRunning;
+    BOOL _motionReferenceValid;
+    NSUInteger _motionDetectionClientCount;
+    BOOL _sleepTimerCountdownRunning;
 }
 @property CMMotionManager* motionManager;
 - (void)resetIdleTimer;
 - (void)idleTimerExceeded;
 - (void)deviceMotionDetection;
+- (void)updateMotionDetection;
+- (void)_sleepTimerStateDidChange:(NSNotification*)notification;
+- (void)settle;
 - (void)trigger:(NSString*)kind;
 - (void)sample:(CMAcceleration)value timestamp:(NSTimeInterval)timestamp error:(NSError*)error;
 @end
 @implementation SensorProbe
+- (instancetype)init {if((self=[super init])) _motionQueue=dispatch_queue_create("motion-probe",DISPATCH_QUEUE_SERIAL);return self;}
 - (void)idleTimerExceeded {}
+- (void)settle {[[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];}
 - (void)sample:(CMAcceleration)value timestamp:(NSTimeInterval)timestamp error:(NSError*)error {
     CMAccelerometerData* data=[CMAccelerometerData new];data.acceleration=value;data.timestamp=timestamp;
-    self.motionManager.handler(data,error);
+    // No handler: the production gate did not start the sensor, so no sample arrives.
+    if(self.motionManager.handler) self.motionManager.handler(data,error);
     [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
 }
 - (void)trigger:(NSString*)kind {
     if([kind isEqual:@"motion"]) {
-        [self deviceMotionDetection];
-        [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+        // Production path: the audio session posts its timer change, the gate starts the
+        // sensor; the start sample is the device at rest and sets the reference.
+        [self _sleepTimerStateDidChange:[NSNotification notificationWithName:AudioSessionSleepTimerDidChangeNotification object:[AudioSession sharedAudioSession]]];
+        [self settle];
     } else if([kind isEqual:@"volume"]) {
         [self observeValueForKeyPath:@"outputVolume" ofObject:nil change:nil context:nil];
     } else [self resetIdleTimer];
@@ -61,6 +77,7 @@ typedef struct { double x,y,z; } CMAcceleration;
     '-(void)resetIdleTimer', '- (void)_resetSleepTimerForActivity:',
     '- (void)_resetSleepTimerForActivity:(NSString*)reason metadata:',
     '-(void)deviceMotionDetection', '-(void) observeValueForKeyPath:',
+    '- (BOOL)_motionDetectionNeeded', '- (void)_sleepTimerStateDidChange:', '- (void)updateMotionDetection',
 ])+'\n@end\n'
 main=r'''
 @interface RemainingObserver:NSObject
@@ -96,7 +113,9 @@ int main(int argc,const char** argv){@autoreleasepool{
    [s setTimerWithDuration:1200];
    s.stopDate=[NSDate dateWithTimeIntervalSinceNow:120];
    if(cancelled) s.timerValue=0;
-   [[SensorProbe new] trigger:kind];
+   SensorProbe* probe=[SensorProbe new];[probe trigger:kind];
+   // The device moves after the sensor started.
+   if([kind isEqual:@"motion"]) [probe sample:(CMAcceleration){0,0,1} timestamp:NSProcessInfo.processInfo.systemUptime error:nil];
    if(cancelled) CHECK(!s.playbackTimer && !s.stopDate && s.timerRemainingTime==0);
    else if(disabled) CHECK(s.timerRemainingTime>119 && s.timerRemainingTime<=120);
    else {
@@ -156,6 +175,26 @@ int main(int argc,const char** argv){@autoreleasepool{
    CHECK([m[@"motion.errorDomain"] isEqual:@""] && [m[@"motion.errorCode"] integerValue]==0);
    NSData* evidence=[NSJSONSerialization dataWithJSONObject:@[event,[ICDiagnosticLogger shared].events.lastObject] options:NSJSONWritingPrettyPrinted error:nil];
    puts([[NSString alloc] initWithData:evidence encoding:NSUTF8StringEncoding].UTF8String);
+ } else if([mode isEqual:@"motion-gate"]) {
+   // The accelerometer runs only while a motion-extended countdown runs.
+   [defaults setBool:YES forKey:IntelligentSleepTimerAlwaysActive];
+   [defaults setBool:YES forKey:DeviceMovementIntelligentSleep];
+   SensorProbe* probe=[SensorProbe new];probe.motionManager=[CMMotionManager new];
+   NSNotification* change=[NSNotification notificationWithName:AudioSessionSleepTimerDidChangeNotification object:s];
+   s.timerValue=0;[probe _sleepTimerStateDidChange:change];[probe settle];
+   CHECK(probe.motionManager.startCount==0 && !probe.motionManager.handler);
+   s.timerValue=3;[probe _sleepTimerStateDidChange:change];[probe settle];
+   CHECK(s.stopDate && probe.motionManager.startCount==1 && probe.motionManager.handler);
+   NSUInteger resets=s.sleepTimerMotionResetCount;
+   [probe sample:(CMAcceleration){1,0,0} timestamp:NSProcessInfo.processInfo.systemUptime error:nil];
+   CHECK(s.sleepTimerMotionResetCount==resets);
+   [probe sample:(CMAcceleration){0,0,1} timestamp:NSProcessInfo.processInfo.systemUptime error:nil];
+   CHECK(s.sleepTimerMotionResetCount==resets+1);
+   s.timerValue=0;[probe _sleepTimerStateDidChange:change];[probe settle];
+   CHECK(probe.motionManager.stopCount==1 && !probe.motionManager.handler);
+   [defaults setBool:NO forKey:DeviceMovementIntelligentSleep];s.timerValue=3;[probe _sleepTimerStateDidChange:change];[probe settle];
+   CHECK(probe.motionManager.startCount==1);
+   printf("Motion gate: starts=%ld stops=%ld\n",(long)probe.motionManager.startCount,(long)probe.motionManager.stopCount);
  } else if([mode isEqual:@"selection"]) {
    [s setTimerWithDuration:600];[p pause];
    [defaults setDouble:120 forKey:UncompletedSleepTimeInterval];
@@ -202,7 +241,7 @@ with tempfile.TemporaryDirectory(prefix='instacast-external-proof-') as d:
  f.write_text('#import <Foundation/Foundation.h>\n'+ns['declarations']+'\n'+ns['preamble']+'\n'+'\n'.join(ns['audio_methods'])+'\n@end\n'+ns['player_implementation']+ns['controls_probe']+sensor+main)
  subprocess.run(['xcrun','clang','-fobjc-arc','-fblocks','-framework','Foundation',str(f),'-o',str(p/'probe')],check=True)
  failures=[]
- for mode in ['motion-diagnostics','carplay','sensor-touch','sensor-motion','sensor-volume',
+ for mode in ['motion-diagnostics','motion-gate','carplay','sensor-touch','sensor-motion','sensor-volume',
               'cancel-touch','cancel-motion','cancel-volume',
               'disabled-touch','disabled-motion','disabled-volume',
               'ui','ui-smart','ui-preset','widget','expiry','selection']:

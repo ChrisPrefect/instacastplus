@@ -535,24 +535,7 @@ enum {
     self.controller = [PlaybackControlsViewController playbackControlViewController];
     
     [self addChildViewController:self.controller];
-    //CGRect controllerRect = self.controller.view.frame;
-    CGRect b = self.view.bounds;
-    CGRect wb = [[self getKeyWindow] bounds];//App.keyWindow.bounds;
-    if (UIInterfaceOrientationIsPortrait([self getDeviceOrientation]))
-    {
-        CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
-        CGFloat controllerHeight = MAX(CGRectGetHeight(wb)-statusbarHeight-44-CGRectGetWidth(wb)-40, 194);
-        self.controller.view.frame = CGRectMake(0, CGRectGetMaxY(b)-controllerHeight, CGRectGetWidth(b), controllerHeight);
-    }
-    else
-    {//DevD To DO
-        CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
-        CGFloat controllerHeight = MAX(CGRectGetWidth(wb)-statusbarHeight-44-CGRectGetHeight(wb)-40, 194);
-        self.controller.view.frame = CGRectMake(0, CGRectGetMaxY(b)-controllerHeight, CGRectGetWidth(b), controllerHeight);
-    }
-    
-
-
+    [self _layoutPlayerContent];
     [self.view addSubview:self.controller.view];
     [self.controller didMoveToParentViewController:self];
 
@@ -629,15 +612,27 @@ enum {
     [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
 
     [coordinator animateAlongsideTransition:^(id<UIViewControllerTransitionCoordinatorContext> context) {
-        // Recalculate control pane height for new window size
-        // size.height ≈ window height - statusbar - navbar (edgesForExtendedLayout = UIRectEdgeNone)
-        // Chapter art = size.width (square), controls fill the rest
-        CGFloat controllerHeight = MAX(size.height - size.width - 40, 194);
-        self.controller.view.frame = CGRectMake(0, size.height - controllerHeight, size.width, controllerHeight);
-        self.infoViewController.view.frame = CGRectMake(0, 0, size.width, size.height);
-        self.infoViewController.bottomScrollInset = controllerHeight;
+        [self _layoutPlayerContent];
         [self.infoViewController layoutHeaderView];
     } completion:nil];
+}
+
+- (void)viewDidLayoutSubviews
+{
+    [super viewDidLayoutSubviews];
+    [self _layoutPlayerContent];
+}
+
+- (void)_layoutPlayerContent
+{
+    CGRect bounds = self.view.bounds;
+    UIEdgeInsets safeArea = self.view.safeAreaInsets;
+    CGFloat artworkWidth = CGRectGetWidth(bounds) - safeArea.left - safeArea.right;
+    CGFloat minimumHeight = [PlaybackControlsViewController minimumContentHeight] + safeArea.bottom;
+    CGFloat height = MAX(CGRectGetHeight(bounds) - safeArea.top - artworkWidth - 44, minimumHeight);
+    self.controller.view.frame = CGRectMake(0, CGRectGetMaxY(bounds) - height, CGRectGetWidth(bounds), height);
+    self.infoViewController.view.frame = bounds;
+    self.infoViewController.bottomScrollInset = height;
 }
 
 -(UIInterfaceOrientation)getDeviceOrientation
@@ -825,7 +820,8 @@ enum {
 #pragma mark -
 
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations {
-    return UIInterfaceOrientationMaskPortrait;
+    return UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad
+        ? UIInterfaceOrientationMaskAll : UIInterfaceOrientationMaskAllButUpsideDown;
 }
 
 /*
