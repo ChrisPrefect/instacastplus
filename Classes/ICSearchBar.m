@@ -8,11 +8,6 @@
 
 #import "ICSearchBar.h"
 #import "ImageFunctions.h"
-#import "CircleProgressView.h"
-
-@interface ICSearchBar ()
-@property (nonatomic, strong) CircleProgressView* activityView;
-@end
 
 @implementation ICSearchBar
 
@@ -50,28 +45,11 @@
     self.searchTextPositionAdjustment = UIOffsetMake(5, 0);
 }
 
+// The search finishes too quickly for an activity indicator to be useful; since the circle
+// became visible again (CircleProgressView fix, 16.11.2026) it only flickered. Decision
+// 17.11.2026: no indicator in the search field. The flag is kept for the callers.
 - (void) setShowsActivity:(BOOL)showsActivity
 {
-    if (_showsActivity != showsActivity) {
-        _showsActivity = showsActivity;
-        
-        if (showsActivity) {
-            self.activityView = [[CircleProgressView alloc] initWithFrame:CGRectZero];
-            self.activityView.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
-            [self addSubview:self.activityView];
-        }
-        else {
-            [self.activityView removeFromSuperview];
-            self.activityView = nil;
-        }
-    }
-}
-
-- (void) layoutSubviews
-{
-    [super layoutSubviews];
-    
-    CGRect b = self.bounds;
-    self.activityView.frame = CGRectMake(CGRectGetWidth(b)-33, 12, 20, 20);
+    _showsActivity = showsActivity;
 }
 @end

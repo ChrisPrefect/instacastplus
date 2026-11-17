@@ -308,8 +308,13 @@
 - (void) setBackgroundColor:(UIColor *)backgroundColor
 {
     [super setBackgroundColor:backgroundColor];
-    self.panningContentView.backgroundColor = backgroundColor;
-    
+    // In table editing UIKit shows the selection (multipleSelectionBackgroundView) beneath the
+    // content. An opaque content background covered it, so a selected row only tinted the strip
+    // left of the content, around the checkbox. While the edit control shows, the content is
+    // transparent and the whole row takes the selection colour; the cell's own colour still
+    // shows through for unselected rows.
+    self.panningContentView.backgroundColor = self.showsEditControl ? [UIColor clearColor] : backgroundColor;
+
     self.durationLabel.backgroundColor = self.panningContentView.backgroundColor;
     self.dateLabel.backgroundColor = self.panningContentView.backgroundColor;
     self.consumeIndicator2.backgroundColor = self.panningContentView.backgroundColor;
@@ -437,8 +442,19 @@
 + (NSString*) _heightCacheKeyForObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle summaryOverride:(NSString*)summaryOverride
 {
     CDEpisode* episode = (CDEpisode*)objectValue;
+    return [self _heightCacheKeyForIdentifier:episode.objectHash ?: episode.guid ?: episode.title
+                                    tableSize:tableSize
+                                    imageSize:imageSize
+                                     embedded:embedded
+                                      editing:editing
+                                  upNextStyle:upNextStyle
+                              summaryOverride:summaryOverride];
+}
+
++ (NSString*) _heightCacheKeyForIdentifier:(NSString*)identifier tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle summaryOverride:(NSString*)summaryOverride
+{
     return [NSString stringWithFormat:@"%@-%.0f-%.0f-%d-%d-%d-%@",
-                          episode.objectHash ?: episode.guid ?: episode.title ?: @"",
+                          identifier ?: @"",
                           tableSize.width,
                           imageSize.width,
                           embedded,
@@ -461,6 +477,15 @@
 + (NSNumber*) cachedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing
 {
     NSString* key = [self _heightCacheKeyForObjectValue:objectValue tableSize:tableSize imageSize:imageSize embedded:embedded editing:editing upNextStyle:NO summaryOverride:nil];
+    return [[self _heightCache] objectForKey:key];
+}
+
++ (NSNumber*) cachedHeightWithEpisodeIdentifier:(NSString*)identifier tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing
+{
+    if (identifier.length == 0) {
+        return nil;
+    }
+    NSString* key = [self _heightCacheKeyForIdentifier:identifier tableSize:tableSize imageSize:imageSize embedded:embedded editing:editing upNextStyle:NO summaryOverride:nil];
     return [[self _heightCache] objectForKey:key];
 }
 

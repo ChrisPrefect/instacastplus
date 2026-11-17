@@ -51,11 +51,23 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
 @property (nonatomic, strong) UIView* navTitleContainerView;
 @end
 
+// Opening a podcast used to load every episode of the list in full on the main thread, show
+// notes included: measured 17.11.2026 on a real iPhone, 44–51 ms for 718 episodes (2.6 MB of
+// show notes) inside the tap that pushes the list. The list only shows about ten rows at a time,
+// so its fetches load in batches: the open fetches only the row identities and Core Data loads
+// rows when a cell needs them.
+static const NSUInteger kFeedEpisodeListFetchBatchSize = 30;
+
 @implementation FeedEpisodesTableViewController {
     NSMutableSet* _selectionPreservingIndexPathes;
     BOOL _didRestoreScrollPosition;
     BOOL isDownloadedFilter;
     NSInteger _searchGeneration;
+    // Identifier of each row's episode (objectHash, else guid, else title; NSNull if none), in
+    // the order of self.episodes, for estimated row heights. Reading self.episodes[row] would
+    // load that row's whole batch, and UIKit asks for the estimate of every row on a reload.
+    // nil until first needed after the list changed.
+    NSArray* _heightEstimateIdentifiers;
 }
 
 + (FeedEpisodesTableViewController*) episodesControllerWithFeed:(CDFeed*)feed
@@ -227,6 +239,33 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
 - (void) updateEpisodes
 {
     self.episodes = [self.fetchController fetchedObjects] ?: @[];
+    _heightEstimateIdentifiers = nil;
+}
+
+- (NSArray*) _heightEstimateIdentifiersForDisplayedEpisodes
+{
+    if (_heightEstimateIdentifiers) {
+        return _heightEstimateIdentifiers;
+    }
+    NSFetchRequest* listRequest = self.fetchController.fetchRequest;
+    if (!listRequest) {
+        return nil;
+    }
+    // Same predicate and sort as the list, but only three short columns per row: about 1 ms for
+    // 718 episodes instead of loading them. The store fetch does not see unsaved changes of the
+    // main context; a list that differs in length then simply gets the default estimates.
+    NSFetchRequest* request = [listRequest copy];
+    request.resultType = NSDictionaryResultType;
+    request.propertiesToFetch = @[@"objectHash", @"guid", @"title"];
+    request.fetchBatchSize = 0;
+    NSArray<NSDictionary*>* rows = [DMANAGER.objectContext executeFetchRequest:request error:nil] ?: @[];
+    NSMutableArray* identifiers = [NSMutableArray arrayWithCapacity:rows.count];
+    for (NSDictionary* row in rows) {
+        NSString* identifier = row[@"objectHash"] ?: row[@"guid"] ?: row[@"title"];
+        [identifiers addObject:identifier ?: [NSNull null]];
+    }
+    _heightEstimateIdentifiers = [identifiers copy];
+    return _heightEstimateIdentifiers;
 }
 
 - (void)_updateFilterEmptyState
@@ -271,6 +310,11 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     NSMutableArray* episodes = [self.episodes mutableCopy];
     [episodes removeObjectAtIndex:indexPath.row];
     self.episodes = [episodes copy];
+    if (_heightEstimateIdentifiers.count > (NSUInteger)indexPath.row) {
+        NSMutableArray* identifiers = [_heightEstimateIdentifiers mutableCopy];
+        [identifiers removeObjectAtIndex:indexPath.row];
+        _heightEstimateIdentifiers = [identifiers copy];
+    }
     [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
     [self _updateFilterEmptyState];
     return YES;
@@ -283,8 +327,12 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
 
 - (CGFloat)tableView:(UITableView *)tableView estimatedHeightForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    CDEpisode* episode = self.episodes[indexPath.row];
-    NSNumber* height = [EpisodesTableViewCell cachedHeightWithObjectValue:episode tableSize:tableView.bounds.size imageSize:CGSizeZero embedded:NO editing:self.editing];
+    // Not self.episodes[row]: that loads the row's batch, and this runs for every row.
+    NSArray* identifiers = [self _heightEstimateIdentifiersForDisplayedEpisodes];
+    id identifier = (identifiers.count == self.episodes.count && (NSUInteger)indexPath.row < identifiers.count) ? identifiers[indexPath.row] : nil;
+    NSNumber* height = [identifier isKindOfClass:[NSString class]]
+        ? [EpisodesTableViewCell cachedHeightWithEpisodeIdentifier:identifier tableSize:tableView.bounds.size imageSize:CGSizeZero embedded:NO editing:self.editing]
+        : nil;
     // Reloading must retain measured geometry instead of replacing it with an
     // estimate. Unmeasured rows still avoid synchronous text layout.
     return height ? height.doubleValue : [super tableView:tableView estimatedHeightForRowAtIndexPath:indexPath];
@@ -304,6 +352,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     
     fetchRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder] ];
     
+    fetchRequest.fetchBatchSize = kFeedEpisodeListFetchBatchSize;
     self.fetchController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
@@ -1122,6 +1171,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     fetchRequest.predicate = predicate;
     fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder]];
  
+    fetchRequest.fetchBatchSize = kFeedEpisodeListFetchBatchSize;
     self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
@@ -1141,6 +1191,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     fetchRequest.predicate = predicate;
     fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder]];
  
+    fetchRequest.fetchBatchSize = kFeedEpisodeListFetchBatchSize;
     self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
@@ -1170,6 +1221,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     fetchRequest.predicate = predicate;
     fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder]];
 
+    fetchRequest.fetchBatchSize = kFeedEpisodeListFetchBatchSize;
     self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
@@ -1189,6 +1241,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     fetchRequest.predicate = predicate;
     fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder]];
 
+    fetchRequest.fetchBatchSize = kFeedEpisodeListFetchBatchSize;
     self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
@@ -1223,6 +1276,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && objectHash IN %@", self.feed, @NO, cachedHashes];
     fetchRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder] ];
 
+    fetchRequest.fetchBatchSize = kFeedEpisodeListFetchBatchSize;
     self.fetchController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
     self.fetchController.delegate = self;
     NSError* fetchError = nil;

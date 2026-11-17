@@ -820,8 +820,7 @@ enum {
 #pragma mark -
 
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations {
-    return UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad
-        ? UIInterfaceOrientationMaskAll : UIInterfaceOrientationMaskAllButUpsideDown;
+    return ICSupportedInterfaceOrientationsForViewController(self);
 }
 
 /*

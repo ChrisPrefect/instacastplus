@@ -1263,6 +1263,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
                 }
             }
             [self _deleteObsoleteDataStores];
+            [self _updateStoreStatisticsIfNeeded];
         }
 
 #if TARGET_OS_IPHONE
@@ -3627,6 +3628,60 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     // Read-only usage; keep faults small and don't hold on to objects.
     context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy;
     return context;
+}
+
+// The store never had SQLite statistics (sqlite_stat1). Without them SQLite guesses that every
+// index is equally selective and, for "feed == X AND archived == NO", picked the archived index,
+// which matches every episode (measured 17.11.2026 on a real store: 17910 of 17910 not
+// archived). Every episode list of a podcast then scanned the whole episode table on the main
+// thread: 12.6 ms for a podcast with 7 episodes instead of 0.05 ms with the feed index, paid on
+// each open of the list and in other feed-scoped fetches. ANALYZE records the real distribution
+// in the store file, after which SQLite uses the feed index (0.4–0.8 ms). It costs about 50 ms
+// on that store, so it runs on a background queue through a short-lived second coordinator (the
+// same access pattern as the export coordinator) and only once per app build: the relative
+// selectivity of the indexes changes slowly, and stale statistics still beat none.
+static NSString* const kStoreStatisticsBuildKey = @"ICStoreStatisticsBuild";
+
+- (void)_updateStoreStatisticsIfNeeded
+{
+    NSString* build = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"";
+    if ([[USER_DEFAULTS stringForKey:kStoreStatisticsBuildKey] isEqualToString:build]) {
+        return;
+    }
+    NSPersistentContainer* container = [self persistentContainer];
+    NSURL* storeURL = container.persistentStoreDescriptions.firstObject.URL;
+    NSManagedObjectModel* model = container.managedObjectModel;
+    if (!storeURL || !model) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSPersistentStoreCoordinator* coordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:model];
+        NSDictionary* options = @{
+            NSMigratePersistentStoresAutomaticallyOption: @YES,
+            NSInferMappingModelAutomaticallyOption: @YES,
+            NSSQLiteAnalyzeOption: @YES,
+        };
+        NSError* error = nil;
+        CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
+        NSPersistentStore* store = [coordinator addPersistentStoreWithType:NSSQLiteStoreType
+                                                             configuration:nil
+                                                                       URL:storeURL
+                                                                   options:options
+                                                                     error:&error];
+        double durationMs = (CFAbsoluteTimeGetCurrent() - start) * 1000.0;
+        if (store) {
+            [coordinator removePersistentStore:store error:nil];
+            [USER_DEFAULTS setObject:build forKey:kStoreStatisticsBuildKey];
+        }
+        [[ICDiagnosticLogger shared] logEvent:@"database"
+                                      message:store ? @"SQLite-Statistik aktualisiert" : @"SQLite-Statistik fehlgeschlagen"
+                                     metadata:@{
+            @"durationMs": [NSString stringWithFormat:@"%.1f", durationMs],
+            @"build": build,
+            @"error": error.localizedDescription ?: @"",
+        }];
+    });
 }
 
 - (NSManagedObjectContext*)newICloudSyncBackgroundContext

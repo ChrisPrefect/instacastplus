@@ -315,13 +315,15 @@ static NSString* kUpNextCell = @"UpNextCell";
                                                                    style:UIBarButtonItemStylePlain
                                                                   target:self
                                                                   action:@selector(playAction:)];
-    playButton.enabled = (count > 0);
+    // Decision 17.11.2026: actions for the queue only appear when it has episodes.
+    playButton.hidden = (count == 0);
 
     UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
 
     NSString* countText = (count == 1) ? [NSString stringWithFormat:@"1 %@", @"Episode".ls] : [NSString stringWithFormat:@"%ld %@", (long)count, @"Episodes".ls];
     UIBarButtonItem* countItem = [[UIBarButtonItem alloc] initWithTitle:countText style:UIBarButtonItemStylePlain target:nil action:nil];
     countItem.enabled = NO;
+    countItem.hidden = (count == 0);   // the empty-state hint already says the queue is empty
 
     [self setToolbarItems:@[playButton, flexSpace, countItem] animated:NO];
 }
@@ -329,6 +331,11 @@ static NSString* kUpNextCell = @"UpNextCell";
 - (void) _updateEmptyState
 {
     NSInteger count = [[AudioSession sharedAudioSession].playlist count];
+
+    // Download all / Remove all only make sense with episodes in the queue (decision 17.11.2026).
+    for (UIBarButtonItem* item in self.navigationItem.rightBarButtonItems) {
+        item.hidden = (count == 0);
+    }
 
     if (count == 0) {
         if (self.emptyStateLabel.superview == nil) {

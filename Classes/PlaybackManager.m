@@ -1460,6 +1460,8 @@ didReceiveResponse:(NSURLResponse *)response
 @property (nonatomic, readwrite) double streamingCacheProgress;
 @property (nonatomic) double lastNotifiedStreamingCacheProgress;
 @property (nonatomic) CFAbsoluteTime lastStreamingCacheNotificationTime;
+// Start of the last openWithEpisode: (CACurrentMediaTime), for the "playback-open" timing events.
+@property (nonatomic) CFTimeInterval openStartMediaTime;
 @property (nonatomic, readwrite) BOOL streamingCacheComplete;
 - (BOOL)_cancelStreamingCacheForEpisode:(CDEpisode*)episode leaseToken:(NSString*)leaseToken;
 - (BOOL)_cancelStreamingCacheForEpisodeHash:(NSString*)episodeHash leaseToken:(NSString*)leaseToken;
@@ -2228,11 +2230,27 @@ didReceiveResponse:(NSURLResponse *)response
         return;
     }
 
+    // Field report 17.11.2026: tapping the mini player after a cold relaunch showed nothing for
+    // several seconds; the system logged that the synchronous audio session activation on the
+    // main thread can block the UI. Every synchronous step of opening an episode runs inside
+    // that tap, so each one is timed (milliseconds since the start of this method) and
+    // written as one "playback-open" event.
+    CFTimeInterval openStartTime = CACurrentMediaTime();
+    self.openStartMediaTime = openStartTime;
+    NSMutableDictionary<NSString*, NSString*>* openStepTimes = [NSMutableDictionary dictionary];
+    __block CFTimeInterval previousOpenStepTime = openStartTime;
+    void (^markOpenStep)(NSString*) = ^(NSString* step) {
+        CFTimeInterval now = CACurrentMediaTime();
+        openStepTimes[step] = [NSString stringWithFormat:@"%.1f", (now - previousOpenStepTime) * 1000.0];
+        previousOpenStepTime = now;
+    };
+
 	if (self.player) {
 		self.changingEpisode = YES;
 		[self closeAndSaveCurrentPosition:!self.inTransitionToNextTrack];
         self.inTransitionToNextTrack = NO;
 	}
+    markOpenStep(@"closePreviousMs");
 
     // Capture notification name before resetting changingEpisode.
     // Must be posted AFTER self.playingEpisode is set so observers see the correct episode.
@@ -2240,10 +2258,13 @@ didReceiveResponse:(NSURLResponse *)response
 	self.changingEpisode = NO;
 
     [self _setNowPlayingInfoOfEpisode:anEpisode];
+    markOpenStep(@"nowPlayingInfoMs");
     [self _setupRemotePlaybackCenterWithEpisode:anEpisode];
+    markOpenStep(@"remoteCommandsMs");
 
 	// create background task until the first data is buffered and the app is ready to play
 	[self _startNextItemHandover];
+    markOpenStep(@"backgroundTaskMs");
 
     self.playbackError = nil;
     self.movingVideo = NO;
@@ -2258,15 +2279,20 @@ didReceiveResponse:(NSURLResponse *)response
                               anEpisode.objectHash.length > 0);
     BOOL shouldCacheViaStream = canCacheViaStream;
 
+    markOpenStep(@"prepareMs");
+    // Observers of playingEpisode run here, among them the audio session activation.
     self.playingEpisode = anEpisode;
+    markOpenStep(@"setPlayingEpisodeMs");
 #if TARGET_OS_IPHONE
     [self _beginPlaybackUserActivityForEpisode:anEpisode autostart:autostart];
     [self _publishSharePlayActivityForEpisode:anEpisode];
 #endif
+    markOpenStep(@"userActivityMs");
     // Post start/change notification now that playingEpisode is set, so observers
     // (e.g. WidgetDataExporter) read the correct current episode.
     if (![self _transitionPlaybackWithEvent:autostart ? ICPlaybackEventOpenPlaying : ICPlaybackEventOpenPaused]) return;
     [[NSNotificationCenter defaultCenter] postNotificationName:pendingNotificationName object:self];
+    markOpenStep(@"startNotificationMs");
     self.streamingCacheActive = NO;
     self.streamingCacheProgress = 0.0;
     self.streamingCacheComplete = NO;
@@ -2373,11 +2399,25 @@ didReceiveResponse:(NSURLResponse *)response
 #else
     self.mediaAsset = [AVURLAsset URLAssetWithURL:url options:nil];
 #endif
-	
+    markOpenStep(@"assetMs");
+
     self.audioSnapshotAsset = self.mediaAsset;
     self.audioContentGenerationAnchor = [self _audioContentGenerationAtURL:self.mediaAsset.URL];
     self.audioSnapshotAnchor = self.mediaAsset.URL.isFileURL ? [TranscriptionEngine artifactSnapshotIdentifierAt:self.mediaAsset.URL] : nil;
+    markOpenStep(@"audioAnchorsMs");
     [self _continueOpeningAsset:self.mediaAsset autostart:autostart];
+    markOpenStep(@"continueOpeningMs");
+
+    openStepTimes[@"totalMs"] = [NSString stringWithFormat:@"%.1f", (CACurrentMediaTime() - openStartTime) * 1000.0];
+    openStepTimes[@"episodeHash"] = anEpisode.objectHash ?: @"";
+    openStepTimes[@"cached"] = isCached ? @"1" : @"0";
+    openStepTimes[@"autostart"] = autostart ? @"1" : @"0";
+#if TARGET_OS_IPHONE
+    openStepTimes[@"applicationState"] = [NSString stringWithFormat:@"%ld", (long)[UIApplication sharedApplication].applicationState];
+#endif
+    [[ICDiagnosticLogger shared] logEvent:@"playback-open"
+                                  message:@"Folge geöffnet (synchrone Schritte)"
+                                 metadata:openStepTimes];
 }
 
 - (void)updateNowPlayingInfo {
@@ -2437,7 +2477,13 @@ didReceiveResponse:(NSURLResponse *)response
         {
             CDEpisode* episode = weakSelf.playingEpisode;
             CDFeed* feed = episode.feed;
-            
+            [[ICDiagnosticLogger shared] logEvent:@"playback-open"
+                                          message:@"Folge bereit"
+                                         metadata:@{
+                @"episodeHash": episode.objectHash ?: @"",
+                @"readyAfterOpenMs": [NSString stringWithFormat:@"%.1f", (CACurrentMediaTime() - weakSelf.openStartMediaTime) * 1000.0],
+            }];
+
             episode.lastPlayed = [NSDate date];
             // The feed's itunes:duration is only a promise. With dynamic ad insertion the
             // delivered media is longer (measured in one customer log: 1442 s for the iPhone

@@ -248,6 +248,17 @@ FOUNDATION_EXPORT void ICStoreScrollPositionForScrollView(NSString* key, UIScrol
 FOUNDATION_EXPORT void ICScheduleStoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView, NSTimeInterval delay);
 FOUNDATION_EXPORT void ICRestoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView);
 FOUNDATION_EXPORT void ICRestoreScrollPositionForScrollViewImmediately(NSString* key, UIScrollView* scrollView);
+
+// UIInterfaceOrientationMask for the app's full-screen controllers: iPad and the inner display
+// of the iPhone Duo rotate freely, every other iPhone screen (including the Duo's outer display)
+// stays portrait.
+@class UIViewController;
+@class UIWindowScene;
+FOUNDATION_EXPORT NSUInteger ICSupportedInterfaceOrientationsForViewController(UIViewController* viewController);
+FOUNDATION_EXPORT NSUInteger ICSupportedInterfaceOrientationsForWindowScene(UIWindowScene* windowScene);
+// Asks every controller shown in the scene's windows to re-read its supported orientations,
+// e.g. after the scene moved between the iPhone Duo's inner and outer display.
+FOUNDATION_EXPORT void ICUpdateSupportedInterfaceOrientationsInWindowScene(UIWindowScene* windowScene);
 #endif
 
 // Smart Home MQTT

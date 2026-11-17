@@ -648,13 +648,14 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
     self.playItem.enabled = hasSelection;
     self.downloadItem.enabled = hasSelection;
 
-    // Set items only once (9 = 5 items + 4 flex spaces)
-    if (self.editingToolbar.items.count != 9) {
-        UIBarButtonItem* flex1 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-        UIBarButtonItem* flex2 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-        UIBarButtonItem* flex3 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-        UIBarButtonItem* flex4 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-        [self.editingToolbar setItems:@[self.editItem, flex1, self.playItem, flex2, self.downloadItem, flex3, self.selectAllItem, flex4, self.cancelItem] animated:YES];
+    // Set items only once. The three selection actions share one glass group; the select-all
+    // title and Done are separate buttons. With five separately spaced groups iOS 26 folded
+    // select-all and Done into a "…" overflow menu instead of showing a Done button. Keep the
+    // title short ("Alle"): "Alle geladenen" still overflowed on 375-pt iPhones (SE).
+    if (![self.editingToolbar.items containsObject:self.cancelItem] || ![self.editingToolbar.items containsObject:self.selectAllItem]) {
+        UIBarButtonItem* flex = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+        UIBarButtonItem* gap = [UIBarButtonItem fixedSpaceItemOfWidth:0];
+        [self.editingToolbar setItems:@[self.editItem, self.playItem, self.downloadItem, flex, self.selectAllItem, gap, self.cancelItem] animated:YES];
     }
 }
 
@@ -693,7 +694,21 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
 }
 
 // Builds a UIMenu for the consumeAll floating button (bulk actions).
+// The entries depend on counts over every displayed episode (played, unplayed, downloaded). The
+// menu is rebuilt each time the list appears or changes, so the counting used to run on every
+// open of a list and loaded every episode; a podcast list loads its episodes in batches since
+// 17.11.2026 and would lose that. The entries are therefore computed when the menu opens.
 - (UIMenu*) _buildConsumeAllMenu API_AVAILABLE(ios(26.0))
+{
+    WEAK_SELF
+    UIDeferredMenuElement* entries = [UIDeferredMenuElement elementWithUncachedProvider:^(void (^completion)(NSArray<UIMenuElement*>*)) {
+        STRONG_SELF
+        completion(self ? [self _consumeAllMenuItems] : @[]);
+    }];
+    return [UIMenu menuWithTitle:@"" children:@[entries]];
+}
+
+- (NSArray<UIMenuElement*>*) _consumeAllMenuItems API_AVAILABLE(ios(26.0))
 {
     WEAK_SELF
     NSMutableArray<UIMenuElement*>* items = [NSMutableArray array];
@@ -726,7 +741,7 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
         [items addObject:act];
     }
 
-    return [UIMenu menuWithTitle:@"" children:items];
+    return [items copy];
 }
 
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
@@ -772,6 +787,11 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
                                                               style:UIBarButtonItemStylePlain
                                                              target:self
                                                              action:@selector(selectAllAction:)];
+        // Compact title like the text buttons in Downloads, so the select-all title and Done
+        // both fit next to the three action icons instead of folding into an overflow menu.
+        UIFont* selectAllFont = [UIFont systemFontOfSize:ICFontSize(15)];
+        [self.selectAllItem setTitleTextAttributes:@{NSFontAttributeName: selectAllFont} forState:UIControlStateNormal];
+        [self.selectAllItem setTitleTextAttributes:@{NSFontAttributeName: selectAllFont} forState:UIControlStateHighlighted];
     }
     if (!self.cancelItem) {
         self.cancelItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone

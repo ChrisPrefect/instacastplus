@@ -632,11 +632,7 @@ NSString* const ICSubscriptionsAddButtonDidAppearNotification = @"ICSubscription
 
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations
 {
-    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
-        return UIInterfaceOrientationMaskAll;
-    }
-    
-    return UIInterfaceOrientationMaskAllButUpsideDown;
+    return ICSupportedInterfaceOrientationsForViewController(self);
 }
 
 #pragma mark -

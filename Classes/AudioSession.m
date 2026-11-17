@@ -156,30 +156,63 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
     }
 }
 
+// Activating or deactivating the audio session is a synchronous round trip to the system audio
+// server. It ran on the main thread inside the tap that opens the player, and Xcode reports it as
+// "AVAudioSession Hang Risk" (the system logs the same warning). Both run on one serial queue so
+// they keep their order; AVPlayer starts playback on an inactive session by activating it itself.
++ (dispatch_queue_t) _audioSessionActivationQueue
+{
+    static dispatch_queue_t queue;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        queue = dispatch_queue_create("com.iteconomy.instacastplus.audio-session-activation",
+                                      dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0));
+    });
+    return queue;
+}
+
 - (void) _updateAudioSessionCategory
 {
     AVAudioSession* session = [AVAudioSession sharedInstance];
+    dispatch_queue_t activationQueue = [AudioSession _audioSessionActivationQueue];
     if (![PlaybackManager playbackManager].playingEpisode) {
         [self perform:^(id sender) {
-            NSError* error;
-            [session setActive:NO error:&error];
-            if (error) {
-                ErrLog(@"error deactivating audio session %@", error);
+            // An episode opened during the delay has already queued its activation; deactivating
+            // after it would take the session away from that episode.
+            if ([PlaybackManager playbackManager].playingEpisode) {
+                return;
             }
+            dispatch_async(activationQueue, ^{
+                NSError* error;
+                [session setActive:NO error:&error];
+                if (error) {
+                    ErrLog(@"error deactivating audio session %@", error);
+                }
+            });
         } afterDelay:1.0];
 
     }
     else
     {
-        NSError* error;
-        [session setActive:YES error:&error];
+        dispatch_async(activationQueue, ^{
+            NSError* error;
+            // Timed for the "playback-open" diagnostics.
+            CFTimeInterval activationStart = CACurrentMediaTime();
+            BOOL activated = [session setActive:YES error:&error];
+            [[ICDiagnosticLogger shared] logEvent:@"playback-open"
+                                          message:@"Audio-Session aktiviert"
+                                         metadata:@{
+                @"durationMs": [NSString stringWithFormat:@"%.1f", (CACurrentMediaTime() - activationStart) * 1000.0],
+                @"activated": activated ? @"1" : @"0",
+                @"error": error.description ?: @"",
+                @"mainThread": [NSThread isMainThread] ? @"1" : @"0",
+            }];
 
-        if (error) {
-            ErrLog(@"error (activating audio session %@", error);
-        }
+            if (error) {
+                ErrLog(@"error (activating audio session %@", error);
+            }
+        });
     }
-    
-    
 }
 
 - (BOOL)_isCarPlaySceneConnected

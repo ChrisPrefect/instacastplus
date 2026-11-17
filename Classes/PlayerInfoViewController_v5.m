@@ -3009,8 +3009,11 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         self.tableView.contentInset = edgeInsets;
     }
     UIEdgeInsets indicatorInsets = UIEdgeInsetsMake(safeAreaInsets.top, 0, self.bottomScrollInset, 0);
-    if (!UIEdgeInsetsEqualToEdgeInsets(self.tableView.scrollIndicatorInsets, indicatorInsets)) {
-        self.tableView.scrollIndicatorInsets = indicatorInsets;
+    // The deprecated scrollIndicatorInsets setter wrote both axes; keep doing that.
+    if (!UIEdgeInsetsEqualToEdgeInsets(self.tableView.verticalScrollIndicatorInsets, indicatorInsets) ||
+        !UIEdgeInsetsEqualToEdgeInsets(self.tableView.horizontalScrollIndicatorInsets, indicatorInsets)) {
+        self.tableView.verticalScrollIndicatorInsets = indicatorInsets;
+        self.tableView.horizontalScrollIndicatorInsets = indicatorInsets;
     }
     if (_didWillAppear) {
         self.tableView.contentOffset = CGPointMake(0, -safeAreaInsets.top);

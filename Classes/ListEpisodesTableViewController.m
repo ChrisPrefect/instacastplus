@@ -485,7 +485,7 @@
                 self.reloadedEpisodes = nil;
                 pageEpisodes = self.loadedEpisodes;
                 oldCount = 0;
-                _didRestoreScrollPosition = YES;
+                self->_didRestoreScrollPosition = YES;
             }
             else {
                 [self.loadedEpisodes addObjectsFromArray:pageEpisodes];
@@ -830,14 +830,6 @@
 - (NSInteger)_numberOfPlayedDownloadedEpisodes
 {
     return self.statisticsLoaded ? self.playedDownloadedEpisodeCount : [super _numberOfPlayedDownloadedEpisodes];
-}
-
-- (NSString*)_selectionToggleTitleKeyForSelectedCount:(NSUInteger)selectedCount rowCount:(NSUInteger)rowCount
-{
-    if (!self.reachedListEnd && selectedCount < rowCount) {
-        return @"All Loaded";
-    }
-    return [super _selectionToggleTitleKeyForSelectedCount:selectedCount rowCount:rowCount];
 }
 
 - (void) _updateToolbarLabels

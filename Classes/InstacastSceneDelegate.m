@@ -172,11 +172,11 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
         BOOL isiOSAppOnMac = NO;
         isiOSAppOnMac = NSProcessInfo.processInfo.isiOSAppOnMac;
 
-        CGSize startSize = CGSizeMake(402, 874);
         CGSize minSize = CGSizeMake(402, 662);
 
 #if TARGET_OS_MACCATALYST
         {
+            CGSize startSize = CGSizeMake(402, 874);
             // Mac Catalyst Fenstergrösse:
             //
             // Catalyst startet standardmässig bei 1024x768 mit System-Minimum 668x414.
@@ -834,6 +834,22 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
     }
 }
 
+
+#pragma mark - Interface orientation (iPhone Duo)
+
+// iOS 27: replaces the Info.plist orientations for this scene. iPhones stay portrait; the
+// unfolded inner display of the iPhone Duo rotates like an iPad (ICSupportedInterface…).
+- (UIInterfaceOrientationMask)supportedInterfaceOrientationsForWindowScene:(UIWindowScene *)windowScene API_AVAILABLE(ios(27.0))
+{
+    return ICSupportedInterfaceOrientationsForWindowScene(windowScene);
+}
+
+// Called whenever the scene moves between screens, e.g. when the iPhone Duo is folded or
+// unfolded: the supported orientations depend on the screen, so UIKit has to ask again.
+- (void)windowScene:(UIWindowScene *)windowScene didUpdateEffectiveGeometry:(UIWindowSceneGeometry *)previousEffectiveGeometry API_AVAILABLE(ios(26.0))
+{
+    ICUpdateSupportedInterfaceOrientationsInWindowScene(windowScene);
+}
 
 - (void)sceneDidBecomeActive:(UIScene *)scene {
     [[ICDiagnosticLogger shared] recordLifecycle:@"sceneDidBecomeActive"

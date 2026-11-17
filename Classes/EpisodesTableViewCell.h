@@ -36,6 +36,9 @@
 - (void) updatePlaylistIndicatorState;
 - (void) updateTranscriptIndicatorState;
 + (NSNumber*) cachedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing;
+// Same cache as above, looked up by the episode's identifier (objectHash, else guid, else title)
+// so a list can estimate row heights without touching — and thereby loading — the episode.
++ (NSNumber*) cachedHeightWithEpisodeIdentifier:(NSString*)identifier tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing;
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing;
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle;
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle summaryOverride:(NSString*)summaryOverride;

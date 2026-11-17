@@ -29,6 +29,7 @@
 #import "SubscriptionManager.h"
 #import "ICFeed.h"
 #import "UtilityFunctions.h"
+#import "InstacastPlus-Swift.h"
 
 
 NSString* UniqueDeviceId = @"UniqueDeviceId";
@@ -283,8 +284,34 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 
 -(void)sendEvent:(UIEvent *)event
 {
+    // Field report 17.11.2026: a tap showed no reaction for several seconds. Lifting a finger
+    // is timed twice: how long the touch waited for the main thread before it arrived here,
+    // and how long the app then took to handle it. Only slow touches are written.
+    UITouch* endedTouch = nil;
+    if (event.type == UIEventTypeTouches) {
+        for (UITouch* touch in event.allTouches) {
+            if (touch.phase == UITouchPhaseEnded) {
+                endedTouch = touch;
+                break;
+            }
+        }
+    }
+    CFTimeInterval eventHandlingStart = CACurrentMediaTime();
     [super sendEvent:event];
-    
+    if (endedTouch) {
+        CFTimeInterval waitedMs = (eventHandlingStart - endedTouch.timestamp) * 1000.0;
+        CFTimeInterval handledMs = (CACurrentMediaTime() - eventHandlingStart) * 1000.0;
+        if (waitedMs > 250.0 || handledMs > 250.0) {
+            [[ICDiagnosticLogger shared] logEvent:@"input-latency"
+                                          message:@"Langsame Touch-Verarbeitung"
+                                         metadata:@{
+                @"waitedForMainThreadMs": [NSString stringWithFormat:@"%.1f", waitedMs],
+                @"handlingMs": [NSString stringWithFormat:@"%.1f", handledMs],
+                @"view": endedTouch.view ? NSStringFromClass(endedTouch.view.class) : @"",
+            }];
+        }
+    }
+
     if (!myidleTimer)
     {
         [self resetIdleTimer];

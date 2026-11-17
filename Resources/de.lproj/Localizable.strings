@@ -1772,7 +1772,6 @@
 "The episodes could not be loaded from this device. Try again." = "Die Folgen konnten auf diesem Gerät nicht geladen werden. Versuche es erneut.";
 "Episodes could not be loaded. Tap to try again." = "Folgen konnten nicht geladen werden. Tippe hier, um es erneut zu versuchen.";
 "Retry" = "Erneut versuchen";
-"All Loaded" = "Alle geladenen";
 "Die synchronisierten Änderungen konnten auf diesem Gerät nicht lokal gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut." = "Die synchronisierten Änderungen konnten auf diesem Gerät nicht lokal gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut.";
 "Abbestellte Podcasts wurden gespeichert, aber ihre lokalen Downloads konnten noch nicht vollständig entfernt werden. InstacastPlus versucht es später erneut." = "Abbestellte Podcasts wurden gespeichert, aber ihre lokalen Downloads konnten noch nicht vollständig entfernt werden. InstacastPlus versucht es später erneut.";
 "Die lokalen Daten konnten nicht für iCloud gelesen werden. Die Synchronisation wird automatisch erneut versucht." = "Die lokalen Daten konnten nicht für iCloud gelesen werden. Die Synchronisation wird automatisch erneut versucht.";

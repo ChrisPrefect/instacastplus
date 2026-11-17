@@ -383,6 +383,17 @@ static CGFloat ICDownloadRetryButtonWidth(void)
 
 - (void) _updateToolbar
 {
+    // Decision 17.11.2026: Edit, Pause and Cancel All/Clear Errors only appear while there is
+    // something in the list; an empty downloads screen shows no disabled buttons.
+    BOOL hasContent = self.displayEpisodes.count > 0 || _downloadErrorClearNeedsRetry;
+    if (!hasContent && self.editing) {
+        [self setEditing:NO animated:YES];
+        self.navigationItem.rightBarButtonItem.image = [UIImage systemImageNamed:@"pencil"];
+    }
+    self.navigationItem.rightBarButtonItem.hidden = (self.displayEpisodes.count == 0);
+    self.pauseItem.hidden = !hasContent;
+    self.cancelItem.hidden = !hasContent;
+
     if (self.toolbarItems.count == 0) {
         return;
     }

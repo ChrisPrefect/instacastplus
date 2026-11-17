@@ -364,7 +364,11 @@ static UIColor* ICResolvedThemeTintColor(void)
 }
 
 -(UIColor*) tableSelectedBackgroundColor {
-    return [UIColor tertiarySystemGroupedBackgroundColor];
+    // tertiarySystemGroupedBackgroundColor (used since 01.02.2026) is identical to the light
+    // backgroundColor (systemGroupedBackgroundColor, 242/242/247), so selected and highlighted
+    // rows showed no tint at all in light mode. systemGray5 (229/229/234) matches the grey
+    // used before (0.9 white).
+    return [UIColor systemGray5Color];
 }
 
 - (UIColor*) groupCellBackgroundColor {

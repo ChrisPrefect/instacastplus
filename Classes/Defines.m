@@ -392,3 +392,44 @@ void ICRestoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollVie
     });
 }
 #endif
+
+#if TARGET_OS_IPHONE
+NSUInteger ICSupportedInterfaceOrientationsForWindowScene(UIWindowScene* windowScene)
+{
+    if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
+        return UIInterfaceOrientationMaskAll;
+    }
+
+    // Decision 17.11.2026: iPhones stay portrait, but the unfolded inner display of the
+    // iPhone Duo (669 x 951 pt, measured in the simulator) rotates like an iPad. Its outer
+    // display (466 x 678 pt) and every other iPhone are narrower than 600 pt.
+    if (!windowScene) {
+        for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]] &&
+                [scene.session.role isEqualToString:UIWindowSceneSessionRoleApplication]) {
+                windowScene = (UIWindowScene*)scene;
+                break;
+            }
+        }
+    }
+    CGRect screenBounds = windowScene.screen.bounds;
+    CGFloat shorterSide = MIN(CGRectGetWidth(screenBounds), CGRectGetHeight(screenBounds));
+    return (shorterSide >= 600.0) ? UIInterfaceOrientationMaskAll : UIInterfaceOrientationMaskPortrait;
+}
+
+NSUInteger ICSupportedInterfaceOrientationsForViewController(UIViewController* viewController)
+{
+    return ICSupportedInterfaceOrientationsForWindowScene(viewController.viewIfLoaded.window.windowScene);
+}
+
+void ICUpdateSupportedInterfaceOrientationsInWindowScene(UIWindowScene* windowScene)
+{
+    for (UIWindow* window in windowScene.windows) {
+        UIViewController* controller = window.rootViewController;
+        while (controller) {
+            [controller setNeedsUpdateOfSupportedInterfaceOrientations];
+            controller = controller.presentedViewController;
+        }
+    }
+}
+#endif

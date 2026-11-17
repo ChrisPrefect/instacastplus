@@ -223,17 +223,25 @@
     - (void) _presentFromParentViewController:(UIViewController*)parentViewController autostart:(BOOL)autostart completion:(void (^)(void))completion
     {
         AudioSession* audioSession = [AudioSession sharedAudioSession];
+        // Field report 17.11.2026: after a cold relaunch the player appeared only seconds after
+        // the mini player tap. Everything up to presentViewController: runs inside the tap;
+        // "player-presentation" records how long that took and when the player was on screen.
+        CFTimeInterval presentationStart = CACurrentMediaTime();
+        NSString* presentationPath = @"present";
         if (self.episode && (self.force || ![audioSession.episode isEqual:self.episode])) {
+            presentationPath = @"open-requested";
             [audioSession playEpisode:self.episode queueUpCurrent:NO at:0 autostart:autostart preservingPlaybackSource:[audioSession.episode isEqual:self.episode]];
             [self setTimerUpdateOnPlay];
         }
-        
+
         // if audio session knows what to play, but it's not already playing load it
         else if (audioSession.episode && ![PlaybackManager playbackManager].ready) {
+            presentationPath = @"open-restored";
             [audioSession playEpisode:audioSession.episode queueUpCurrent:NO at:0 autostart:autostart preservingPlaybackSource:YES];
             [self setTimerUpdateOnPlay];
         }
         else if (autostart) {
+            presentationPath = @"resume";
             //DevD to do : timer things
             [[PlaybackManager playbackManager] play];
             [self setTimerUpdateOnPlay];
@@ -253,8 +261,16 @@
     //    [parentViewController.view addSubview:self.view];
     //    [parentViewController addChildViewController: self];
     //    [self didMoveToParentViewController:parentViewController];
-            
+
+        CFTimeInterval presentationCallTime = CACurrentMediaTime();
         [parentViewController presentViewController:self animated:YES completion:^{
+            [[ICDiagnosticLogger shared] logEvent:@"player-presentation"
+                                          message:@"Player angezeigt"
+                                         metadata:@{
+                @"path": presentationPath,
+                @"beforePresentMs": [NSString stringWithFormat:@"%.1f", (presentationCallTime - presentationStart) * 1000.0],
+                @"presentedAfterMs": [NSString stringWithFormat:@"%.1f", (CACurrentMediaTime() - presentationStart) * 1000.0],
+            }];
             if (completion) {
                 completion();
             }

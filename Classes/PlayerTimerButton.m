@@ -737,4 +737,12 @@ static UIImage* ICPlayerSleepTimerImage(void)
 }
 #pragma clang diagnostic pop
 
+// The button sits right of the centre; UIKit attached the menu to its trailing edge and opened it
+// leftwards across the controls, so it did not appear to come out of the button. Attaching it
+// at the button's top centre makes the menu grow out of the button itself.
+- (CGPoint)menuAttachmentPointForConfiguration:(UIContextMenuConfiguration *)configuration
+{
+    return CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMinY(self.bounds));
+}
+
 @end
