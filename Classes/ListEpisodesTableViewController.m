@@ -10,6 +10,7 @@
 #import "ToolbarLabelsViewController.h"
 #import "EpisodeListEditorViewController.h"
 #import "EpisodePlayComboButton.h"
+#import "EpisodesTableViewCell.h"
 #import "ICRefreshControl.h"
 #import "CDList.h"
 #import "CDEpisodeList.h"
@@ -23,6 +24,7 @@
 @interface ListEpisodesTableViewController ()
 @property (nonatomic) NSInteger episodesLoadGeneration;
 @property (nonatomic, strong) NSMutableArray<CDEpisode*>* loadedEpisodes;
+@property (nonatomic, strong) NSMutableDictionary<NSManagedObjectID*, NSString*>* heightEstimateIdentifiers;
 @property (nonatomic, strong) NSMutableArray<CDEpisode*>* reloadedEpisodes;
 @property (nonatomic) NSUInteger reloadedPageOffset;
 @property (nonatomic) BOOL episodeReloadPending;
@@ -150,7 +152,7 @@
         if ([self _allowsPullToRefresh]) {
             [nc addObserver:self name:SubscriptionManagerDidStartRefreshingFeedsNotification object:nil handler:^(NSNotification *notification) {
                 if (self.isViewLoaded && self.view.window) {
-                    [self.refreshControl beginRefreshing];
+                    [self _showRefreshControlIfVisible];
                 }
             }];
 
@@ -276,7 +278,7 @@
             return;
         }
         if ([SubscriptionManager sharedSubscriptionManager].refreshing && !self.refreshControl.refreshing) {
-            [self.refreshControl beginRefreshing];
+            [self _showRefreshControlIfVisible];
         }
         else if (![SubscriptionManager sharedSubscriptionManager].refreshing && self.refreshControl.refreshing) {
             [self.refreshControl endRefreshing];
@@ -405,9 +407,13 @@
     NSInteger generation = self.episodesLoadGeneration;
     NSUInteger offset = replacingEpisodes ? self.reloadedPageOffset : self.nextPageOffset;
     NSManagedObjectID* listID = self.list.objectID;
+    CGSize tableSize = UIEdgeInsetsInsetRect(self.tableView.bounds, self.tableView.safeAreaInsets).size;
+    CGSize imageSize = self.showsImage ? CGSizeMake(56, 56) : CGSizeZero;
+    BOOL editing = self.editing;
 
     dispatch_async(dispatch_get_global_queue(replacingEpisodes ? QOS_CLASS_UTILITY : QOS_CLASS_USER_INITIATED, 0), ^{
         __block NSArray<NSManagedObjectID*>* episodeIDs = nil;
+        __block NSMutableDictionary<NSManagedObjectID*, NSString*>* heightIdentifiers = [NSMutableDictionary dictionary];
         __block NSError* pageError = nil;
         NSManagedObjectContext* context = replacingEpisodes ? [DMANAGER newExportBackgroundContext] : [DMANAGER newBackgroundContext];
         if (!context) {
@@ -424,6 +430,16 @@
                                                                   error:&pageError];
             if (page) {
                 episodeIDs = [page valueForKey:@"objectID"];
+                for (CDEpisode* episode in page) {
+                    if (episode.objectHash) heightIdentifiers[episode.objectID] = episode.objectHash;
+                    // Measure this bounded page on its context's queue. UIKit can
+                    // then insert rows using exact heights without moving a drag.
+                    [EpisodesTableViewCell proposedHeightWithObjectValue:episode
+                                                              tableSize:tableSize
+                                                              imageSize:imageSize
+                                                               embedded:NO
+                                                                editing:editing];
+                }
             }
         }];
 
@@ -446,12 +462,17 @@
             }
 
             NSUInteger oldCount = self.loadedEpisodes.count;
+            if (!self.heightEstimateIdentifiers) self.heightEstimateIdentifiers = [NSMutableDictionary dictionary];
             NSMutableArray<CDEpisode*>* pageEpisodes = [[NSMutableArray alloc] initWithCapacity:episodeIDs.count];
             for(NSManagedObjectID* episodeID in episodeIDs) {
                 NSError* error = nil;
                 CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext existingObjectWithID:episodeID error:&error];
                 if (episode && !error) {
                     [pageEpisodes addObject:episode];
+                    // The replacement reader owns a separate coordinator. Key the
+                    // estimate by the resolved main-context identity, not its ID.
+                    NSString* identifier = heightIdentifiers[episodeID];
+                    if (identifier) self.heightEstimateIdentifiers[episode.objectID] = identifier;
                 }
             }
 
@@ -593,6 +614,7 @@
 
     [self _captureSelectedEpisodeObjectIDsForReload];
     self.loadedEpisodes = [[NSMutableArray alloc] init];
+    self.heightEstimateIdentifiers = [NSMutableDictionary dictionary];
     self.episodes = self.loadedEpisodes;
     self.nextPageOffset = 0;
     self.reachedListEnd = NO;
@@ -809,9 +831,36 @@
 
 #pragma mark -
 
+- (void)_showRefreshControlIfVisible
+{
+    // Starting a hidden refresh control adds an inset and a scroll animation.
+    // Its offset target becomes stale when pagination resolves estimated heights.
+    // Show it when the user reaches the header; an active pull stays untouched.
+    if (!self.refreshControl.refreshing &&
+        self.tableView.contentOffset.y <= -self.tableView.adjustedContentInset.top) {
+        [self.refreshControl beginRefreshing];
+    }
+}
+
 - (NSInteger)_numberOfDisplayEpisodes
 {
     return self.statisticsLoaded ? self.totalEpisodeCount : self.loadedEpisodes.count;
+}
+
+- (CGFloat)tableView:(UITableView*)tableView estimatedHeightForRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    // Reuse measured geometry without firing faults for every loaded row. A
+    // fixed 72-point estimate made insertion reset rows above the moving finger.
+    CDEpisode* episode = indexPath.row < self.episodes.count ? self.episodes[indexPath.row] : nil;
+    NSString* identifier = episode ? self.heightEstimateIdentifiers[episode.objectID] : nil;
+    CGSize size = UIEdgeInsetsInsetRect(tableView.bounds, tableView.safeAreaInsets).size;
+    CGSize imageSize = self.showsImage ? CGSizeMake(56, 56) : CGSizeZero;
+    NSNumber* height = [EpisodesTableViewCell cachedHeightWithEpisodeIdentifier:identifier
+                                                                   tableSize:size
+                                                                   imageSize:imageSize
+                                                                    embedded:NO
+                                                                     editing:self.editing];
+    return height ? height.doubleValue : [super tableView:tableView estimatedHeightForRowAtIndexPath:indexPath];
 }
 
 - (NSInteger)_numberOfNotPlayedDisplayEpisodes
@@ -862,6 +911,9 @@
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView
 {
+    if ([SubscriptionManager sharedSubscriptionManager].refreshing) {
+        [self _showRefreshControlIfVisible];
+    }
     CGSize size = scrollView.contentSize;
     if (size.height == 0) {
         return;

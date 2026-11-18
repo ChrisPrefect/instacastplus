@@ -1413,6 +1413,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 #if TARGET_OS_IPHONE
 @property (nonatomic) UIBackgroundTaskIdentifier bufferNextItemTaskIdentifier;
+@property (nonatomic, strong) dispatch_queue_t remoteCommandQueue;
 #endif
 
 @property (nonatomic) double initialPlaybackTime;
@@ -1525,6 +1526,7 @@ didReceiveResponse:(NSURLResponse *)response
 	if ((self = [super init]))
 	{
 #if TARGET_OS_IPHONE
+        _remoteCommandQueue = dispatch_queue_create("com.iteconomy.instacastplus.remote-commands", DISPATCH_QUEUE_SERIAL);
 
         // overwrite current default on iOS, because we actually use the system volume
         [USER_DEFAULTS setFloat:1.0f forKey:kDefaultPlaybackVolume];
@@ -1897,7 +1899,9 @@ didReceiveResponse:(NSURLResponse *)response
     }
     
     [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = self.nowPlayingInfo;
+#if TARGET_OS_MACCATALYST
     MPNowPlayingInfoCenter.defaultCenter.playbackState = nowPlayingPlaybackIsActive ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
+#endif
     
 #endif
 }
@@ -1906,6 +1910,12 @@ didReceiveResponse:(NSURLResponse *)response
 - (void) _setupRemotePlaybackCenterWithEpisode:(CDEpisode*)episode
 {
 #if TARGET_OS_IPHONE
+    // Core Data stays on the caller's main queue. MediaPlayer can synchronously wait
+    // for its service, so apply these value snapshots off main, in request order.
+    BOOL hasEpisode = (episode != nil);
+    NSInteger controls = [episode.feed integerForKey:kDefaultPlayerControls];
+    NSInteger skipBack = [episode.feed integerForKey:PlayerSkipBackPeriod];
+    NSInteger skipForward = [episode.feed integerForKey:PlayerSkipForwardPeriod];
     // Diagnostics for the field report "lock screen shows Instacast but only a grayed-out play
     // button": that is exactly the state after this method runs with episode == nil (all commands
     // disabled) while now-playing info is still populated. Log every transition so the log shows
@@ -1919,6 +1929,15 @@ didReceiveResponse:(NSURLResponse *)response
         @"changingEpisode": self.changingEpisode ? @"true" : @"false",
     }];
 
+    dispatch_async(self.remoteCommandQueue, ^{
+        [self _applyRemotePlaybackCommands:hasEpisode controls:controls skipBack:skipBack skipForward:skipForward];
+    });
+#endif
+}
+
+- (void)_applyRemotePlaybackCommands:(BOOL)hasEpisode controls:(NSInteger)controls skipBack:(NSInteger)skipBack skipForward:(NSInteger)skipForward
+{
+#if TARGET_OS_IPHONE
     MPRemoteCommandCenter *rcc = [MPRemoteCommandCenter sharedCommandCenter];
     
     // reset all commands first
@@ -1965,10 +1984,8 @@ didReceiveResponse:(NSURLResponse *)response
     [changePlaybackPositionCommand removeTarget:self];
     
     
-    if (episode)
+    if (hasEpisode)
     {
-        CDFeed* feed = episode.feed;
-        
         MPRemoteCommand *pauseCommand = rcc.pauseCommand;
         pauseCommand.enabled = YES;
         [pauseCommand addTarget:self action:@selector(_pauseEvent:)];
@@ -1985,16 +2002,16 @@ didReceiveResponse:(NSURLResponse *)response
         changePlaybackPositionCommand.enabled = YES;
         [changePlaybackPositionCommand addTarget:self action:@selector(_changePlaybackPositionEvent:)];
         
-        if ([feed integerForKey:kDefaultPlayerControls] == kPlayerSkippingControls)
+        if (controls == kPlayerSkippingControls)
         {
             MPSkipIntervalCommand* skipBackwardIntervalCommand = rcc.skipBackwardCommand;
             skipBackwardIntervalCommand.enabled = YES;
             [skipBackwardIntervalCommand addTarget:self action:@selector(_skipBackwardEvent:)];
-            skipBackwardIntervalCommand.preferredIntervals = @[@([feed integerForKey:PlayerSkipBackPeriod])];
+            skipBackwardIntervalCommand.preferredIntervals = @[@(skipBack)];
             
             MPSkipIntervalCommand* skipForwardIntervalCommand = rcc.skipForwardCommand;
             skipForwardIntervalCommand.enabled = YES;
-            skipForwardIntervalCommand.preferredIntervals = @[@([feed integerForKey:PlayerSkipForwardPeriod])];
+            skipForwardIntervalCommand.preferredIntervals = @[@(skipForward)];
             [skipForwardIntervalCommand addTarget:self action:@selector(_skipForwardEvent:)];
             
             MPRemoteCommand* nextTrackCommand = rcc.nextTrackCommand;
@@ -2007,7 +2024,7 @@ didReceiveResponse:(NSURLResponse *)response
         }
         else
         {
-            if ([feed integerForKey:kDefaultPlayerControls] == kPlayerSeekingAndSkippingChaptersControls)
+            if (controls == kPlayerSeekingAndSkippingChaptersControls)
             {
                 MPRemoteCommand* nextTrackCommand = rcc.nextTrackCommand;
                 nextTrackCommand.enabled = YES;
@@ -2676,7 +2693,9 @@ didReceiveResponse:(NSURLResponse *)response
             [weakSelf _setupRemotePlaybackCenterWithEpisode:weakSelf.playingEpisode];
         } afterDelay:0.1];
 
+#if TARGET_OS_MACCATALYST
         MPNowPlayingInfoCenter.defaultCenter.playbackState = weakSelf.paused ? MPNowPlayingPlaybackStatePaused : MPNowPlayingPlaybackStatePlaying;
+#endif
 
         // Propagate the effective player state (rate-based paused/running) immediately.
         [weakSelf _sendUpdateNotification];

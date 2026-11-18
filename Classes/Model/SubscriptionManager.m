@@ -1725,6 +1725,13 @@ static NSString* const kFeedPropertyDurationRefreshAttempted = @"durationMetadat
                         return;
                     }
 
+                    // Commit each feed before the next results accumulate. Saving
+                    // every feed's metadata together at refresh completion caused
+                    // a second main-thread stall after the network work finished.
+                    if (!mergeError) {
+                        mergeError = [DMANAGER saveReturningError];
+                    }
+
                     if (mergeError) {
                         [strongSelfInner.feedsMergingURLs removeObject:url];
                         if (![strongSelfInner.refreshingFeedURLs containsObject:url]) {
@@ -2431,6 +2438,11 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
             NSRange range = NSMakeRange(offset, MIN(kMergePrefetchBatchSize, localEpisodeIDs.count - offset));
             NSFetchRequest* prefetchRequest = [NSFetchRequest fetchRequestWithEntityName:@"Episode"];
             prefetchRequest.predicate = [NSPredicate predicateWithFormat:@"SELF IN %@", [localEpisodeIDs subarrayWithRange:range]];
+            // This only warms persisted faults by identity. Pending inserts are
+            // already realized, and registered edits keep their current values.
+            // Re-matching every pending object in every batch blocked main for
+            // hundreds of milliseconds as refresh changes accumulated.
+            prefetchRequest.includesPendingChanges = NO;
             prefetchRequest.returnsObjectsAsFaults = NO;
             NSArray* batch = [realizingContext executeFetchRequest:prefetchRequest error:nil];
             if (batch) {

@@ -2457,6 +2457,11 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
         }
         [_feedsAwaitingCountSave unionSet:feedsAwaitingSuccessfulSave];
     }
+    // Background episode batches are already committed when merged into main;
+    // they do not pass through saveReturningError's list-cache invalidation.
+    if (feedsWithChangedEpisodeCounts.count > 0) {
+        [self coalescedPerformSelector:@selector(_invalidateListCaches)];
+    }
     for (CDFeed* feed in feedsWithChangedEpisodeCounts) {
         if (!feed.isDeleted) {
             [feed invalidateCountsAwaitingSave:[_feedsAwaitingCountSave containsObject:feed]];

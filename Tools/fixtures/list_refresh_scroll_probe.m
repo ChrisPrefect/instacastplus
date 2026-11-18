@@ -6,6 +6,7 @@
 @interface NSObject (ListRefreshScrollProbeAPI)
 + (id)sharedDatabaseManager;
 + (id)sharedSubscriptionManager;
++ (id)sharedManager;
 - (void)subscribeFeedWithURL:(NSURL*)url options:(NSInteger)options completion:(void (^)(id, NSError*))completion;
 - (void)unsubscribeFeed:(id)feed completion:(void (^)(NSError*))completion;
 - (void)refreshFeeds:(NSArray*)feeds etagHandling:(BOOL)etagHandling completion:(void (^)(BOOL, NSArray*, NSError*))completion;
@@ -27,6 +28,7 @@ static NSString *anchorHash;
 static BOOL monitoring;
 static BOOL refreshDuringDrag;
 static BOOL observingReplacement, mutationArmed, mutationTriggered;
+static BOOL observingReloadLifecycle, reloadLifecycleActive;
 static id mutationEpisode;
 static NSDictionary *mutationResult;
 
@@ -56,10 +58,12 @@ static NSDictionary *geometry(void) {
     NSMutableDictionary *state = [@{
         @"clock": @(CACurrentMediaTime()), @"loaded": @(loaded.count),
         @"offsetY": @(view.contentOffset.y), @"contentHeight": @(view.contentSize.height),
+        @"panTranslationY": @([view.panGestureRecognizer translationInView:view.window].y),
         @"dragging": @(view.dragging), @"decelerating": @(view.decelerating),
         @"reloadPending": @([screen respondsToSelector:NSSelectorFromString(@"episodeReloadPending")] && [[screen valueForKey:@"episodeReloadPending"] boolValue]),
         @"anchorHash": anchorHash ?: @"", @"anchorPresent": @NO,
         @"loadingPage": [screen valueForKey:@"loadingPage"] ?: @NO,
+        @"replacing": @([screen valueForKey:@"reloadedEpisodes"] != nil),
         @"generation": [screen valueForKey:@"episodesLoadGeneration"] ?: @0,
         @"screenVisible": @(screen.isViewLoaded && screen.view.window != nil),
         @"mutationTriggered": @(mutationTriggered),
@@ -103,6 +107,12 @@ static NSDictionary *snapshot(void) {
     state[@"pageError"] = [[screen valueForKey:@"pageError"] description] ?: @"";
     state[@"reachedListEnd"] = [screen valueForKey:@"reachedListEnd"] ?: @NO;
     state[@"loadedHashes"] = [episodes() valueForKey:@"objectHash"] ?: @[];
+    if ([screen respondsToSelector:NSSelectorFromString(@"heightEstimateIdentifiers")]) {
+        NSDictionary *identifiers=[screen valueForKey:@"heightEstimateIdentifiers"];
+        NSUInteger missing=0;
+        for (NSManagedObject *episode in episodes()) if (!identifiers[episode.objectID]) missing++;
+        state[@"missingHeightIdentifiers"]=@(missing);
+    }
     state[@"presentedController"] = presentedController() ? NSStringFromClass(presentedController().class) : @"";
     state[@"mutationTriggered"] = @(mutationTriggered);
     state[@"mutationConsumed"] = [mutationEpisode valueForKey:@"consumed"] ?: @NO;
@@ -161,6 +171,14 @@ static void scrollToRow(NSUInteger row) {
     }
 }
 - (void)observeValueForKeyPath:(NSString*)path ofObject:(id)object change:(NSDictionary*)change context:(void*)context {
+    if ([path isEqual:@"reloadedEpisodes"]) {
+        BOOL active=([object valueForKey:path] != nil);
+        if (reloadLifecycleActive && !active) {
+            [events addObject:@{@"event":@"replacement-ended",@"clock":@(CACurrentMediaTime()),@"state":geometry()}];
+        }
+        reloadLifecycleActive=active;
+        return;
+    }
     if ([path isEqual:@"reloadedPageOffset"]) {
         if (!mutationArmed || [[object valueForKey:path] unsignedIntegerValue] < 25) return;
         mutationArmed = NO;
@@ -221,7 +239,12 @@ static void scrollToRow(NSUInteger row) {
             @try {
                 NSString *action = request[@"action"];
                 id manager = [NSClassFromString(@"SubscriptionManager") sharedSubscriptionManager];
-                if ([action isEqual:@"dismissOnboarding"]) {
+                if ([action isEqual:@"suspendBacklog"] || [action isEqual:@"resumeBacklog"]) {
+                    // Hold the real operation queue so the initial 50-episode count
+                    // is visible before the remaining persisted batch is committed.
+                    id loader=[NSClassFromString(@"EpisodeLoadingManager") sharedManager];
+                    [loader setSuspended:[action isEqual:@"suspendBacklog"]];
+                } else if ([action isEqual:@"dismissOnboarding"]) {
                     UIViewController *presented = presentedController();
                     if ([presented isKindOfClass:NSClassFromString(@"ChangeLogViewController")]) [(id)presented closeTapped];
                     else if ([presented isKindOfClass:NSClassFromString(@"OnboardScreenVC")]) [(id)presented tapGesture:nil];
@@ -238,6 +261,11 @@ static void scrollToRow(NSUInteger row) {
                         if (![[feed valueForKey:@"title"] isEqual:@"Scroll Refresh Regression"])
                             @throw [NSException exceptionWithName:@"NotDisposable" reason:@"Simulator contains a non-fixture subscription" userInfo:nil];
                     }
+                    // Each fixture begins at the top. A previous deep-scroll case
+                    // must not restore enough pages to bypass the paging overlap.
+                    UITableView *previousTable=table();
+                    if (previousTable) [previousTable setContentOffset:CGPointMake(0,-previousTable.adjustedContentInset.top) animated:NO];
+                    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"ListScrollPositions"];
                     operation = feeds.count ? @"cleanup-pending" : @"cleanup-done";
                     __block NSUInteger remaining = feeds.count;
                     for (id feed in [feeds copy]) {
@@ -257,6 +285,7 @@ static void scrollToRow(NSUInteger row) {
                     }];
                 } else if ([action isEqual:@"open"]) {
                     if (screen) [[screen valueForKey:@"list"] removeObserver:driver forKeyPath:@"numberOfEpisodes"];
+                    if (observingReloadLifecycle) [screen removeObserver:driver forKeyPath:@"reloadedEpisodes"];
                     if (observingReplacement) {
                         [screen removeObserver:driver forKeyPath:@"reloadedPageOffset"];
                         observingReplacement = NO;
@@ -265,6 +294,9 @@ static void scrollToRow(NSUInteger row) {
                         @throw [NSException exceptionWithName:@"OpenList" reason:@"Sidebar did not open Ungespielt" userInfo:nil];
                     screen = findList(main);
                     if (!screen) @throw [NSException exceptionWithName:@"NoList" reason:@"List controller missing from actual hierarchy" userInfo:nil];
+                    reloadLifecycleActive=([screen valueForKey:@"reloadedEpisodes"] != nil);
+                    [screen addObserver:driver forKeyPath:@"reloadedEpisodes" options:0 context:NULL];
+                    observingReloadLifecycle=YES;
                     [[screen valueForKey:@"list"] addObserver:driver forKeyPath:@"numberOfEpisodes" options:0 context:NULL];
                 } else if ([action isEqual:@"scroll"]) {
                     scrollToRow([request[@"row"] unsignedIntegerValue]);

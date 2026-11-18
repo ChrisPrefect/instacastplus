@@ -34,15 +34,13 @@ def main():
     parser.add_argument('--udid', required=True)
     parser.add_argument('--app', required=True, type=Path)
     parser.add_argument('--evidence', required=True, type=Path)
-    parser.add_argument('--case', choices=['all', 'first25', 'deep', 'paging', 'mutation', 'native'], default='all')
+    parser.add_argument('--case', choices=['all', 'first25', 'deep', 'paging', 'mutation', 'backlog', 'native'], default='all')
     parser.add_argument('--native-ui-project', type=Path, help='Built NativeScroll XCTest UI project for --case native')
     args = parser.parse_args()
     out = args.evidence.resolve()
     out.mkdir(parents=True, exist_ok=True)
     checks = []
-    cases = ['first25', 'deep', 'paging', 'mutation'] if args.case == 'all' else [args.case]
-    if args.case == 'native' and not args.native_ui_project:
-        parser.error('--case native requires --native-ui-project')
+    cases = ['first25', 'deep', 'paging', 'mutation', 'backlog'] if args.case == 'all' else [args.case]
 
     def run(command, check=True, env=None):
         result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
@@ -155,7 +153,10 @@ def main():
             state = command()
             current = (state['generation'], state['loaded'], state['listCount'], state['offsetY'], state['countChangeCount'])
             valid = predicate(state) and not state['loadingPage'] and not state['refreshing'] and state['statisticsLoaded']
-            if not valid or current != signature:
+            with (out / 'settling.jsonl').open('a') as log:
+                log.write(json.dumps(dict(clock=time.monotonic(), current=current, previous=signature,
+                                          valid=valid, stableSince=stable_since)) + '\n')
+            if not valid or current != signature or stable_since is None:
                 stable_since = time.monotonic() if valid else None
                 signature = current
             elif stable_since and time.monotonic() - stable_since >= 1.5:
@@ -214,6 +215,9 @@ def main():
         record(f'{case}-{label}: original episode stays visible after refresh',
                after['anchorPresent'] and abs(after['anchorScreenY'] - reference['anchorScreenY']) <= 1,
                expectedScreenY=reference['anchorScreenY'], observedScreenY=after.get('anchorScreenY'))
+        if 'missingHeightIdentifiers' in after:
+            record(f'{case}-{label}: height identities survive the background reader coordinator',
+                   after['missingHeightIdentifiers'] == 0, missing=after['missingHeightIdentifiers'])
         if label != 'unchanged':
             record(f'{case}-{label}: production list KVO observed new count', after['countChangeCount'] > before['countChangeCount'])
 
@@ -268,7 +272,17 @@ def main():
         before = command('monitor')
         capture('native-before')
         command('refreshDuringDrag')
-        project = args.native_ui_project.resolve()
+        if args.native_ui_project:
+            project = args.native_ui_project.resolve()
+        else:
+            project = out / 'NativeRefresh.xcodeproj'
+            project.mkdir(exist_ok=True)
+            template = (ROOT / 'Tools/fixtures/chapter_scroll_ui_project.pbxproj').read_text()
+            (project / 'project.pbxproj').write_text(template.replace('NativeScrollTests', 'NativeScroll'))
+            shutil.copy2(ROOT / 'Tools/fixtures/list_refresh_overlap_ui.swift', out / 'NativeScroll.swift')
+            run(['xcodebuild', '-project', str(project), '-scheme', 'NativeScroll',
+                 '-destination', 'platform=iOS Simulator,id=' + args.udid,
+                 '-derivedDataPath', str(out / 'DerivedData'), '-parallel-testing-enabled', 'NO', 'build-for-testing'])
         run(['xcodebuild', '-project', str(project), '-scheme', 'NativeScroll',
              '-destination', 'platform=iOS Simulator,id=' + args.udid,
              '-derivedDataPath', str(project.parent / 'DerivedData'), '-parallel-testing-enabled', 'NO',
@@ -286,15 +300,32 @@ def main():
         completion_frame = min(frames, key=lambda frame: abs(frame['clock'] - completions[0]['clock'])) if completions else None
         active = [frame for frame in frames if frame['dragging'] or frame['decelerating']]
         changes = [(a, b) for a, b in zip(frames, frames[1:]) if a['loaded'] != b['loaded']]
+        # Ordinary pagination may append while scrolling; only the refresh's
+        # replacement must wait for the native gesture to finish.
+        replacement_ends = [event['clock'] for event in events if event['event'] == 'replacement-ended'
+                            and starts and event['clock'] > starts[0]['state']['clock']]
+        replacements = [(a, b) for a, b in changes
+                        if any(a['clock'] <= ended <= b['clock'] for ended in replacement_ends)]
         record('native: HTTP refresh overlaps real finger scrolling and waits for the gesture',
                len(starts) == 1 and starts[0]['state']['dragging'] and completion_frame
                and completion_frame['dragging'] and completions[0]['success']
                and active and max(frame['offsetY'] for frame in active) - min(frame['offsetY'] for frame in active) > 100
-               and changes and not any(frame['dragging'] or frame['decelerating'] for pair in changes for frame in pair),
-               starts=starts, completionFrame=completion_frame, activeFrames=len(active))
+               and replacements and not any(frame['dragging'] or frame['decelerating'] for pair in replacements for frame in pair),
+               starts=starts, completionFrame=completion_frame, activeFrames=len(active),
+               ordinaryPageAppends=len(changes)-len(replacements))
         record('native: list remains populated throughout real scrolling and refresh',
                frames and all(frame['loaded'] > 0 for frame in frames), frames=len(frames))
-        swaps = [(a, b) for a, b in changes
+        paging_during_drag = [(a, b) for a, b in changes if a['dragging'] and b['dragging']
+                              and not any(a['clock'] <= ended <= b['clock'] for ended in replacement_ends)]
+        # UIKit delivers pan translation and scroll offset in different phases.
+        # Appending below the viewport must keep the row's content coordinate;
+        # the user's actual scrolling is accounted for by contentOffset.
+        anchor_drift = [abs((b['anchorScreenY']-a['anchorScreenY'])
+                           +(b['offsetY']-a['offsetY'])) for a, b in paging_during_drag]
+        record('native: pagination preserves the content under the moving finger',
+               anchor_drift and max(anchor_drift) <= 1, appendCount=len(anchor_drift),
+               maximumDriftPoints=max(anchor_drift, default=None))
+        swaps = [(a, b) for a, b in replacements
                  if not any(f['dragging'] or f['decelerating'] for f in [a, b])]
         record('native: completed replacement preserves the episode at the end of scrolling',
                swaps and all(a.get('topVisibleHash') == b.get('topVisibleHash')
@@ -314,7 +345,21 @@ def main():
             count = 20 if case == 'first25' else 80
             seed = str(uuid.uuid4())
             publish(case, count, seed)
+            if case == 'backlog':
+                command('suspendBacklog')
             command('subscribe', url=base + '/feed.xml?case=' + seed)
+            if case == 'backlog':
+                wait(lambda s: s['operation'] == 'subscribe-done' and s['feedEpisodes'] == 50)
+                command('open')
+                initial = settle(lambda s: s['screenVisible'] and s['listCount'] == 50)
+                capture('backlog-initial-50')
+                command('resumeBacklog')
+                wait(lambda s: s['feedEpisodes'] == count)
+                after = settle(lambda s: s['listCount'] == count)
+                record('backlog: committed background episodes update the visible count without another refresh',
+                       after['listCount'] == count and after['generation'] > initial['generation'], initial=initial['listCount'], final=after['listCount'])
+                capture('backlog-complete-80')
+                continue
             wait(lambda s: s['operation'] == 'subscribe-done' and s['feedEpisodes'] == count)
             command('open')
             settle(lambda s: s['screenVisible'] and s['loaded'] >= min(count, 25) and s['listCount'] == count)
@@ -326,7 +371,7 @@ def main():
                 command('scroll', row=8 if case == 'mutation' else 55)
                 settle()
             elif case in ['first25', 'native']:
-                command('scroll', row=8)
+                command('scroll', row=6 if case == 'native' else 8)
                 settle()
             if case == 'native':
                 native_check(count, seed)
@@ -339,6 +384,7 @@ def main():
                 refresh_check(case, count + 1, seed, 'unchanged')
                 refresh_check(case, count + 2, seed, 'repeat')
     except Exception as error:
+        capture('failure')
         record('Harness completed all requested flows', False, error=repr(error))
         raise
     finally:

@@ -71,6 +71,7 @@ typedef struct { CGFloat top, left, bottom, right; } UIEdgeInsets;
 @end
 @interface UITableView : NSObject
 @property BOOL dragging, decelerating;
+@property UIEdgeInsets safeAreaInsets;
 @property CGPoint contentOffset;
 @property CGSize contentSize;
 @property CGRect bounds;
@@ -90,8 +91,23 @@ typedef struct { CGFloat top, left, bottom, right; } UIEdgeInsets;
 - (void)insertRowsAtIndexPaths:(NSArray*)paths withRowAnimation:(NSInteger)animation {}
 @end
 
-@interface CDEpisode : NSManagedObject @end
-@implementation CDEpisode @end
+static CGRect UIEdgeInsetsInsetRect(CGRect rect, UIEdgeInsets insets) {
+    return CGRectMake(rect.origin.x+insets.left,rect.origin.y+insets.top,
+                      rect.size.width-insets.left-insets.right,rect.size.height-insets.top-insets.bottom);
+}
+@interface EpisodesTableViewCell : NSObject
++ (CGFloat)proposedHeightWithObjectValue:(id)object tableSize:(CGSize)size imageSize:(CGSize)image embedded:(BOOL)embedded editing:(BOOL)editing;
+@end
+@implementation EpisodesTableViewCell
++ (CGFloat)proposedHeightWithObjectValue:(id)object tableSize:(CGSize)size imageSize:(CGSize)image embedded:(BOOL)embedded editing:(BOOL)editing {
+    @throw [NSException exceptionWithName:@"UnexpectedLayout" reason:@"No reader was opened" userInfo:nil];
+}
+@end
+
+@interface CDEpisode : NSManagedObject
+@property NSString *objectHash;
+@end
+@implementation CDEpisode @dynamic objectHash; @end
 @interface CDList : NSObject
 @property(strong) NSManagedObjectID *objectID;
 @property NSUInteger numberOfEpisodes, numberOfPlayedEpisodes, numberOfPlayedDownloadedEpisodes;
@@ -122,9 +138,11 @@ static ProbeDatabase *DMANAGER;
 }
 @property NSInteger episodesLoadGeneration;
 @property(strong) NSMutableArray<CDEpisode*> *loadedEpisodes, *reloadedEpisodes;
+@property(strong) NSMutableDictionary<NSManagedObjectID*, NSString*> *heightEstimateIdentifiers;
 @property(strong) NSArray<CDEpisode*> *episodes;
 @property NSUInteger reloadedPageOffset, nextPageOffset;
 @property BOOL episodeReloadPending, loadingPage, reachedListEnd, statisticsLoaded;
+@property BOOL showsImage, editing;
 @property(strong) NSError *pageError;
 @property NSUInteger totalEpisodeCount, playedEpisodeCount, playedDownloadedEpisodeCount;
 @property NSInteger totalPlaybackTime;
