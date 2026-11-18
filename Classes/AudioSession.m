@@ -918,14 +918,15 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
 - (void)_logSleepTimerEvent:(NSString*)reason metadata:(NSDictionary*)extraMetadata
 {
     NSDate* now = [NSDate date];
-    BOOL sensorReset = [reason isEqualToString:@"touch"] || [reason isEqualToString:@"motion"] || [reason isEqualToString:@"volume"];
-    if (sensorReset) {
+    BOOL activityReset = [reason isEqualToString:@"touch"] || [reason isEqualToString:@"motion"] || [reason isEqualToString:@"volume"] ||
+                         [reason hasPrefix:@"remote-"] || [reason isEqualToString:@"button"] || [reason isEqualToString:@"pointer"];
+    if (activityReset) {
         if ([reason isEqualToString:@"touch"]) self.sleepTimerTouchResetCount++;
         if ([reason isEqualToString:@"motion"]) self.sleepTimerMotionResetCount++;
         if ([reason isEqualToString:@"volume"]) self.sleepTimerVolumeResetCount++;
         self.lastSleepTimerResetDate = now;
         self.lastSleepTimerResetReason = reason;
-        // Count every reset; summarize repeated sensor events without flooding overnight logs.
+        // Record every reset; summarize repeated activity without flooding overnight logs.
         if ([self.lastSleepTimerDiagnosticReason isEqualToString:reason] &&
             self.lastLoggedSleepTimerValue == self.timerValue &&
             self.lastSleepTimerDiagnosticDate && [now timeIntervalSinceDate:self.lastSleepTimerDiagnosticDate] < 30.0) {
@@ -1033,6 +1034,38 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource
     [self _logSleepTimerEvent:reason metadata:resetMetadata];
     [self willChangeValueForKey:@"timerRemainingTime"];
     [self didChangeValueForKey:@"timerRemainingTime"];
+}
+
+- (void)resetSleepTimerForUserInteraction:(NSString*)reason
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self resetSleepTimerForUserInteraction:reason];
+        });
+        return;
+    }
+
+    // Explicit controls prove the listener is awake, including while playback is paused.
+    // Only extend an existing selection; cancellation and expiry must stay inactive.
+    if (![USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive] ||
+        (!self.stopDate && self.pausedSleepTimerRemainingTime <= 0) ||
+        [self _shouldDisableSleepTimerForCarPlay]) {
+        return;
+    }
+    BOOL wasRunning = (self.stopDate != nil);
+    NSDictionary* metadata = @{@"previousStopDate": @(self.stopDate.timeIntervalSince1970),
+                               @"previousRemainingSeconds": @(self.timerRemainingTime)};
+    [self.playbackTimer invalidate];
+    self.playbackTimer = nil;
+    [self _scheduleSleepTimerWithDuration:self.sleepTimerDuration];
+    [self _logSleepTimerEvent:reason metadata:metadata];
+    [self willChangeValueForKey:@"timerRemainingTime"];
+    [self didChangeValueForKey:@"timerRemainingTime"];
+    // Deadline-only resets follow the sensor path without exporting/reloading widgets
+    // for every key or pointer event. Publish a real running/paused transition.
+    if (wasRunning != (self.stopDate != nil)) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:AudioSessionSleepTimerDidChangeNotification object:self];
+    }
 }
 
 - (NSTimeInterval) timerRemainingTime

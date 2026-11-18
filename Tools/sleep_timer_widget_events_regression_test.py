@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Run timer/playback notifications through the production widget event handlers."""
+"""Run timer/playback notifications through the production widget event handlers.
+
+Isolation rationale: UIKit E2E verifies the visible countdown, but WidgetKit
+coalesces and budgets rendering, so it cannot reliably reveal every reload request.
+Exercise the production notification and exporter methods to detect input bursts
+exporting/reloading once per key or pointer event. Also protect the queued Pause
+boundary: if user activity reconciles a running timer with already-paused playback,
+omitting its state-change notification leaves consumers with stale running state.
+"""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -65,7 +73,10 @@ int main(int argc,const char** argv){@autoreleasepool {
  defaults=[[NSUserDefaults alloc] initWithSuiteName:suite];App=[AppStub new];
  AudioSession* s=[AudioSession sharedAudioSession];s.episode=[Episode new];s.episode.objectHash=@"test";
  PlaybackManager* p=[PlaybackManager playbackManager];p.player=[PlayerStub new];p.player.currentItem=[ItemStub new];p.state=RunningState;p.playingEpisode=s.episode;
- p.player.rate=([mode isEqual:@"pause"] || [mode isEqual:@"ticks"] || [mode isEqual:@"sensors"]) ? 1 : 0;
+ BOOL inputBurst=[mode isEqual:@"buttons"] || [mode isEqual:@"pointer"] || [mode isEqual:@"paused-buttons"];
+ BOOL queuedUserPause=[mode isEqual:@"queued-user-pause"];
+ p.player.rate=([mode isEqual:@"pause"] || [mode isEqual:@"ticks"] || [mode isEqual:@"sensors"] ||
+                [mode isEqual:@"buttons"] || [mode isEqual:@"pointer"] || queuedUserPause) ? 1 : 0;
  // isPaused follows the playback state machine (since 08.11.2026), not the player rate.
  if(p.player.rate==0) p.state=PausedState;
  if(![mode isEqual:@"set-paused"]) [s setTimerWithDuration:1200];
@@ -73,19 +84,26 @@ int main(int argc,const char** argv){@autoreleasepool {
  [p _sendUpdateNotification];
  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.85]];
  [exporter exportNowPlayingSnapshot];reloads=0;exporter.exports=0;
+ [defaults setBool:YES forKey:IntelligentSleepTimerAlwaysActive];
  if([mode isEqual:@"set-paused"]) [s setTimerWithDuration:1200];
  else if([mode isEqual:@"cancel-paused"]) s.timerValue=0;
  else if([mode isEqual:@"pause"]) [p pause];
  else if([mode isEqual:@"resume"]) [p play];
+ else if(queuedUserPause) {
+     p.state=PausedState;p.player.rate=0;
+     [s resetSleepTimerForUserInteraction:@"remote-pause"];
+     [s pauseSleepTimer];
+ }
  else {
      for(int i=0;i<20;i++) {
-         if([mode isEqual:@"sensors"]) [s resetSleepTimerForActivity:@"motion"];
+         if(inputBurst) [s resetSleepTimerForUserInteraction:[mode isEqual:@"pointer"] ? @"pointer" : @"button"];
+         else if([mode isEqual:@"sensors"]) [s resetSleepTimerForActivity:@"motion"];
          else [s stopPlaybackTimer:s.playbackTimer];
          [p _sendUpdateNotification];
      }
  }
  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
- if([mode isEqual:@"ticks"] || [mode isEqual:@"sensors"]) CHECK(reloads==0);
+ if([mode isEqual:@"ticks"] || [mode isEqual:@"sensors"] || inputBurst) CHECK(reloads==0);
  else {
      CHECK(exporter.exports>0 && reloads>0);
      CHECK(exporter.exportedPaused==p.paused);
@@ -105,7 +123,8 @@ with tempfile.TemporaryDirectory(prefix='instacast-widget-events-') as directory
     subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-fblocks', '-framework', 'Foundation',
                     str(file), '-o', str(path / 'probe')], check=True)
     failures = []
-    for mode in ['set-paused', 'cancel-paused', 'pause', 'resume', 'ticks', 'sensors']:
+    for mode in ['set-paused', 'cancel-paused', 'pause', 'resume', 'ticks', 'sensors',
+                 'buttons', 'pointer', 'paused-buttons', 'queued-user-pause']:
         result = subprocess.run([str(path / 'probe'), mode], capture_output=True, text=True)
         print(('PASS' if result.returncode == 0 else 'FAIL') + ': ' + mode)
         if result.returncode:

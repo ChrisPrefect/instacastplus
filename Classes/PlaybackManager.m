@@ -2046,6 +2046,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 -(MPRemoteCommandHandlerStatus) _seekForwardEvent: (MPSeekCommandEvent *) seekEvent
 {
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-seek-forward"];
     if (seekEvent.type == MPSeekCommandEventTypeBeginSeeking) {
         [self beginSeekingForward];
     }
@@ -2057,6 +2058,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 -(MPRemoteCommandHandlerStatus) _seekBackwardEvent: (MPSeekCommandEvent *) seekEvent
 {
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-seek-backward"];
     if (seekEvent.type == MPSeekCommandEventTypeBeginSeeking) {
         [self beginSeekingBackward];
     }
@@ -2068,12 +2070,14 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (MPRemoteCommandHandlerStatus) _playPauseEvent:(MPRemoteCommandEvent*)event
 {
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-play-pause"];
     [self playPause];
     return MPRemoteCommandHandlerStatusSuccess;
 }
 
 - (MPRemoteCommandHandlerStatus) _playEvent:(MPRemoteCommandEvent*)event
 {
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-play"];
     if (self.paused) {
         [self play];
         [self updateNowPlayingInfo];
@@ -2083,12 +2087,14 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (MPRemoteCommandHandlerStatus) _pauseEvent:(MPRemoteCommandEvent*)event
 {
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-pause"];
     [self pause];
     return MPRemoteCommandHandlerStatusSuccess;
 }
 
 - (MPRemoteCommandHandlerStatus)_changePlaybackPositionEvent:(MPChangePlaybackPositionCommandEvent*)event
 {
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-position"];
     if (!self.playingEpisode || self.duration <= 0) {
         return MPRemoteCommandHandlerStatusCommandFailed;
     }
@@ -2102,24 +2108,28 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (MPRemoteCommandHandlerStatus) _skipBackwardEvent:(MPRemoteCommandEvent*)event
 {
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-skip-backward"];
     [self seekBackward];
     return MPRemoteCommandHandlerStatusSuccess;
 }
 
 - (MPRemoteCommandHandlerStatus) _skipForwardEvent:(MPRemoteCommandEvent*)event
 {
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-skip-forward"];
     [self seekForward];
     return MPRemoteCommandHandlerStatusSuccess;
 }
 
 - (MPRemoteCommandHandlerStatus) _nextChapterEvent:(MPRemoteCommandEvent*)event
 {
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-next-chapter"];
     [self nextChapter];
     return MPRemoteCommandHandlerStatusSuccess;
 }
 
 - (MPRemoteCommandHandlerStatus) _previousChapterEvent:(MPRemoteCommandEvent*)event
 {
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-previous-chapter"];
     [self previousChapter];
     return MPRemoteCommandHandlerStatusSuccess;
 }

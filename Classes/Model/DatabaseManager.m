@@ -1232,6 +1232,8 @@ NS_INLINE NSString* _DataStoreFile(void) {
             return self;
         }
 
+        [DatabaseManager _removeStoreStatisticsAtURLIfNeeded:_databaseURL];
+
         BOOL shouldCreateInitialData = ![fileManager fileExistsAtPath:[_databaseURL path]];
         NSManagedObjectContext* startupContext = self.objectContext;
         if (!startupContext) {
@@ -1263,7 +1265,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
                 }
             }
             [self _deleteObsoleteDataStores];
-            [self _updateStoreStatisticsIfNeeded];
         }
 
 #if TARGET_OS_IPHONE
@@ -3630,58 +3631,67 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     return context;
 }
 
-// The store never had SQLite statistics (sqlite_stat1). Without them SQLite guesses that every
-// index is equally selective and, for "feed == X AND archived == NO", picked the archived index,
-// which matches every episode (measured 17.11.2026 on a real store: 17910 of 17910 not
-// archived). Every episode list of a podcast then scanned the whole episode table on the main
-// thread: 12.6 ms for a podcast with 7 episodes instead of 0.05 ms with the feed index, paid on
-// each open of the list and in other feed-scoped fetches. ANALYZE records the real distribution
-// in the store file, after which SQLite uses the feed index (0.4–0.8 ms). It costs about 50 ms
-// on that store, so it runs on a background queue through a short-lived second coordinator (the
-// same access pattern as the export coordinator) and only once per app build: the relative
-// selectivity of the indexes changes slowly, and stale statistics still beat none.
-static NSString* const kStoreStatisticsBuildKey = @"ICStoreStatisticsBuild";
+// Build 51 ran ANALYZE once per build (NSSQLiteAnalyzeOption) to steer "feed == X AND archived
+// == NO" to the feed index. sqlite_stat1 only stores the average rows per index value, so every
+// boolean index (starred, consumed, archived, video) looked like half the table: 8955 of 17910
+// rows per value on a real store, although only 4 episodes were favorites. SQLite then ignored
+// those indexes and walked every episode of every subscribed podcast instead. Favorites' first
+// page took 695 ms instead of 1.9 ms (iPhone store copy, 17.11.2026), and the smart lists showed
+// their loading spinner. The feed lists gained only ~7 ms from the statistics (the batching in
+// FeedEpisodesTableViewController carries that fix), so the statistics are removed again. This
+// runs before Core Data opens the store, because a connection reads sqlite_stat1 only when it
+// loads the schema. Once the table is gone nothing recreates it, so a flag keeps later launches
+// from opening the file a second time.
+static NSString* const kStoreStatisticsRemovedKey = @"ICStoreStatisticsRemoved";
 
-- (void)_updateStoreStatisticsIfNeeded
++ (void)_removeStoreStatisticsAtURLIfNeeded:(NSURL*)storeURL
 {
-    NSString* build = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"";
-    if ([[USER_DEFAULTS stringForKey:kStoreStatisticsBuildKey] isEqualToString:build]) {
+    if ([USER_DEFAULTS boolForKey:kStoreStatisticsRemovedKey]) {
         return;
     }
-    NSPersistentContainer* container = [self persistentContainer];
-    NSURL* storeURL = container.persistentStoreDescriptions.firstObject.URL;
-    NSManagedObjectModel* model = container.managedObjectModel;
-    if (!storeURL || !model) {
+    if (![[NSFileManager defaultManager] fileExistsAtPath:storeURL.path]) {
+        [USER_DEFAULTS setBool:YES forKey:kStoreStatisticsRemovedKey];
         return;
     }
 
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        NSPersistentStoreCoordinator* coordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:model];
-        NSDictionary* options = @{
-            NSMigratePersistentStoresAutomaticallyOption: @YES,
-            NSInferMappingModelAutomaticallyOption: @YES,
-            NSSQLiteAnalyzeOption: @YES,
-        };
-        NSError* error = nil;
-        CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
-        NSPersistentStore* store = [coordinator addPersistentStoreWithType:NSSQLiteStoreType
-                                                             configuration:nil
-                                                                       URL:storeURL
-                                                                   options:options
-                                                                     error:&error];
-        double durationMs = (CFAbsoluteTimeGetCurrent() - start) * 1000.0;
-        if (store) {
-            [coordinator removePersistentStore:store error:nil];
-            [USER_DEFAULTS setObject:build forKey:kStoreStatisticsBuildKey];
+    CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
+    sqlite3* database = NULL;
+    int result = sqlite3_open_v2(storeURL.path.fileSystemRepresentation, &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, NULL);
+    NSInteger statisticsTables = -1;
+    if (result == SQLITE_OK) {
+        sqlite3_busy_timeout(database, 2000);
+        sqlite3_stmt* statement = NULL;
+        if (sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('sqlite_stat1', 'sqlite_stat4')", -1, &statement, NULL) == SQLITE_OK &&
+            sqlite3_step(statement) == SQLITE_ROW) {
+            statisticsTables = sqlite3_column_int64(statement, 0);
         }
-        [[ICDiagnosticLogger shared] logEvent:@"database"
-                                      message:store ? @"SQLite-Statistik aktualisiert" : @"SQLite-Statistik fehlgeschlagen"
-                                     metadata:@{
-            @"durationMs": [NSString stringWithFormat:@"%.1f", durationMs],
-            @"build": build,
-            @"error": error.localizedDescription ?: @"",
-        }];
-    });
+        sqlite3_finalize(statement);
+        if (statisticsTables > 0) {
+            result = sqlite3_exec(database, "DROP TABLE IF EXISTS sqlite_stat1; DROP TABLE IF EXISTS sqlite_stat4;", NULL, NULL, NULL);
+        }
+        else if (statisticsTables < 0) {
+            result = SQLITE_ERROR;
+        }
+    }
+    NSString* message = (result == SQLITE_OK) ? @"" : (database ? [NSString stringWithUTF8String:sqlite3_errmsg(database)] : @"open failed");
+    if (database) sqlite3_close(database);
+
+    if (result == SQLITE_OK) {
+        [USER_DEFAULTS setBool:YES forKey:kStoreStatisticsRemovedKey];
+        [USER_DEFAULTS removeObjectForKey:@"ICStoreStatisticsBuild"];
+    }
+    if (statisticsTables != 0) {
+        double durationMs = (CFAbsoluteTimeGetCurrent() - start) * 1000.0;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            [[ICDiagnosticLogger shared] logEvent:@"database"
+                                          message:(result == SQLITE_OK) ? @"SQLite-Statistik entfernt" : @"SQLite-Statistik nicht entfernt"
+                                         metadata:@{
+                @"durationMs": [NSString stringWithFormat:@"%.1f", durationMs],
+                @"tables": [NSString stringWithFormat:@"%ld", (long)statisticsTables],
+                @"error": message ?: @"",
+            }];
+        });
+    }
 }
 
 - (NSManagedObjectContext*)newICloudSyncBackgroundContext

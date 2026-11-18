@@ -36,6 +36,7 @@ audio_methods = [method(audio, s) for s in [
     '- (void)_scheduleSleepTimerWithDuration:',
     '- (void)resetSleepTimerForActivity:',
     '- (void)resetSleepTimerForActivity:(NSString*)reason metadata:',
+    '- (void)resetSleepTimerForUserInteraction:',
     '- (NSTimeInterval) timerRemainingTime',
 ]]
 player_methods = [method(player, s) for s in [
@@ -126,6 +127,8 @@ end = preamble.index('@interface ICSharePlayCoordinator:')
 player_implementation = player_stub[player_stub.index('@implementation PlaybackManager'):]
 player_declarations = player_stub[:player_stub.index('@implementation PlaybackManager')]
 preamble = preamble[:start] + player_declarations + preamble[end:]
+preamble = preamble.replace('- (void)setTimerWithDuration:(NSTimeInterval)seconds;',
+                            '- (void)setTimerWithDuration:(NSTimeInterval)seconds;\n- (void)resetSleepTimerForUserInteraction:(NSString*)reason;')
 controls = (root / 'Classes/PlaybackControlsViewController.m').read_text()
 controls_probe = '''
 #define PlayHapticFeedback(value) ((void)0)

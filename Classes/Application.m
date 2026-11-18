@@ -284,6 +284,19 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 
 -(void)sendEvent:(UIEvent *)event
 {
+    if (event.type == UIEventTypePresses) {
+        for (UIPress* press in ((UIPressesEvent*)event).allPresses) {
+            if (press.phase == UIPressPhaseBegan || press.phase == UIPressPhaseChanged || press.phase == UIPressPhaseEnded) {
+                [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"button"];
+                break;
+            }
+        }
+    } else if (event.type == UIEventTypeRemoteControl) {
+        [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-control"];
+    } else if (event.type == UIEventTypeScroll || event.type == UIEventTypeHover || event.type == UIEventTypeTransform) {
+        [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"pointer"];
+    }
+
     // Field report 17.11.2026: a tap showed no reaction for several seconds. Lifting a finger
     // is timed twice: how long the touch waited for the main thread before it arrived here,
     // and how long the app then took to handle it. Only slow touches are written.
@@ -328,6 +341,26 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
         
     }
 }
+// Hardware keyboard events reach the responder chain separately from sendEvent:'s
+// public UIEventTypePresses events. Forward the keys so their normal actions remain intact.
+- (void)pressesBegan:(NSSet<UIPress*>*)presses withEvent:(UIPressesEvent*)event
+{
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"button"];
+    [super pressesBegan:presses withEvent:event];
+}
+
+- (void)pressesChanged:(NSSet<UIPress*>*)presses withEvent:(UIPressesEvent*)event
+{
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"button"];
+    [super pressesChanged:presses withEvent:event];
+}
+
+- (void)pressesEnded:(NSSet<UIPress*>*)presses withEvent:(UIPressesEvent*)event
+{
+    [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"button"];
+    [super pressesEnded:presses withEvent:event];
+}
+
 //as labeled...reset the timer
 -(void)resetIdleTimer
 {
