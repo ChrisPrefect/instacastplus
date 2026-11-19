@@ -222,6 +222,8 @@
 "20 Days" = "20 Days";
 "30 Days" = "30 Days";
 "Suggest App Icon" = "Suggest App Icon";
+"App Icon Suggestion" = "App Icon Suggestion";
+"Please attach your icon files or include a link to your design." = "Please attach your icon files or include a link to your design.";
 "We’re looking for creative suggestions for our app icon. If you have ideas, feel free to share your design as a .psd file, or send a link to your proposed app icon." = "We’re looking for creative suggestions for our app icon. If you have ideas, feel free to share your design as a .psd file, or send a link to your proposed app icon.";
 
 /* SubscriptionManager.m */

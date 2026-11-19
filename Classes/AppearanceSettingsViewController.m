@@ -12,7 +12,6 @@
 #import "ChooseThemeColorCell.h"
 #import "WidgetDataExporter.h"
 #import "InstacastPlus-Swift.h"
-#import <MessageUI/MessageUI.h>
 
 typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     kLanguage = 0,
@@ -30,7 +29,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     kNumberOfSections,
 };
 
-@interface AppearanceSettingsViewController ()<UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIScrollViewDelegate, MFMailComposeViewControllerDelegate, UITextFieldDelegate, UIPopoverPresentationControllerDelegate>
+@interface AppearanceSettingsViewController ()<UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIScrollViewDelegate, UITextFieldDelegate, UIPopoverPresentationControllerDelegate>
 @end
 
 @implementation AppearanceSettingsViewController
@@ -830,28 +829,19 @@ API_AVAILABLE(ios(14.0)){
 
 - (void) suggestAppIconsAction:(id)sender
 {
-    if ([MFMailComposeViewController canSendMail]) {
-        MFMailComposeViewController *mailComposer = [[MFMailComposeViewController alloc] init];
-        mailComposer.mailComposeDelegate = self;
+    NSURLComponents* components = [[NSURLComponents alloc] init];
+    components.scheme = @"mailto";
+    components.path = @"info@instacast.ch";
+    components.queryItems = @[
+        [NSURLQueryItem queryItemWithName:@"subject" value:@"App Icon Suggestion".ls],
+        [NSURLQueryItem queryItemWithName:@"body" value:@"Please attach your icon files or include a link to your design.".ls],
+    ];
 
-        [mailComposer setSubject:@"App Icon Suggestion"];
-        [mailComposer setToRecipients:@[@"info@instacast.ch"]];
-        [mailComposer setMessageBody:@"Please attach your .psd file or share the app icon link below:" isHTML:NO];
-
-        [self presentViewController:mailComposer animated:YES completion:nil];
-    } else {
-        [self presentAlertControllerWithTitle:@"Email not configured.".ls message:@"Please configure email on this device.".ls button:@"OK".ls animated:YES completion:NULL];
-    }
-}
-
-- (void)mailComposeController:(MFMailComposeViewController*)controller didFinishWithResult:(MFMailComposeResult)result error:(NSError*)error
-{
-    [self dismissViewControllerAnimated:YES completion:^{
+    [[UIApplication sharedApplication] openURL:components.URL options:@{} completionHandler:^(BOOL success) {
+        if (!success) {
+            [self presentAlertControllerWithTitle:@"Email not configured.".ls message:@"Please configure email on this device.".ls button:@"OK".ls animated:YES completion:NULL];
+        }
     }];
-
-    if (error) {
-        [self presentError:error];
-    }
 }
 
 #pragma mark - Helpers
