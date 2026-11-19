@@ -398,6 +398,9 @@
 		F5291C3A24F8C32DDB1A6D81 /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 63518412FB54017F3C29C6B1 /* WatchConnectivity.framework */; };
 		F7A2FA597A4284CBF92BE7A5 /* TranscriptionQueueViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = ED28C103136054494A8998FD /* TranscriptionQueueViewController.m */; };
 		FB242F4261A8102DA6E1EF81 /* TranscriptionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 534123C112215367E937C1E7 /* TranscriptionQueue.swift */; };
+		CE1911B12F00000100000001 /* InstacastPlus_Icon_Creme.icon in Resources */ = {isa = PBXBuildFile; fileRef = CE1911F12F00000100000001 /* InstacastPlus_Icon_Creme.icon */; };
+		CE1911B22F00000100000001 /* InstacastPlus_Icon_Espresso.icon in Resources */ = {isa = PBXBuildFile; fileRef = CE1911F22F00000100000001 /* InstacastPlus_Icon_Espresso.icon */; };
+		CE1911B32F00000100000001 /* InstacastPlus_Icon_Glow.icon in Resources */ = {isa = PBXBuildFile; fileRef = CE1911F32F00000100000001 /* InstacastPlus_Icon_Glow.icon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1111,6 +1114,9 @@
 		FC0AB5FDD0F2479451DFE09C /* InstacastTranscription.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = InstacastTranscription.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		FDB33E265B93207D959630A1 /* SmartListWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SmartListWidget.swift; sourceTree = "<group>"; };
 		FE0ABE1118AA6011E195F7E3 /* TranscriptionSettingsViewController.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = TranscriptionSettingsViewController.h; sourceTree = "<group>"; };
+		CE1911F12F00000100000001 /* InstacastPlus_Icon_Creme.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = InstacastPlus_Icon_Creme.icon; sourceTree = "<group>"; };
+		CE1911F22F00000100000001 /* InstacastPlus_Icon_Espresso.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = InstacastPlus_Icon_Espresso.icon; sourceTree = "<group>"; };
+		CE1911F32F00000100000001 /* InstacastPlus_Icon_Glow.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = InstacastPlus_Icon_Glow.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -2206,6 +2212,9 @@
 				CDE500042E1A000100000001 /* InstacastPlus_Icon_Classic_Alt2.icon */,
 				CDE500052E1A000100000001 /* InstacastPlus_Icon_Classic_Alt3.icon */,
 				CDE500062E1A000100000001 /* InstacastPlus_Icon_Classic_Alt4.icon */,
+				CE1911F32F00000100000001 /* InstacastPlus_Icon_Glow.icon */,
+				CE1911F22F00000100000001 /* InstacastPlus_Icon_Espresso.icon */,
+				CE1911F12F00000100000001 /* InstacastPlus_Icon_Creme.icon */,
 			);
 			path = AppIcons;
 			sourceTree = "<group>";
@@ -2506,6 +2515,9 @@
 				CDE5000E2E1A000100000001 /* InstacastPlus_Icon_Classic_Alt2.icon in Resources */,
 				CDE5000F2E1A000100000001 /* InstacastPlus_Icon_Classic_Alt3.icon in Resources */,
 				CDE500102E1A000100000001 /* InstacastPlus_Icon_Classic_Alt4.icon in Resources */,
+				CE1911B32F00000100000001 /* InstacastPlus_Icon_Glow.icon in Resources */,
+				CE1911B22F00000100000001 /* InstacastPlus_Icon_Espresso.icon in Resources */,
+				CE1911B12F00000100000001 /* InstacastPlus_Icon_Creme.icon in Resources */,
 				1B919E6217BF99B100A30BDE /* tv@2x.png in Resources */,
 				1B61040D162462C20075541D /* PlayerControlView.xib in Resources */,
 				1BA27BE916A450BB00D51D59 /* Defaults.plist in Resources */,
@@ -3063,7 +3075,7 @@
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-7 AppIcon-6 AppIcon-5 AppIcon-4 AppIcon-3 AppIcon-2 AppIcon-1 AppIcon InstacastPlus_Icon_Core InstacastPlus_Icon_Classic_Alt1 InstacastPlus_Icon_Classic_Alt2 InstacastPlus_Icon_Classic_Alt3 InstacastPlus_Icon_Classic_Alt4";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-7 AppIcon-6 AppIcon-5 AppIcon-4 AppIcon-3 AppIcon-2 AppIcon-1 AppIcon InstacastPlus_Icon_Core InstacastPlus_Icon_Classic_Alt1 InstacastPlus_Icon_Classic_Alt2 InstacastPlus_Icon_Classic_Alt3 InstacastPlus_Icon_Classic_Alt4 InstacastPlus_Icon_Creme InstacastPlus_Icon_Espresso InstacastPlus_Icon_Glow";
 				ASSETCATALOG_COMPILER_APPICON_NAME = InstacastPlus_Icon_Standard;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -3128,7 +3140,7 @@
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-7 AppIcon-6 AppIcon-5 AppIcon-4 AppIcon-3 AppIcon-2 AppIcon-1 AppIcon InstacastPlus_Icon_Core InstacastPlus_Icon_Classic_Alt1 InstacastPlus_Icon_Classic_Alt2 InstacastPlus_Icon_Classic_Alt3 InstacastPlus_Icon_Classic_Alt4";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-7 AppIcon-6 AppIcon-5 AppIcon-4 AppIcon-3 AppIcon-2 AppIcon-1 AppIcon InstacastPlus_Icon_Core InstacastPlus_Icon_Classic_Alt1 InstacastPlus_Icon_Classic_Alt2 InstacastPlus_Icon_Classic_Alt3 InstacastPlus_Icon_Classic_Alt4 InstacastPlus_Icon_Creme InstacastPlus_Icon_Espresso InstacastPlus_Icon_Glow";
 				ASSETCATALOG_COMPILER_APPICON_NAME = InstacastPlus_Icon_Standard;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;

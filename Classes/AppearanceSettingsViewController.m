@@ -58,8 +58,8 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
 
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"Appearance".ls;
-    self->appIconsArray = @[ @"appiconCore", @"appiconStandard", @"appicon1", @"appicon4", @"appicon2", @"appicon3", @"appicon5", @"appicon6", @"appicon7", @"appiconClassicAlt1", @"appiconClassicAlt2", @"appiconClassicAlt3", @"appiconClassicAlt4" ];
-    self->appIconNamesArray = @[ @"InstacastPlus_Icon_Core", @"", @"AppIcon-1", @"AppIcon-4", @"AppIcon-2", @"AppIcon-3", @"AppIcon-5", @"AppIcon-6", @"AppIcon-7", @"InstacastPlus_Icon_Classic_Alt1", @"InstacastPlus_Icon_Classic_Alt2", @"InstacastPlus_Icon_Classic_Alt3", @"InstacastPlus_Icon_Classic_Alt4" ];
+    self->appIconsArray = @[ @"appiconCore", @"appiconStandard", @"appicon1", @"appicon4", @"appicon2", @"appicon3", @"appicon5", @"appicon6", @"appicon7", @"appiconClassicAlt1", @"appiconClassicAlt2", @"appiconClassicAlt3", @"appiconClassicAlt4", @"appiconCreme", @"appiconEspresso", @"appiconGlow" ];
+    self->appIconNamesArray = @[ @"InstacastPlus_Icon_Core", @"", @"AppIcon-1", @"AppIcon-4", @"AppIcon-2", @"AppIcon-3", @"AppIcon-5", @"AppIcon-6", @"AppIcon-7", @"InstacastPlus_Icon_Classic_Alt1", @"InstacastPlus_Icon_Classic_Alt2", @"InstacastPlus_Icon_Classic_Alt3", @"InstacastPlus_Icon_Classic_Alt4", @"InstacastPlus_Icon_Creme", @"InstacastPlus_Icon_Espresso", @"InstacastPlus_Icon_Glow" ];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
@@ -964,6 +964,11 @@ API_AVAILABLE(ios(14.0)){
     cell.chapterImageView.layer.masksToBounds = true;
 
     BOOL isSelected = (indexPath.item == [self _currentAlternateIconIndex]);
+    // Design names are identical in both app languages.
+    NSString *designName = @{ @"appiconCreme": @"Creme", @"appiconEspresso": @"Espresso", @"appiconGlow": @"Glow" }[self->appIconsArray[indexPath.item]];
+    cell.isAccessibilityElement = (designName != nil);
+    cell.accessibilityLabel = designName;
+    cell.accessibilityTraits = UIAccessibilityTraitButton | (isSelected ? UIAccessibilityTraitSelected : 0);
     if (isSelected) {
         cell.chapterImageView.layer.borderColor = [[ICAppearanceManager sharedManager] appearance].tintColor.CGColor;
         cell.chapterImageView.layer.borderWidth = 3.0;

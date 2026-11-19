@@ -1,0 +1,40 @@
+{
+  "fill": "automatic",
+  "groups": [
+    {
+      "layers": [
+        {
+          "glass": false,
+          "name": "Creme",
+          "position": {
+            "scale": 0.64,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          },
+          "image-name-specializations": [
+            {
+              "value": "creme.png"
+            },
+            {
+              "appearance": "dark",
+              "value": "espresso.png"
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
