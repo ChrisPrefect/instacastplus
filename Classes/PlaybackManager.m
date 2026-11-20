@@ -1472,6 +1472,7 @@ didReceiveResponse:(NSURLResponse *)response
 @property (nonatomic) NSUInteger silenceTrimTicks;
 @property (nonatomic, copy) NSString* silenceTrimRefusedEpisodeHash;
 @property (nonatomic) BOOL silenceTrimObservingDownloads;
+@property (nonatomic) BOOL silenceTrimApplyPending;
 @end
 
 
@@ -5061,6 +5062,13 @@ didReceiveResponse:(NSURLResponse *)response
 {
     // An explicit change by the user is a new attempt for an episode the engine refused.
     self.silenceTrimRefusedEpisodeHash = nil;
+    [self _silenceTrimApplySettings];
+}
+
+// Brings the playing episode in line with the current settings, whoever changed them: the user
+// in the player or the settings, the iCloud settings/subscription sync, or a backup import.
+- (void) _silenceTrimApplySettings
+{
     CDEpisode* episode = self.playingEpisode;
     if (!episode) {
         return;
@@ -5076,10 +5084,65 @@ didReceiveResponse:(NSURLResponse *)response
                                          metadata:@{ @"episodeHash": episode.objectHash ?: @"", @"level": @(level) }];
         }
     } else if (self.player && self.ready && level != ICSilenceTrimLevelOff &&
-               [self _silenceTrimShouldOpenAsset:self.mediaAsset]) {
+               ([self _silenceTrimShouldOpenAsset:self.mediaAsset] || [self _silenceTrimStreamedEpisodeIsNowLocal:episode])) {
         [self _silenceTrimReopenCurrentEpisodeWithReason:@"enabled"];
     }
     SEND_UPDATE
+}
+
+// A stream that finished downloading while shortening was off still plays from the stream URL;
+// reopening picks the local file.
+- (BOOL) _silenceTrimStreamedEpisodeIsNowLocal:(CDEpisode*)episode
+{
+    if (self.mediaAsset.URL.isFileURL || ![[CacheManager sharedCacheManager] episodeIsCached:episode]) {
+        return NO;
+    }
+    if (episode.objectHash.length > 0 && [self.silenceTrimRefusedEpisodeHash isEqualToString:episode.objectHash]) {
+        return NO;
+    }
+#if TARGET_OS_IPHONE
+    if ([[ICSharePlayCoordinator sharedCoordinator] hasActiveSession]) {
+        return NO;
+    }
+#endif
+    return ![[episode preferedMedium].mimeType hasPrefix:@"video"];
+}
+
+- (void) _silenceTrimExternalSettingsChanged
+{
+    // Coalesced: a sync apply or backup import writes several values in a row; they are all
+    // applied once, after the current main-queue work.
+    if (self.silenceTrimApplyPending) {
+        return;
+    }
+    self.silenceTrimApplyPending = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.silenceTrimApplyPending = NO;
+        [self _silenceTrimApplySettings];
+    });
+}
+
+- (void) _silenceTrimContextObjectsDidChange:(NSNotification*)notification
+{
+    CDFeed* feed = self.playingEpisode.feed;
+    if (!feed || (!self.player && !self.silenceTrimPlayer)) {
+        return;
+    }
+    NSDictionary* info = notification.userInfo;
+    for (NSString* key in @[NSInsertedObjectsKey, NSUpdatedObjectsKey, NSDeletedObjectsKey, NSRefreshedObjectsKey]) {
+        for (NSManagedObject* object in info[key]) {
+            if (![object isKindOfClass:[CDFeedProperty class]]) {
+                continue;
+            }
+            CDFeedProperty* property = (CDFeedProperty*)object;
+            if (property.isDeleted || property.feed == feed || property.feed == nil) {
+                if ([key isEqualToString:NSDeletedObjectsKey] || [property.key isEqualToString:PlayerSilenceTrimLevel]) {
+                    [self _silenceTrimExternalSettingsChanged];
+                    return;
+                }
+            }
+        }
+    }
 }
 
 - (void) _silenceTrimObserveDownloadsIfNeeded
@@ -5092,6 +5155,20 @@ didReceiveResponse:(NSURLResponse *)response
                                              selector:@selector(_silenceTrimDownloadDidFinish:)
                                                  name:CacheManagerDidFinishCachingEpisodeNotification
                                                object:nil];
+    // Settings written by the iCloud sync or a backup import, not through the UI.
+    __weak PlaybackManager* weakSelf = self;
+    for (NSString* key in @[PlayerSilenceTrimEnabled, PlayerSilenceTrimLevel]) {
+        [USER_DEFAULTS addTaskObserver:self forKeyPath:key task:^(id obj, NSDictionary *change) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [weakSelf _silenceTrimExternalSettingsChanged];
+            });
+        }];
+    }
+    // A podcast's own level arrives as a CDFeedProperty change (sync, import, settings).
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(_silenceTrimContextObjectsDidChange:)
+                                                 name:NSManagedObjectContextObjectsDidChangeNotification
+                                               object:DMANAGER.objectContext];
 #if TARGET_OS_IPHONE
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(_silenceTrimSharePlayActivityDidChange:)

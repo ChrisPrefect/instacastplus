@@ -140,6 +140,7 @@ final class ICSilenceCompressor {
     private var idealPosition: Int64 = 0          // where the analysis would be without alignment
     private var outputPosition: Int64 = 0         // session relative output sample of the next hop
     private var finished = false
+    private var primingHops = 0                   // hops processed but not emitted (see reset)
     private var correlationScratch: [Float] = []
     private var grainScratch: [Float] = []
     private var energyScratch: [Float] = []
@@ -169,7 +170,7 @@ final class ICSilenceCompressor {
         self.sampleRate = sampleRate
         self.channelCount = channelCount
         self.parameters = parameters
-        let hop = max(32, Int((sampleRate * 0.0058).rounded()))
+        let hop = Self.hopLength(sampleRate: sampleRate)
         self.hop = hop
         self.grainLength = hop * 2
         self.tolerance = hop
@@ -183,6 +184,11 @@ final class ICSilenceCompressor {
         self.overlap = Array(repeating: [Float](repeating: 0, count: hop), count: channelCount)
         configureHighPass()
         reset(atSourceSample: 0)
+    }
+
+    /// Synthesis hop for a sample rate (about 5.8 ms).
+    static func hopLength(sampleRate: Double) -> Int {
+        max(32, Int((sampleRate * 0.0058).rounded()))
     }
 
     private func configureHighPass() {
@@ -199,8 +205,16 @@ final class ICSilenceCompressor {
         hpA2 = (1 - alpha) / a0
     }
 
-    /// Starts a new session at `sample` (absolute source position), e.g. after a seek.
-    func reset(atSourceSample sample: Int64) {
+    /// Starts a new session at `sample` (absolute source position).
+    ///
+    /// A seek starts unprimed: the first hop fades in over one hop so playback never starts with a
+    /// step. A restart that continues already playing audio (level change, automatic renderer
+    /// flush) is `primed`: the session begins one hop earlier and that hop is not emitted, so the
+    /// first emitted hop is complete and continues the audio before it without a dip. The input
+    /// must then start at `sessionStart`.
+    func reset(atSourceSample requested: Int64, primed: Bool = false) {
+        let sample = (primed && requested >= Int64(hop)) ? requested - Int64(hop) : requested
+        primingHops = sample < requested ? 1 : 0
         sessionStart = sample
         for c in 0..<channelCount {
             input[c].removeAll(keepingCapacity: true)
@@ -507,6 +521,16 @@ final class ICSilenceCompressor {
             let neededEnd = analysisPosition + Int64(grainLength + hop + tolerance)
             if !endOfInput && inputEnd < neededEnd { break }
             if !planningCovers(analysisPosition) { break }
+            if primingHops > 0 && analysisPosition < inputEnd {
+                // Fill the overlap with the grain before the requested start without emitting it.
+                var discarded = [Float]()
+                appendHop(from: analysisPosition, into: &discarded)
+                let next = nextPosition(after: analysisPosition)
+                previousPosition = analysisPosition
+                analysisPosition = next
+                primingHops -= 1
+                continue
+            }
             if endOfInput && analysisPosition >= inputEnd {
                 // Flush the tail of the last grain.
                 appendHop(from: nil, into: &samples)
@@ -544,6 +568,9 @@ final class ICSilenceCompressor {
 
     /// Source position (absolute samples) that the next produced output frame belongs to.
     var nextSourcePosition: Int64 { analysisPosition }
+
+    /// Whether the next emitted hop lies inside a pause that is being shortened.
+    var nextHopIsShortened: Bool { activePlan(at: analysisPosition) != nil }
 
     /// Output position (session samples) of the next produced frame.
     var nextOutputPosition: Int64 { outputPosition }

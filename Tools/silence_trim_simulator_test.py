@@ -140,6 +140,12 @@ def ui_test(name, body):
     project.mkdir(exist_ok=True)
     shutil.copy2(ROOT / 'Tools/fixtures/chapter_scroll_ui_project.pbxproj', project / 'project.pbxproj')
     (out / 'NativeScrollTests.swift').write_text('import XCTest\nfinal class NativeScrollTests: XCTestCase {\n' + body + '\n}\n')
+    # xcodebuild refuses to write over a result bundle of an earlier run into the same folder.
+    shutil.rmtree(out / f'{name}.xcresult', ignore_errors=True)
+    # All test projects link the same bundle into the shared products folder. A project whose
+    # own build record is unchanged since an earlier run skips the link and would run the bundle
+    # another test linked last; without the products every test links its own body.
+    shutil.rmtree(out / 'NativeDerived' / 'Build' / 'Products', ignore_errors=True)
     log = run(['xcodebuild', '-project', str(project), '-scheme', 'NativeScrollTests',
                '-destination', 'platform=iOS Simulator,id=' + args.udid,
                '-derivedDataPath', str(out / 'NativeDerived'), '-parallel-testing-enabled', 'NO',
@@ -206,6 +212,14 @@ def wait(predicate, seconds=20):
         time.sleep(.2)
         s = command()
     return s
+
+
+def dismiss_top():
+    """Dismisses the topmost sheet and waits until UIKit finished: presenting the next sheet
+    while the previous one is still being dismissed puts it on that sheet, and both disappear."""
+    before = len(command().get('presented', []))
+    command('dismissTop')
+    return wait(lambda s: len(s.get('presented', [])) < before, 5)
 
 
 def advance(seconds):
@@ -415,10 +429,10 @@ try:
     command('showSettings', screen='playback')
     time.sleep(1.5)
     screenshot('settings-playback')
-    command('dismissTop')
+    dismiss_top()
     command('showSettings', screen='feed', name='local')
     time.sleep(1.5)
-    ui_test('feed-settings-scroll', '''
+    ui_ok = ui_test('feed-settings-scroll', '''
  func testScrollToPauseRow() {
   let app=XCUIApplication(bundleIdentifier:"com.iteconomy.instacastplus")
   app.activate()
@@ -427,8 +441,9 @@ try:
   while !row.isHittable && tries<12 { app.swipeUp(); tries+=1 }
   XCTAssertTrue(row.exists)
  }''')
+    check('O (UI) the podcast settings show the pause row', ui_ok and 'FeedSettingsViewController' in command().get('presented', []), command())
     screenshot('settings-podcast')
-    command('dismissTop')
+    dismiss_top()
     command('settings', enabled=False)
     command('close')
     command('exportLogs')

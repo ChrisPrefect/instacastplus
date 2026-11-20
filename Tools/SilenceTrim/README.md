@@ -20,6 +20,29 @@
 - Das Tempo setzt der Synchronizer, mit demselben Time-Pitch-Algorithmus wie `AVPlayerItem`.
 - Nach aussen meldet der Player immer die Quellzeit der Datei: Positionen, Kapitel, Skip-Marker, iCloud, Watch und Sperrbildschirm.
 
+### Sample-genaue Neustarts
+
+Gemessen am 20.11.2026 mit der Glitch-Probe:
+- **Decoder-Vorlauf:** Nach einem Start mitten in einer MP3 dekodiert AVAssetReader die ersten bis zu 60 ms falsch (bis 2445 Samples). Der Player dekodiert deshalb 0,2 s früher und verwirft diesen Teil.
+- **Präzise Positionen:** Ohne `AVURLAssetPreferPreciseDurationAndTimingKey` beginnt der Reader je nach Zustand des Assets bis zu ein MP3-Frame (1152 Samples) neben der verlangten Stelle.
+  - Das präzise Asset braucht einen Scan der ganzen Datei, 0,5 bis 2,8 s auf dem M2.
+  - Die Wiedergabe startet deshalb sofort, und das präzise Asset wärmt sich im Hintergrund auf.
+  - Die Sitzung wechselt in der nächsten gekürzten Pause ohne Flush; ein Frame Versatz ist dort Stille.
+- **Primed Restart:** Fortsetzende Neustarts (automatischer Flush, Stufenwechsel, Decoder-Wechsel) beginnen einen Hop früher und verwerfen ihn. Danach ist der Überlapp gefüllt, und das Audio läuft ohne Einblendung und ohne Pegelloch weiter. Nur ein Seek blendet ein.
+- **Quellposition eines Neustarts:** Sie ist der letzte Hop-Start vor der Flush-Stelle plus Versatz, also der Grain, der dort einblendet. Die interpolierte Anzeigezeit ist dafür falsch:
+  - Im letzten ungekürzten Hop vor einer Pause übersprang sie bis zu mehrere Millisekunden Nachhall.
+  - Über die Umrechnung in Sekunden lag sie gelegentlich ein Sample daneben.
+  - Gegenprobe mit der alten Interpolation: 2 von 8 Neustarts falsch, mit der Hop-Zuordnung 8 von 8 exakt.
+- **Teil-Flush beim Stufenwechsel:** `flush(fromSourceTime:)` verweigert der Renderer lokal immer, weil er die rund 1,5 s schon übernommen hat. Die neue Stufe gilt dann nach dem eingereihten Audio. Bei AirPlay mit langem Puffer schneidet der Wechsel am nächsten Pufferstart in einer Pause.
+- **Uhr:** Play, Pause und Tempo setzen die Synchronizer-Rate synchron. Asynchron lief die Position nach `pause()` noch bis zu 3 ms weiter.
+
+### Einstellungen von aussen
+
+iCloud-Sync und Backup-Import schreiben nur UserDefaults beziehungsweise `CDFeedProperty`. Der PlaybackManager beobachtet beide Wege und wendet eine Änderung koalesziert auf die laufende Folge an:
+- Funktion aus: Wechsel zu AVPlayer.
+- Andere Stufe: Stufenwechsel in der Engine.
+- Funktion ein: Wechsel zur Engine, wenn die Datei lokal vorliegt.
+
 ## Messung (ganze Folgen, `--verify`)
 
 | Folge | Länge | Sanft | Mittel | Stark | PC mild | PC medium | PC Mad Max |
@@ -59,8 +82,28 @@ swiftc -O -parse-as-library -o build/SilenceTrim/silence_trim_player_probe \
 build/SilenceTrim/silence_trim_player_probe <folge.mp3>
 ```
 
+Glitch-Probe auf macOS: Sie baut aus allen eingereihten Puffern abzüglich der Flushes das tatsächlich gespielte Audio nach und vergleicht es sample-genau mit der Offline-Referenz. Geprüft werden Lücken, Pause und Start in Pausen, Seeks, Stufenwechsel, automatische Flushes einschliesslich gezielter Flushes im letzten Hop vor einer Pause sowie der Decoder-Wechsel.
+
+```bash
+swiftc -O -parse-as-library -o build/SilenceTrim/silence_trim_glitch_probe \
+  Classes/SilenceTrim/ICSilenceCompressor.swift Classes/SilenceTrim/ICSilenceTrimLevel.swift \
+  Classes/SilenceTrim/ICSilenceTrimPlayer.swift Tools/SilenceTrim/silence_trim_glitch_probe.swift
+build/SilenceTrim/silence_trim_glitch_probe <folge.mp3> [report.json]
+```
+
 E2E in der App (Simulator ohne iCloud-Konto, echte MP3):
 
 ```bash
 python3 Tools/silence_trim_simulator_test.py --udid <UDID> --app <InstacastPlus.app> --fixture <folge.mp3> --evidence build/SilenceTrim/e2e [--prepare-ui]
+```
+
+Tiefen-E2E mit demselben Setup, Auswahl der Szenarien über `SILENCE_TRIM_SCENARIOS` (Standard `PSRBU`):
+- P: Pause, Start und Seek in einer langen Pause.
+- S: Stream und Download parallel, mit und ohne Stream-Cache, fremder Download, gelöschter Download, Download während Pause.
+- R: Einstellungen von aussen auf dieselbe Art, wie Sync und Import sie schreiben.
+- B: Backup-Export und -Import.
+- U: Wartehinweis, echte Taps in den Einstellungen, Dark Mode.
+
+```bash
+python3 Tools/silence_trim_deep_simulator_test.py --udid <UDID> --app <InstacastPlus.app> --fixture <folge.mp3> --evidence build/SilenceTrim/deep
 ```

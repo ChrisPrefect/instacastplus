@@ -53,6 +53,28 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     @objc private(set) var url: URL
     /// Number of automatic renderer flushes handled (diagnostics).
     @objc private(set) var automaticFlushCount = 0
+
+    /// Test seam, Swift-internal (invisible to the app's Objective-C code and unset in the app):
+    /// reports every buffer handed to the renderer and every flush, in pipeline order, so a test
+    /// can rebuild the audio that actually plays.
+    enum RenderEvent {
+        case enqueue(CMSampleBuffer)
+        case flushAll
+        case flushFrom(CMTime)
+    }
+    var renderEventObserver: ((RenderEvent) -> Void)?
+    /// Level changes whose partial flush the renderer refused (test diagnostics).
+    var partialFlushRefusals = 0
+    /// Switches from the instant-start decoder to the precise one (test diagnostics).
+    var realignCount = 0
+    var lastRealign: (output: Int64, source: Int64)?
+    /// Restarts after automatic flushes: first flushed output sample and the source sample the
+    /// audio continued from (test diagnostics).
+    var automaticFlushRestarts: [(output: Int64, source: Int64)] = []
+    /// Whether the current session decodes with exact sample positions.
+    var decodesPrecisely: Bool { sessionIsPrecise }
+    /// Whether the precise decoder finished warming up.
+    var hasPreciseDecoder: Bool { preciseAsset != nil }
     private var requestedRateValue: Float = 1
     private var levelOnMain: ICSilenceTrimLevel
     private var playing = false
@@ -62,7 +84,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     // MARK: Pipeline state (queue)
 
     private let queue = DispatchQueue(label: "com.iteconomy.instacast.silencetrim", qos: .userInitiated)
-    private let renderer = AVSampleBufferAudioRenderer()
+    let renderer = AVSampleBufferAudioRenderer()
     private let synchronizer = AVSampleBufferRenderSynchronizer()
     private var asset: AVURLAsset
     private var audioTrack: AVAssetTrack?
@@ -78,6 +100,18 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     private var generation = 0
     private var endObserver: Any?
     private var readerFinished = false
+    /// Source sample where the compressor input starts; decoded audio before it is pre-roll.
+    private var compressorInputStart: Int64 = 0
+    // Exact positions: without AVURLAssetPreferPreciseDurationAndTimingKey, AVAssetReader places
+    // a mid-file MP3 start one frame (1152 samples, 26 ms) off depending on the asset's state
+    // (measured 20.11.2026). The precise asset needs a scan of the whole file first (0.5-2.8 s
+    // on an M2), so playback starts with the normal asset, the precise one warms up in the
+    // background, and the session switches over inside the next shortened pause, where a
+    // one-frame step is silence. From then on every restart continues sample-exactly.
+    private var preciseAsset: AVURLAsset?
+    private var preciseTrack: AVAssetTrack?
+    private var sessionIsPrecise = false
+    private var pendingRealign = false
     private var reportedFailure = false
 
     // MARK: Shared state (lock)
@@ -94,8 +128,18 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         var sessionOutputStart: Double = 0
         var endOfStreamOutput: Int64?
         var endOfStreamSource: Double = 0
+        /// Output sample of every enqueued buffer that may still be flushed (ascending).
+        var bufferStarts: [Int64] = []
     }
     private let mapLock = OSAllocatedUnfairLock(initialState: MapState())
+
+    /// Rate the clock should run at (0 while paused). Play, pause and speed changes set the
+    /// synchronizer on the calling thread, so the position stands still the moment `pause()`
+    /// returns, as with AVPlayer (set asynchronously it ran on for up to 3 ms, measured
+    /// 20.11.2026). A seek or prepare queued earlier reads this value under the same lock when
+    /// it resets the timeline, so it can neither restart a paused clock nor stop a playing one.
+    private let clockLock = NSLock()
+    private var clockRate: Float = 0
 
     private var observers: [NSObjectProtocol] = []
 
@@ -167,6 +211,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                         self.makeFormatDescription()
                         self.mapLock.withLock { $0.sampleRate = rate }
                         self.restartPipeline(atSource: max(0, min(time, seconds)), outputOrigin: 0, resetTimeline: true)
+                        self.warmUpPreciseTiming()
                         DispatchQueue.main.async {
                             guard !self.invalidated else { return }
                             self.isReady = true
@@ -201,7 +246,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
             guard clamped != requestedRateValue else { return }
             requestedRateValue = clamped
             if playing {
-                queue.async { self.synchronizer.rate = clamped }
+                setClockRate(clamped)
             }
         }
     }
@@ -250,16 +295,23 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     @objc func play() {
         guard !invalidated, !playing else { return }
         playing = true
-        let rate = requestedRateValue
-        queue.async { self.synchronizer.rate = rate }
+        setClockRate(requestedRateValue)
         notifyRateChange()
     }
 
     @objc func pause() {
         guard playing else { return }
         playing = false
-        queue.async { self.synchronizer.rate = 0 }
+        setClockRate(0)
         notifyRateChange()
+    }
+
+    /// Sets the clock now (any thread); see `clockLock`.
+    private func setClockRate(_ rate: Float) {
+        clockLock.lock()
+        clockRate = rate
+        synchronizer.rate = rate
+        clockLock.unlock()
     }
 
     /// Like AVPlayer's rate observation, the change is reported after the call returns.
@@ -279,9 +331,8 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         let target = max(0, duration > 0 ? min(time, duration) : time)
         pendingSeekCompletion?(false)
         pendingSeekCompletion = completion
-        let rate = playing ? requestedRateValue : 0
         queue.async {
-            self.restartPipeline(atSource: target, outputOrigin: 0, resetTimeline: true, rate: rate)
+            self.restartPipeline(atSource: target, outputOrigin: 0, resetTimeline: true)
             DispatchQueue.main.async {
                 let pending = self.pendingSeekCompletion
                 self.pendingSeekCompletion = nil
@@ -297,8 +348,8 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         playing = false
         pendingSeekCompletion?(false)
         pendingSeekCompletion = nil
+        setClockRate(0)
         queue.async {
-            self.synchronizer.rate = 0
             self.generation += 1
             self.renderer.stopRequestingMediaData()
             self.renderer.flush()
@@ -347,6 +398,24 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         mapLock.withLock { Self.source(in: $0, outputSeconds: seconds) }
     }
 
+    /// Source sample a restart at `output` has to continue from: the last hop start at or before
+    /// it plus the offset into that hop. That is the grain fading in there, so a primed restart
+    /// goes on sample-exactly wherever the audio is unshortened, including the last hop before a
+    /// shortened pause. Interpolating towards the next map point (as `source` does for the
+    /// display) would skip up to several milliseconds of the speech's decay there.
+    private static func sourceSample(in state: MapState, output: Int64) -> Int64 {
+        guard let first = state.output.first, output >= first else {
+            return Int64((source(in: state, outputSeconds: Double(output) / state.sampleRate) * state.sampleRate).rounded())
+        }
+        var low = 0
+        var high = state.output.count - 1
+        while low < high {
+            let mid = (low + high + 1) / 2
+            if state.output[mid] <= output { low = mid } else { high = mid - 1 }
+        }
+        return state.input[low] + (output - state.output[low])
+    }
+
     // MARK: Pipeline (queue)
 
     private func makeFormatDescription() {
@@ -376,12 +445,14 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     /// Starts decoding at `source` seconds. With `resetTimeline` the synchronizer jumps to
     /// output time 0 (seek); otherwise output continues at `outputOrigin` (automatic flush,
     /// level change) and the synchronizer keeps running.
-    private func restartPipeline(atSource source: TimeInterval, outputOrigin: Int64, resetTimeline: Bool, rate: Float? = nil) {
+    private func restartPipeline(atSource source: TimeInterval, outputOrigin: Int64, resetTimeline: Bool,
+                                 sourceSample exactSample: Int64? = nil, primed: Bool = false) {
         generation += 1
         let currentGeneration = generation
         renderer.stopRequestingMediaData()
         if resetTimeline {
             renderer.flush()
+            renderEventObserver?(.flushAll)
         }
         if let observer = endObserver {
             synchronizer.removeTimeObserver(observer)
@@ -392,10 +463,30 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         readerOutput = nil
         readerFinished = false
 
-        guard let track = audioTrack else { return }
-        let sourceSample = Int64((source * sampleRate).rounded())
+        guard let defaultTrack = audioTrack else { return }
+        let decodeAsset = preciseAsset ?? asset
+        let track = preciseTrack ?? defaultTrack
+        sessionIsPrecise = preciseAsset != nil
+        if sessionIsPrecise { pendingRealign = false }
+        let sourceSample = exactSample ?? Int64((source * sampleRate).rounded())
+
+        // The compressor decides where its input has to start (one hop earlier when primed).
+        let parameters = levelValue.compressorParameters ?? ICSilenceTrimLevel.medium.compressorParameters!
+        if compressor == nil || compressor?.sampleRate != sampleRate || compressor?.channelCount != channelCount {
+            compressor = ICSilenceCompressor(sampleRate: sampleRate, channelCount: channelCount, parameters: parameters)
+        }
+        guard let compressor else { return }
+        compressor.updateParameters(parameters)
+        compressor.reset(atSourceSample: sourceSample, primed: primed)
+        // MP3/AAC decoders need pre-roll: AVAssetReader starts at the exact sample, but the first
+        // up to ~60 ms it decodes after a mid-file start are wrong (measured 20.11.2026, up to
+        // 2445 samples on real episodes). Decode 0.2 s earlier and drop that part.
+        compressorInputStart = compressor.sessionStart
+        let preroll = Int64(0.2 * sampleRate)
+        let readerStart = max(0, compressorInputStart - preroll)
+
         do {
-            let newReader = try AVAssetReader(asset: asset)
+            let newReader = try AVAssetReader(asset: decodeAsset)
             let settings: [String: Any] = [
                 AVFormatIDKey: kAudioFormatLinearPCM,
                 AVLinearPCMBitDepthKey: 32,
@@ -408,8 +499,8 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
             let output = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
             output.alwaysCopiesSampleData = false
             newReader.add(output)
-            if source > 0 {
-                newReader.timeRange = CMTimeRange(start: CMTime(value: sourceSample, timescale: CMTimeScale(sampleRate)),
+            if readerStart > 0 {
+                newReader.timeRange = CMTimeRange(start: CMTime(value: readerStart, timescale: CMTimeScale(sampleRate)),
                                                   duration: .positiveInfinity)
             }
             guard newReader.startReading() else {
@@ -422,14 +513,6 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
             return
         }
 
-        let parameters = levelValue.compressorParameters ?? ICSilenceTrimLevel.medium.compressorParameters!
-        if let compressor, compressor.sampleRate == sampleRate, compressor.channelCount == channelCount {
-            compressor.updateParameters(parameters)
-            compressor.reset(atSourceSample: sourceSample)
-        } else {
-            compressor = ICSilenceCompressor(sampleRate: sampleRate, channelCount: channelCount, parameters: parameters)
-            compressor?.reset(atSourceSample: sourceSample)
-        }
         sessionOutputOrigin = outputOrigin
 
         let outputSeconds = Double(outputOrigin) / sampleRate
@@ -443,6 +526,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                     state.output.removeSubrange(index...)
                     state.input.removeSubrange(index...)
                 }
+                state.bufferStarts.removeAll { $0 >= outputOrigin }
             } else {
                 let previousOutput = CMTimeGetSeconds(synchronizer.currentTime())
                 let previousSource = Self.source(in: state, outputSeconds: previousOutput)
@@ -451,6 +535,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                 }
                 state.output.removeAll(keepingCapacity: true)
                 state.input.removeAll(keepingCapacity: true)
+                state.bufferStarts.removeAll(keepingCapacity: true)
             }
             state.pendingSource = source
             state.sessionSourceStart = source
@@ -459,7 +544,9 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         }
 
         if resetTimeline {
-            synchronizer.setRate(rate ?? 0, time: .zero)
+            clockLock.lock()
+            synchronizer.setRate(clockRate, time: .zero)
+            clockLock.unlock()
         }
 
         renderer.requestMediaDataWhenReady(on: queue) { [weak self] in
@@ -474,6 +561,10 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
             return
         }
         while renderer.isReadyForMoreMediaData {
+            if pendingRealign, let compressor, compressor.nextHopIsShortened {
+                realignAtEnqueuedHead(compressor)
+                return
+            }
             guard let buffer = nextSampleBuffer() else {
                 if compressor?.isFinished == true {
                     renderer.stopRequestingMediaData()
@@ -482,6 +573,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                 return
             }
             renderer.enqueue(buffer)
+            renderEventObserver?(.enqueue(buffer))
         }
     }
 
@@ -519,6 +611,11 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         guard let block = CMSampleBufferGetDataBuffer(sampleBuffer) else { return true }
         let frames = CMSampleBufferGetNumSamples(sampleBuffer)
         guard frames > 0 else { return true }
+        // Skip the decoder pre-roll in front of the compressor's start.
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let firstSample = pts.isNumeric ? pts.convertScale(CMTimeScale(sampleRate), method: .roundHalfAwayFromZero).value : compressorInputStart
+        let skip = Int(max(0, min(Int64(frames), compressorInputStart - firstSample)))
+        guard skip < frames else { return true }
         var lengthAtOffset = 0
         var totalLength = 0
         var pointer: UnsafeMutablePointer<CChar>?
@@ -526,7 +623,8 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         let expected = frames * channelCount * MemoryLayout<Float>.size
         if status == kCMBlockBufferNoErr, let pointer, lengthAtOffset >= expected {
             pointer.withMemoryRebound(to: Float.self, capacity: frames * channelCount) { floats in
-                compressor.append(interleaved: UnsafeBufferPointer(start: floats, count: frames * channelCount), frameCount: frames)
+                compressor.append(interleaved: UnsafeBufferPointer(start: floats + skip * channelCount, count: (frames - skip) * channelCount),
+                                  frameCount: frames - skip)
             }
         } else {
             // Non-contiguous block buffer: copy it out.
@@ -535,8 +633,10 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                 _ = CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: totalLength, destination: raw.baseAddress!)
             }
             let copiedFrames = min(frames, copy.count / channelCount)
+            guard skip < copiedFrames else { return true }
             copy.withUnsafeBufferPointer { floats in
-                compressor.append(interleaved: floats, frameCount: copiedFrames)
+                compressor.append(interleaved: UnsafeBufferPointer(rebasing: floats[(skip * channelCount)..<(copiedFrames * channelCount)]),
+                                  frameCount: copiedFrames - skip)
             }
         }
         return true
@@ -553,6 +653,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                 state.output.append(output)
                 state.input.append(chunk.mapInput[index])
             }
+            state.bufferStarts.append(outputStart)
             // Keep what can still be played back plus the history the speed-up factor looks at.
             let played = Int64((CMTimeGetSeconds(synchronizer.currentTime()) - Self.speedupWindow - 5) * state.sampleRate)
             if let first = state.output.first, first < played, state.output.count > 4096 {
@@ -561,6 +662,9 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                     state.output.removeFirst(index - 1)
                     state.input.removeFirst(index - 1)
                 }
+            }
+            if let first = state.bufferStarts.first, first < played {
+                state.bufferStarts.removeAll { $0 < played }
             }
         }
         let byteCount = chunk.samples.count * MemoryLayout<Float>.size
@@ -592,6 +696,43 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         return sampleBuffer
     }
 
+    /// Loads the precise asset off the pipeline queue, including its file scan.
+    private func warmUpPreciseTiming() {
+        let url = self.url
+        Task.detached(priority: .utility) { [weak self] in
+            let precise = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+            guard let track = try? await precise.loadTracks(withMediaType: .audio).first,
+                  let duration = try? await precise.load(.duration), duration.isNumeric,
+                  let reader = try? AVAssetReader(asset: precise) else { return }
+            // Reading near the end performs the scan here instead of in the first seek.
+            let output = AVAssetReaderTrackOutput(track: track, outputSettings: [AVFormatIDKey: kAudioFormatLinearPCM])
+            reader.add(output)
+            reader.timeRange = CMTimeRange(start: CMTimeMultiplyByFloat64(duration, multiplier: 0.95), duration: .positiveInfinity)
+            guard reader.startReading() else { return }
+            _ = output.copyNextSampleBuffer()
+            reader.cancelReading()
+            guard let self else { return }
+            self.queue.async {
+                guard !self.reportedFailure, self.compressor != nil else { return }
+                self.preciseAsset = precise
+                self.preciseTrack = track
+                if !self.sessionIsPrecise { self.pendingRealign = true }
+            }
+        }
+    }
+
+    /// Continues the current session with the precise decoder at the head of the enqueued
+    /// audio, which lies inside a shortened pause. Nothing is flushed.
+    private func realignAtEnqueuedHead(_ compressor: ICSilenceCompressor) {
+        pendingRealign = false
+        let output = sessionOutputOrigin + compressor.nextOutputPosition
+        let source = compressor.nextSourcePosition
+        realignCount += 1
+        lastRealign = (output, source)
+        restartPipeline(atSource: Double(source) / sampleRate, outputOrigin: output, resetTimeline: false,
+                        sourceSample: source, primed: true)
+    }
+
     private func scheduleEndOfStream() {
         guard let compressor, endObserver == nil else { return }
         let endOutput = sessionOutputOrigin + compressor.nextOutputPosition
@@ -604,7 +745,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         let currentGeneration = generation
         endObserver = synchronizer.addBoundaryTimeObserver(forTimes: [NSValue(time: endTime)], queue: queue) { [weak self] in
             guard let self, self.generation == currentGeneration else { return }
-            self.synchronizer.rate = 0
+            self.setClockRate(0)
             DispatchQueue.main.async {
                 guard !self.invalidated else { return }
                 self.playing = false
@@ -619,25 +760,22 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         guard let compressor else { return }
         // Audio not produced yet uses the new values at once.
         compressor.updateParameters(parameters)
-        // Audio already enqueued (seconds locally, minutes with AirPlay buffering) is replaced
-        // from the next pause on, so the change is heard soon and never cuts into speech.
-        let now = Int64(CMTimeGetSeconds(synchronizer.currentTime()) * sampleRate)
-        let earliest = now + Int64(0.3 * sampleRate)
+        // Audio already enqueued (seconds locally, minutes with AirPlay buffering) is replaced.
+        // The cut lies on a buffer start, where flush(fromSourceTime:) removes whole buffers, and
+        // on a hop that plays unshortened, so the primed restart continues the kept audio sample
+        // for sample; the new level takes over at the next pause.
+        let now = CMTimeGetSeconds(synchronizer.currentTime())
+        let earliest = Int64((now + 0.3) * sampleRate)
         let candidate: (output: Int64, input: Int64)? = mapLock.withLock { state in
-            guard state.output.count > 1 else { return nil }
-            for index in 1..<state.output.count where state.output[index] >= earliest {
-                let deltaInput = state.input[index] - state.input[index - 1]
-                let deltaOutput = state.output[index] - state.output[index - 1]
-                if deltaInput != deltaOutput {
-                    // First hop of a shortened pause: restart one hop earlier, still inside it.
-                    return (state.output[index - 1], state.input[index - 1])
+            for start in state.bufferStarts where start >= earliest {
+                guard let index = state.output.firstIndex(of: start), index > 0 else { continue }
+                if state.input[index] - state.input[index - 1] == state.output[index] - state.output[index - 1] {
+                    return (start, state.input[index])
                 }
             }
             return nil
         }
         guard let point = candidate else { return }
-        let enqueuedEnd = sessionOutputOrigin + compressor.nextOutputPosition
-        guard point.output < enqueuedEnd - Int64(0.5 * sampleRate) else { return }
         let flushTime = CMTime(value: point.output, timescale: CMTimeScale(sampleRate))
         let currentGeneration = generation
         renderer.stopRequestingMediaData()
@@ -646,9 +784,13 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
             self.queue.async {
                 guard currentGeneration == self.generation else { return }
                 if succeeded {
-                    self.restartPipeline(atSource: Double(point.input) / self.sampleRate, outputOrigin: point.output, resetTimeline: false)
+                    self.renderEventObserver?(.flushFrom(flushTime))
+                    self.restartPipeline(atSource: Double(point.input) / self.sampleRate, outputOrigin: point.output,
+                                         resetTimeline: false, sourceSample: point.input, primed: true)
                 } else {
-                    // The point was already rendered; keep the old audio and continue.
+                    // The renderer already took that audio (locally it holds all ~1.5 s it asked
+                    // for); keep it, the new level follows right after it.
+                    self.partialFlushRefusals += 1
                     self.renderer.requestMediaDataWhenReady(on: self.queue) { [weak self] in
                         self?.provideMediaData(generation: currentGeneration)
                     }
@@ -679,9 +821,18 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     private func handleAutomaticFlush(at flushTime: CMTime?) {
         guard !reportedFailure, compressor != nil else { return }
         let time = (flushTime?.isNumeric == true) ? flushTime! : synchronizer.currentTime()
-        let output = max(0, Int64(CMTimeGetSeconds(time) * sampleRate))
-        let source = sourceTime(forOutputSeconds: Double(output) / sampleRate)
-        restartPipeline(atSource: source, outputOrigin: output, resetTimeline: false)
+        renderEventObserver?(.flushFrom(time))
+        // Every sample from `time` on is gone (the notification names the first flushed sample).
+        // Continue exactly there, primed, so the audio goes on without gap, overlap or fade dip.
+        let output = time.convertScale(CMTimeScale(sampleRate), method: .roundHalfAwayFromZero).value
+        let sample = mapLock.withLock { state in
+            state.output.isEmpty ? Int64((state.pendingSource * sampleRate).rounded()) : Self.sourceSample(in: state, output: output)
+        }
+        mapLock.withLock { state in state.bufferStarts.removeAll { $0 >= output } }
+        automaticFlushRestarts.append((output, sample))
+        restartPipeline(atSource: Double(sample) / sampleRate, outputOrigin: output, resetTimeline: false,
+                        sourceSample: sample, primed: true)
+        let source = Double(sample) / sampleRate
         DispatchQueue.main.async {
             guard !self.invalidated else { return }
             self.automaticFlushCount += 1

@@ -80,6 +80,8 @@ plutil -p <archive>/Products/Applications/InstacastPlus.app/Watch/InstacastWatch
 
 **`CDEpisode.downloaded` ist transient** und existiert nicht als Spalte im Store. SQL-Prädikate darauf matchen nie; Listen filtern stattdessen über `objectHash IN cachedEpisodes`.
 
+**Eine neu eingefügte `CDEpisode` ist laut Modell-Default schon `consumed = YES`.** Nur der Feed-Parser setzt bei neuen Folgen NO. Testfixtures, die Folgen direkt anlegen, müssen NO selbst setzen; sonst besteht jede Prüfung „am Ende als gehört markiert“ ohne Wirkung (am 20.11.2026 in der Pausen-E2E so gefunden).
+
 **Änderungs-Dictionaries synchron lesen.** `changedValuesForCurrentEvent` muss direkt in der Notification ausgewertet werden; in einem async-Block ist es leer. Das betrifft sowohl den iCloud-Observer als auch den Widget-Export.
 
 ## Playback
@@ -105,9 +107,20 @@ plutil -p <archive>/Products/Applications/InstacastPlus.app/Watch/InstacastWatch
 - **Die eigene Engine läuft nur, wenn die Funktion aktiv ist.** `ICSilenceTrimPlayer` (`Classes/SilenceTrim/`) ersetzt AVPlayer nur, wenn alle Bedingungen gelten: `PlayerSilenceTrimEnabled` ist an, die Stufe des Podcasts beziehungsweise die globale Stufe ist > 0, die Datei liegt vollständig lokal vor, es läuft keine SharePlay-Sitzung, und es ist kein Video. In allen anderen Fällen ist `silenceTrimPlayer` nil, und jede Methode im PlaybackManager nimmt ihren unveränderten AVPlayer-Pfad. Den alten Pfad nicht für die Engine umbauen; neue Logik gehört in den Abschnitt „Silence trim engine“.
 - **Nach aussen gilt nur die Quellzeit.** Der Synchronizer läuft auf einer gekürzten Ausgabe-Zeitachse. `currentTime`, Positionen, Kapitel, Skip-Marker und der Sperrbildschirm verwenden die Zeit der Datei. Die Synchronizer-Zeit nie direkt verwenden.
 - **Engine-Wechsel laufen immer über `openWithEpisode:at:autostart:` an der aktuellen Position.** Auslöser: Einstellung geändert, Stream-Download fertig, SharePlay-Aktivität, Engine-Fehler. Nach einem Fehler bleibt die Folge bis zur nächsten expliziten Einstellungsänderung bei AVPlayer (`silenceTrimRefusedEpisodeHash`).
-- **AirPlay und Routenwechsel leeren den Renderer automatisch** (`AVSampleBufferAudioRendererWasFlushedAutomatically`). Die Ausgabe muss dann ab der Flush-Zeit neu dekodiert werden. Ein Stufenwechsel ersetzt bereits eingereihtes Audio erst ab der nächsten Pause, damit nie mitten in Sprache geschnitten wird.
+- **AirPlay und Routenwechsel leeren den Renderer automatisch** (`AVSampleBufferAudioRendererWasFlushedAutomatically`). Die Ausgabe muss dann ab der Flush-Zeit neu dekodiert werden. Ein Stufenwechsel ersetzt bereits eingereihtes Audio erst ab der nächsten Pause, damit nie mitten in Sprache geschnitten wird. Lokal verweigert der Renderer diesen Teil-Flush immer, weil er die rund 1,5 s schon übernommen hat. Die neue Stufe greift dann nach dem eingereihten Audio; das ist erwartet und kein Fehler.
+- **Neustarts müssen sample-genau fortsetzen** (gemessen 20.11.2026):
+  - AVAssetReader dekodiert nach einem Start mitten in einer MP3 die ersten bis zu 60 ms falsch. Deshalb 0,2 s Vorlauf dekodieren und verwerfen.
+  - Ohne `AVURLAssetPreferPreciseDurationAndTimingKey` liegt der Start bis zu ein MP3-Frame (1152 Samples) daneben. Der präzise Scan kostet 0,5 bis 2,8 s. Deshalb startet die Wiedergabe sofort mit dem normalen Asset und wechselt in der nächsten gekürzten Pause auf das präzise.
+  - Fortsetzende Neustarts laufen „primed“ ohne Einblendung; nur ein Seek blendet ein.
+  - Die Quellposition eines Neustarts ist der Hop-Start plus Versatz, nie die interpolierte Anzeigezeit. Diese übersprang im letzten Hop vor einer Pause bis zu mehrere Millisekunden und rundete über Sekunden um ein Sample daneben.
+- **Play und Pause setzen die Synchronizer-Rate synchron** (unter `clockLock`), sonst läuft die Position nach `pause()` noch bis zu 3 ms weiter. Ein Seek liest die Zielrate erst beim Ausführen.
+- **Einstellungen von aussen wirken sofort auf die laufende Folge.** iCloud-Sync und Backup-Import schreiben nur UserDefaults beziehungsweise `CDFeedProperty`. Der PlaybackManager beobachtet deshalb `PlayerSilenceTrimEnabled`, `PlayerSilenceTrimLevel` und die Feed-Property des spielenden Podcasts und wendet die Änderung koalesziert an.
 - **Die Stufenwerte sind gemessen, nicht geschätzt.** Vor jeder Änderung an Algorithmus oder Werten `Tools/SilenceTrim/silence_trim_analyze --verify` auf mehreren ganzen Folgen laufen lassen (siehe `Tools/SilenceTrim/README.md`). Sprache muss sample-genau unverändert bleiben.
-- E2E: `Tools/silence_trim_simulator_test.py`. Den Simulator nur ohne iCloud-Konto verwenden, weil der Test Podcasts anlegt.
+- Prüfungen (Befehle in `Tools/SilenceTrim/README.md`):
+  - E2E: `Tools/silence_trim_simulator_test.py`.
+  - Tiefen-E2E: `Tools/silence_trim_deep_simulator_test.py`, für Pause in Pausen, Stream und Download parallel, Einstellungen von aussen, Backup und echte UI-Taps.
+  - Glitch-Probe: `Tools/SilenceTrim/silence_trim_glitch_probe.swift`. Sie vergleicht das tatsächlich eingereihte Audio sample-genau mit der Offline-Referenz.
+  - Den Simulator nur ohne iCloud-Konto verwenden, weil die Tests Podcasts anlegen. Den Sync-Anteil decken die Tests über dieselben Schreibwege ab, die der Sync-Apply verwendet.
 
 ## Listen und Swipe
 

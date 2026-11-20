@@ -31,6 +31,104 @@
 #include <sys/sysctl.h>
 
 
+// Observe MessageUI's lifecycle without changing its view hierarchy or retaining
+// the draft. The logger's sessionID distinguishes returning from background from
+// a new app process; attemptID connects all callbacks for one composer.
+@interface ICCrashLogMailComposeViewController : MFMailComposeViewController
+@property (nonatomic, copy) NSString* diagnosticAttemptID;
+@property (nonatomic, copy) NSString* diagnosticSceneSessionID;
+- (void)logDiagnosticEvent:(NSString*)event metadata:(NSDictionary*)metadata;
+@end
+
+@implementation ICCrashLogMailComposeViewController
+
+- (instancetype)init
+{
+    self = [super init];
+    if (self) {
+        self.diagnosticAttemptID = NSUUID.UUID.UUIDString;
+        NSNotificationCenter* center = NSNotificationCenter.defaultCenter;
+        for (NSString* name in @[
+            UIApplicationWillResignActiveNotification,
+            UIApplicationDidEnterBackgroundNotification,
+            UIApplicationWillEnterForegroundNotification,
+            UIApplicationDidBecomeActiveNotification,
+            UIApplicationWillTerminateNotification,
+            UIApplicationDidReceiveMemoryWarningNotification,
+            UISceneDidDisconnectNotification,
+        ]) {
+            [center addObserver:self selector:@selector(diagnosticLifecycleNotification:) name:name object:nil];
+        }
+        [self logDiagnosticEvent:@"created" metadata:@{}];
+    }
+    return self;
+}
+
+- (void)logDiagnosticEvent:(NSString*)event metadata:(NSDictionary*)metadata
+{
+    UIWindow* window = self.viewIfLoaded.window;
+    UIWindowScene* scene = window.windowScene;
+    if (scene.session.persistentIdentifier) {
+        self.diagnosticSceneSessionID = scene.session.persistentIdentifier;
+    }
+    NSMutableDictionary* snapshot = [@{
+        @"attemptID": self.diagnosticAttemptID ?: @"",
+        @"applicationState": @([UIApplication sharedApplication].applicationState),
+        @"composerPresented": @(self.presentingViewController != nil),
+        @"composerViewInWindow": @(window != nil),
+        @"beingPresented": @(self.isBeingPresented),
+        @"beingDismissed": @(self.isBeingDismissed),
+        @"presentingController": self.presentingViewController ? NSStringFromClass(self.presentingViewController.class) : @"",
+        @"presentedController": self.presentedViewController ? NSStringFromClass(self.presentedViewController.class) : @"",
+        @"sceneSessionID": self.diagnosticSceneSessionID ?: @"",
+        @"sceneActivationState": scene ? @((NSInteger)scene.activationState) : @(-1),
+    } mutableCopy];
+    [snapshot addEntriesFromDictionary:metadata];
+    [[ICDiagnosticLogger shared] logEvent:@"crash-log-mail" message:event metadata:snapshot];
+}
+
+- (void)diagnosticLifecycleNotification:(NSNotification*)notification
+{
+    if ([notification.name isEqualToString:UISceneDidDisconnectNotification]) {
+        UIScene* scene = notification.object;
+        if (![scene.session.persistentIdentifier isEqualToString:self.diagnosticSceneSessionID]) return;
+    }
+    [self logDiagnosticEvent:notification.name metadata:@{}];
+}
+
+- (void)viewWillAppear:(BOOL)animated
+{
+    [super viewWillAppear:animated];
+    [self logDiagnosticEvent:@"view-will-appear" metadata:@{}];
+}
+
+- (void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
+    [self logDiagnosticEvent:@"view-did-appear" metadata:@{}];
+}
+
+- (void)viewWillDisappear:(BOOL)animated
+{
+    [self logDiagnosticEvent:@"view-will-disappear" metadata:@{}];
+    [super viewWillDisappear:animated];
+}
+
+- (void)viewDidDisappear:(BOOL)animated
+{
+    [super viewDidDisappear:animated];
+    [self logDiagnosticEvent:@"view-did-disappear" metadata:@{}];
+}
+
+- (void)dealloc
+{
+    [self logDiagnosticEvent:@"deallocated" metadata:@{}];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
+}
+
+@end
+
+
 @interface OptionsViewController () <MFMailComposeViewControllerDelegate>
 @property (nonatomic) BOOL sendingCrashLogMail;
 @end
@@ -357,7 +455,7 @@ enum {
 
 - (void)emailCrashLogsClicked {
     if ([MFMailComposeViewController canSendMail]) {
-        MFMailComposeViewController *mailComposer = [[MFMailComposeViewController alloc] init];
+        ICCrashLogMailComposeViewController *mailComposer = [[ICCrashLogMailComposeViewController alloc] init];
         mailComposer.mailComposeDelegate = self;
 
         NSString *appVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
@@ -368,12 +466,21 @@ enum {
         [mailComposer setMessageBody:[[ICDiagnosticLogger shared] crashLogMailBody] isHTML:NO];
 
         NSArray<ICDiagnosticMailAttachment *> *attachments = [[ICDiagnosticLogger shared] crashLogMailAttachments];
+        NSUInteger attachmentBytes = 0;
         for (ICDiagnosticMailAttachment *attachment in attachments) {
             [mailComposer addAttachmentData:(NSData *)attachment.data mimeType:attachment.mimeType fileName:attachment.fileName];
+            attachmentBytes += attachment.data.length;
         }
 
         self.sendingCrashLogMail = YES;
-        [self presentViewController:mailComposer animated:YES completion:nil];
+        [mailComposer logDiagnosticEvent:@"presentation-requested" metadata:@{
+            @"attachmentCount": @(attachments.count),
+            @"attachmentBytes": @(attachmentBytes),
+            @"presenterAlreadyPresenting": @(self.presentedViewController != nil),
+        }];
+        [self presentViewController:mailComposer animated:YES completion:^{
+            [mailComposer logDiagnosticEvent:@"presentation-completed" metadata:@{}];
+        }];
     } else {
         [self presentAlertControllerWithTitle:@"Email not configured.".ls message:@"Please configure email on this device.".ls button:@"OK".ls animated:YES completion:NULL];
     }
@@ -427,14 +534,28 @@ enum {
 
 - (void)mailComposeController:(MFMailComposeViewController*)controller didFinishWithResult:(MFMailComposeResult)result error:(NSError*)error
 {
+    ICCrashLogMailComposeViewController* diagnosticComposer = [controller isKindOfClass:ICCrashLogMailComposeViewController.class] ? (id)controller : nil;
+    NSDictionary* resultMetadata = @{
+        @"result": @(result),
+        @"resultName": @{@(MFMailComposeResultCancelled): @"cancelled", @(MFMailComposeResultSaved): @"saved",
+                         @(MFMailComposeResultSent): @"sent", @(MFMailComposeResultFailed): @"failed"}[@(result)] ?: @"unknown",
+        @"errorDomain": error.domain ?: @"",
+        @"errorCode": @(error.code),
+        @"errorDescription": error.localizedDescription ?: @"",
+    };
+    [diagnosticComposer logDiagnosticEvent:@"result" metadata:resultMetadata];
     BOOL clearCrashLogMailArtifacts = self.sendingCrashLogMail && result == MFMailComposeResultSent && !error;
     self.sendingCrashLogMail = NO;
 
     [self dismissViewControllerAnimated:YES completion:^{
+        [diagnosticComposer logDiagnosticEvent:@"dismiss-completed" metadata:resultMetadata];
     }];
 
     if (clearCrashLogMailArtifacts) {
         [[ICDiagnosticLogger shared] clearCrashLogMailArtifacts];
+        // The attachment predates the delegate callback. Preserve its result in
+        // the new log as well, rather than deleting the only evidence of sending.
+        [diagnosticComposer logDiagnosticEvent:@"sent-logs-cleared" metadata:resultMetadata];
     }
 	
 	if (error) {

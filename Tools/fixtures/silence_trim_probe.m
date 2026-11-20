@@ -9,8 +9,14 @@
 #import "PlaybackViewController.h"
 @class CDEpisodeList;
 #import "AudioSession.h"
+#import "InstacastBackupImporter.h"
+#import "InstacastBackupParser.h"
 
 @interface NSObject (ICSilenceTrimProbeAPI)
+- (id)newExportBackgroundContext;
+- (NSURL*)createEverythingBackupWithContext:(NSManagedObjectContext*)context cachedEpisodeHashes:(NSSet*)hashes upNextSnapshots:(NSArray*)upNext nowPlayingSnapshot:(NSDictionary*)nowPlaying credentialValues:(NSDictionary*)credentials alternateIconName:(NSString*)icon deviceName:(NSString*)device error:(NSError**)error;
+- (void)removeCacheForEpisode:(id)episode automatic:(BOOL)automatic;
+- (id)propertyForKey:(NSString*)key insertOnDemand:(BOOL)insert;
 + (id)feedSettingsViewControllerWithFeed:(id)feed;
 + (id)viewController;
 + (id)sharedDatabaseManager;
@@ -61,6 +67,7 @@ static UIView* ICFindView(UIView* view, Class cls) {
                     NSManagedObjectContext *context = [[NSClassFromString(@"DatabaseManager") sharedDatabaseManager] valueForKey:@"objectContext"];
                     NSManagedObject *feed = [NSEntityDescription insertNewObjectForEntityForName:@"Feed" inManagedObjectContext:context];
                     [feed setValue:command[@"feedTitle"] forKey:@"title"];
+                    if ([command[@"subscribed"] boolValue]) [feed setValue:@YES forKey:@"subscribed"];
                     [feed setValue:[NSURL URLWithString:[NSString stringWithFormat:@"https://example.invalid/%@.xml", NSUUID.UUID.UUIDString]] forKey:@"sourceURL"];
                     episode = [NSEntityDescription insertNewObjectForEntityForName:@"Episode" inManagedObjectContext:context];
                     [episode setValue:feed forKey:@"feed"];
@@ -68,6 +75,8 @@ static UIView* ICFindView(UIView* view, Class cls) {
                     [episode setValue:NSUUID.UUID.UUIDString forKey:@"guid"];
                     [episode setValue:NSDate.date forKey:@"pubDate"];
                     [episode setValue:@([command[@"duration"] intValue]) forKey:@"duration"];
+                    // The model default is consumed = YES; the feed parser sets NO for new episodes.
+                    [episode setValue:@NO forKey:@"consumed"];
                     [episode reconstructObjectHash];
                     NSManagedObject *medium = [NSEntityDescription insertNewObjectForEntityForName:@"Medium" inManagedObjectContext:context];
                     [medium setValue:episode forKey:@"episode"];
@@ -134,6 +143,46 @@ static UIView* ICFindView(UIView* view, Class cls) {
                     UIViewController *top = [(NSObject*)UIApplication.sharedApplication.delegate valueForKey:@"mainViewController"];
                     while (top.presentedViewController.presentedViewController) top = top.presentedViewController;
                     [top dismissViewControllerAnimated:NO completion:nil];
+                } else if ([action isEqual:@"feedLevelRaw"]) {
+                    // What a remote feed-property apply does: write the property and save, nothing else.
+                    id feed = [episode valueForKey:@"feed"];
+                    if ([command[@"level"] isKindOfClass:NSNumber.class]) [feed setInteger:[command[@"level"] integerValue] forKey:@"PlayerSilenceTrimLevel"];
+                    else [feed resetValueForKey:@"PlayerSilenceTrimLevel"];
+                    [[NSClassFromString(@"DatabaseManager") sharedDatabaseManager] save];
+                } else if ([action isEqual:@"removeCache"]) {
+                    [cacheManager removeCacheForEpisode:episode automatic:NO];
+                } else if ([action isEqual:@"exportBackup"]) {
+                    // The app's own full-backup generator on its export context.
+                    id exporter = [NSClassFromString(@"ImportExportSettingsViewController") viewController];
+                    NSManagedObjectContext *context = [[NSClassFromString(@"DatabaseManager") sharedDatabaseManager] newExportBackgroundContext];
+                    __block NSURL *url = nil;
+                    __block NSError *error = nil;
+                    [context performBlockAndWait:^{
+                        [context setQueryGenerationFromToken:[NSQueryGenerationToken currentQueryGenerationToken] error:nil];
+                        url = [exporter createEverythingBackupWithContext:context cachedEpisodeHashes:[NSSet set] upNextSnapshots:@[] nowPlayingSnapshot:nil
+                                                         credentialValues:@{} alternateIconName:nil deviceName:@"E2E" error:&error];
+                    }];
+                    if (!url) @throw [NSException exceptionWithName:@"BackupExport" reason:error.description ?: @"no url" userInfo:nil];
+                    NSString *target = [directory stringByAppendingPathComponent:@"backup.xml"];
+                    [[NSFileManager defaultManager] removeItemAtPath:target error:nil];
+                    [[NSFileManager defaultManager] copyItemAtPath:url.path toPath:target error:nil];
+                    reply[@"backupPath"] = target;
+                } else if ([action isEqual:@"importBackup"]) {
+                    NSData *data = [NSData dataWithContentsOfFile:[directory stringByAppendingPathComponent:@"backup.xml"]];
+                    NSString *done = [directory stringByAppendingPathComponent:@"import-done.json"];
+                    [[NSFileManager defaultManager] removeItemAtPath:done error:nil];
+                    NSUInteger categories = [command[@"categories"] unsignedIntegerValue];
+                    [(Class)NSClassFromString(@"InstacastBackupParser") parseData:data completion:^(InstacastBackupData *backup, NSError *parseError) {
+                        if (!backup) {
+                            [[NSJSONSerialization dataWithJSONObject:@{@"error": parseError.description ?: @"parse"} options:0 error:nil] writeToFile:done atomically:YES];
+                            return;
+                        }
+                        ICBackupImportCallbacks callbacks = {0};
+                        [(Class)NSClassFromString(@"InstacastBackupImporter") importBackup:backup categories:categories callbacks:callbacks
+                                                                         completion:^(NSInteger imported, NSInteger queued, NSError *importError) {
+                            [[NSJSONSerialization dataWithJSONObject:@{@"imported": @(imported), @"error": importError.description ?: @""} options:0 error:nil] writeToFile:done atomically:YES];
+                        }];
+                    }];
                 } else if ([action isEqual:@"exportLogs"]) {
                     Class loggerClass = NSClassFromString(@"ICDiagnosticLogger") ?: NSClassFromString(@"InstacastPlus.ICDiagnosticLogger");
                     NSArray *attachments = [[loggerClass shared] crashLogMailAttachments];
@@ -175,6 +224,7 @@ static UIView* ICFindView(UIView* view, Class cls) {
                     reply[@"episodeConsumed"] = [episode valueForKey:@"consumed"] ?: @NO;
                     reply[@"cached"] = @([cacheManager episodeIsCached:episode]);
                     reply[@"cacheProgress"] = @([cacheManager cacheProgressForEpisode:episode]);
+                    reply[@"feedURL"] = [episode valueForKeyPath:@"feed.sourceURL.absoluteString"] ?: @"";
                 }
                 NSDictionary *nowPlaying = MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo;
                 reply[@"nowPlayingElapsed"] = nowPlaying[MPNowPlayingInfoPropertyElapsedPlaybackTime] ?: @(-1);
@@ -182,11 +232,22 @@ static UIView* ICFindView(UIView* view, Class cls) {
                 UIWindow *window = UIApplication.sharedApplication.connectedScenes.allObjects.firstObject
                     ? [[(UIWindowScene*)UIApplication.sharedApplication.connectedScenes.allObjects.firstObject windows] firstObject] : nil;
                 UIButton *speedButton = (UIButton*)ICFindView(window, NSClassFromString(@"PlayerSpeedButton"));
+                NSMutableArray *presented = [NSMutableArray array];
+                UIViewController *presenter = [(NSObject*)UIApplication.sharedApplication.delegate valueForKey:@"mainViewController"];
+                while (presenter.presentedViewController) {
+                    presenter = presenter.presentedViewController;
+                    UIViewController *shown = [presenter isKindOfClass:UINavigationController.class] ? [(UINavigationController*)presenter viewControllers].firstObject : presenter;
+                    [presented addObject:NSStringFromClass(shown.class) ?: @""];
+                }
+                reply[@"presented"] = presented;
                 reply[@"speedButtonFound"] = @(speedButton != nil);
                 reply[@"speedButtonMenu"] = @(speedButton.menu != nil);
                 reply[@"speedButtonMenuPrimary"] = @(speedButton.showsMenuAsPrimaryAction);
                 reply[@"defaultsEnabled"] = @([defaults boolForKey:@"PlayerSilenceTrimEnabled"]);
                 reply[@"defaultsLevel"] = @([defaults integerForKey:@"PlayerSilenceTrimLevel"]);
+                id playingFeed = [(NSObject*)episode valueForKey:@"feed"];
+                id feedProperty = [playingFeed respondsToSelector:@selector(propertyForKey:insertOnDemand:)] ? [playingFeed propertyForKey:@"PlayerSilenceTrimLevel" insertOnDemand:NO] : nil;
+                reply[@"feedOverride"] = feedProperty ? [feedProperty valueForKey:@"int32Value"] : [NSNull null];
             } @catch (NSException *exception) { reply[@"error"] = exception.description; }
             [[NSJSONSerialization dataWithJSONObject:reply options:NSJSONWritingPrettyPrinted error:nil]
                 writeToFile:[directory stringByAppendingPathComponent:@"reply.json"] atomically:YES];
