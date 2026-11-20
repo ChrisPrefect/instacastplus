@@ -8,9 +8,12 @@
 
 #import "PlayerSpeedButton.h"
 #import "VDModalInfo.h"
+#import "CDFeed.h"
+#import "CDEpisode.h"
 
 @implementation PlayerSpeedButton {
     BOOL        _observing;
+    BOOL        _observingSilenceTrim;
     NSDate*     _trackingDate;
     NSTimer*    _longTrackingTimer;
 }
@@ -57,6 +60,16 @@
                 [self _updateImage];
             }];
         }
+        [self _updateSpeedMenu];
+        if (!_observingSilenceTrim) {
+            _observingSilenceTrim = YES;
+            __weak PlayerSpeedButton* weakSelf = self;
+            [USER_DEFAULTS addTaskObserver:self forKeyPath:PlayerSilenceTrimEnabled task:^(id obj, NSDictionary *change) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [weakSelf _updateSpeedMenu];
+                });
+            }];
+        }
     }
     else
     {
@@ -64,7 +77,93 @@
             [[PlaybackManager playbackManager] removeTaskObserver:self forKeyPath:@"speedControl"];
             _observing = NO;
         }
+        if (_observingSilenceTrim) {
+            [USER_DEFAULTS removeTaskObserver:self forKeyPath:PlayerSilenceTrimEnabled];
+            _observingSilenceTrim = NO;
+        }
     }
+}
+
+#pragma mark - Speed menu (pause shortening enabled)
+
+// With pause shortening enabled in the playback settings the button opens a menu like the sleep
+// timer: speeds in one section, the pause shortening strength in another. Without it the button
+// keeps cycling through the speeds on tap and resets to 1x on long press.
+- (BOOL) _usesSpeedMenu
+{
+    return [USER_DEFAULTS boolForKey:PlayerSilenceTrimEnabled];
+}
+
+- (void) _updateSpeedMenu
+{
+    if ([self _usesSpeedMenu]) {
+        __weak PlayerSpeedButton* weakSelf = self;
+        UIDeferredMenuElement* content = [UIDeferredMenuElement elementWithUncachedProvider:^(void (^completion)(NSArray<UIMenuElement*>*)) {
+            completion([weakSelf _speedMenuSections] ?: @[]);
+        }];
+        self.menu = [UIMenu menuWithTitle:@"" children:@[content]];
+        self.showsMenuAsPrimaryAction = YES;
+    } else if (self.menu) {
+        self.showsMenuAsPrimaryAction = NO;
+        self.menu = nil;
+    }
+}
+
+- (NSArray<UIMenuElement*>*) _speedMenuSections
+{
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+
+    NSMutableArray<NSNumber*>* speeds = [[PlayerSpeedButton enabledSpeedControls] mutableCopy];
+    if (![speeds containsObject:@(pman.speedControl)]) {
+        [speeds addObject:@(pman.speedControl)];
+        NSArray* ordered = [PlayerSpeedButton allSpeedControlsOrdered];
+        [speeds sortUsingComparator:^NSComparisonResult(NSNumber* a, NSNumber* b) {
+            return [@([ordered indexOfObject:a]) compare:@([ordered indexOfObject:b])];
+        }];
+    }
+    NSMutableArray<UIMenuElement*>* speedActions = [NSMutableArray array];
+    for (NSNumber* speed in speeds) {
+        PlaybackSpeedControl control = speed.integerValue;
+        NSString* title = [PlayerSpeedButton titleForSpeedControl:control];
+        UIAction* action = [UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction* a) {
+            [PlaybackManager playbackManager].speedControl = control;
+            PlayHapticFeedback(ICHapticFeedbackLight);
+            NSString* announcement = [NSString stringWithFormat:@"Playback set to %@ speed.".ls, title];
+            UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, announcement);
+        }];
+        action.state = (control == pman.speedControl) ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [speedActions addObject:action];
+    }
+    UIMenu* speedSection = [UIMenu menuWithTitle:@"Playback Speed".ls image:nil identifier:nil
+                                         options:UIMenuOptionsDisplayInline children:speedActions];
+
+    CDEpisode* episode = pman.playingEpisode;
+    CDFeed* feed = episode.feed;
+    NSInteger currentLevel = episode ? [pman silenceTrimLevelForEpisode:episode] : [USER_DEFAULTS integerForKey:PlayerSilenceTrimLevel];
+    NSString* status = [pman silenceTrimStatusText];
+    NSMutableArray<UIMenuElement*>* trimActions = [NSMutableArray array];
+    for (NSNumber* levelNumber in @[@0, @1, @2, @3]) {
+        NSInteger level = levelNumber.integerValue;
+        UIAction* action = [UIAction actionWithTitle:[PlaybackManager titleForSilenceTrimLevel:level] image:nil identifier:nil handler:^(UIAction* a) {
+            [PlaybackManager storeSilenceTrimLevel:level forFeed:feed];
+            PlayHapticFeedback(ICHapticFeedbackLight);
+            [[PlaybackManager playbackManager] silenceTrimSettingsDidChange];
+        }];
+        action.state = (level == currentLevel) ? UIMenuElementStateOn : UIMenuElementStateOff;
+        if (level == currentLevel && level > 0 && status.length > 0) {
+            action.subtitle = status;
+        }
+        [trimActions addObject:action];
+    }
+    UIMenu* trimSection = [UIMenu menuWithTitle:@"Shorten Pauses".ls image:nil identifier:nil
+                                        options:UIMenuOptionsDisplayInline children:trimActions];
+    return @[speedSection, trimSection];
+}
+
+// Like the sleep timer button: the menu grows out of the button instead of its trailing edge.
+- (CGPoint)menuAttachmentPointForConfiguration:(UIContextMenuConfiguration *)configuration
+{
+    return CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMinY(self.bounds));
 }
 
 - (void) tintColorDidChange
@@ -76,6 +175,9 @@
 }
 
 - (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    if (self.showsMenuAsPrimaryAction) {
+        return [super beginTrackingWithTouch:touch withEvent:event];
+    }
     _trackingDate = [NSDate date];
     
     _longTrackingTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(_longTrackingTimerAction:) userInfo:nil repeats:NO];
@@ -106,6 +208,12 @@
 - (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event
 {
     [super endTrackingWithTouch:touch withEvent:event];
+    if (self.showsMenuAsPrimaryAction) {
+        [_longTrackingTimer invalidate];
+        _longTrackingTimer = nil;
+        _trackingDate = nil;
+        return;
+    }
     
     if (CGRectContainsPoint(self.bounds,  [touch locationInView:self]))
     {

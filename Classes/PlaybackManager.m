@@ -1389,7 +1389,7 @@ didReceiveResponse:(NSURLResponse *)response
 @property BOOL autoStopDisabled;
 @end
 
-@interface PlaybackManager () <NSUserActivityDelegate>
+@interface PlaybackManager () <NSUserActivityDelegate, ICSilenceTrimPlayerDelegate>
 @property (nonatomic, readwrite, strong) CDEpisode* playingEpisode;
 @property (nonatomic, readwrite, strong) NSError* playbackError;
 @property (nonatomic, readwrite, getter=hasMovingVideo) BOOL movingVideo;
@@ -1466,6 +1466,12 @@ didReceiveResponse:(NSURLResponse *)response
 @property (nonatomic, readwrite) BOOL streamingCacheComplete;
 - (BOOL)_cancelStreamingCacheForEpisode:(CDEpisode*)episode leaseToken:(NSString*)leaseToken;
 - (BOOL)_cancelStreamingCacheForEpisodeHash:(NSString*)episodeHash leaseToken:(NSString*)leaseToken;
+// Pause shortening (see "Silence trim engine" at the end). Nil whenever AVPlayer plays.
+@property (nonatomic, strong) ICSilenceTrimPlayer* silenceTrimPlayer;
+@property (nonatomic, weak) NSTimer* silenceTrimTimer;
+@property (nonatomic) NSUInteger silenceTrimTicks;
+@property (nonatomic, copy) NSString* silenceTrimRefusedEpisodeHash;
+@property (nonatomic) BOOL silenceTrimObservingDownloads;
 @end
 
 
@@ -1887,6 +1893,11 @@ didReceiveResponse:(NSURLResponse *)response
 
     BOOL nowPlayingPlaybackIsActive = !self.paused;
     double nowPlayingPlaybackRate = nowPlayingPlaybackIsActive ? MAX((double)self.player.rate, (double)_playbackRate) : 0.0;
+    if (self.silenceTrimPlayer && nowPlayingPlaybackIsActive) {
+        // The episode advances faster than the speed setting while pauses are shortened; the
+        // system extrapolates the elapsed time with this rate between updates.
+        nowPlayingPlaybackRate = (double)self.silenceTrimPlayer.requestedRate * self.silenceTrimPlayer.pauseSpeedupFactor;
+    }
     [self.nowPlayingInfo setObject:[NSNumber numberWithDouble:nowPlayingPlaybackRate] forKey:MPNowPlayingInfoPropertyPlaybackRate];
     [self.nowPlayingInfo setObject:[NSNumber numberWithDouble:(double)self.time] forKey:MPNowPlayingInfoPropertyElapsedPlaybackTime];
     
@@ -2243,7 +2254,7 @@ didReceiveResponse:(NSURLResponse *)response
     }
 
     if (url.absoluteString.length == 0 || (!url.isFileURL && url.scheme.length == 0)) {
-        if (self.player || self.playingEpisode) {
+        if (self.player || self.silenceTrimPlayer || self.playingEpisode) {
             [self closeAndSaveCurrentPosition:YES];
         } else {
             [[AudioSession sharedAudioSession] clear];
@@ -2272,7 +2283,7 @@ didReceiveResponse:(NSURLResponse *)response
         previousOpenStepTime = now;
     };
 
-	if (self.player) {
+	if (self.player || self.silenceTrimPlayer) {
 		self.changingEpisode = YES;
 		[self closeAndSaveCurrentPosition:!self.inTransitionToNextTrack];
         self.inTransitionToNextTrack = NO;
@@ -2486,6 +2497,11 @@ didReceiveResponse:(NSURLResponse *)response
         }
     }
     
+    if ([self _silenceTrimShouldOpenAsset:asset]) {
+        [self _openSilenceTrimPlayerWithAsset:asset autostart:autostart];
+        return;
+    }
+
     AVPlayerItem* playerItem = [AVPlayerItem playerItemWithAsset:asset];
     if (!playerItem) {
         [self _failPlaybackWithError:[NSError errorWithDomain:AVFoundationErrorDomain
@@ -3012,6 +3028,10 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void)_finishEpisodeDueToSkip:(CDEpisode *)episode {
     if (self.isAutoSkipping) return;
+    if (self.silenceTrimPlayer) {
+        [self _silenceTrimFinishEpisodeDueToSkip:episode];
+        return;
+    }
     AVPlayerItem *item = self.player.currentItem;
     CMTime duration = item.asset.duration;
     if (!CMTIME_IS_NUMERIC(duration) || CMTimeCompare(duration, kCMTimeZero) <= 0) {
@@ -3105,6 +3125,10 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) _temporarySavePosition
 {
+    if (self.silenceTrimPlayer) {
+        [self _silenceTrimTemporarySavePosition];
+        return;
+    }
     if (!self.paused)
     {
         CDEpisode* episode = self.playingEpisode;
@@ -3138,6 +3162,10 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) _saveCurrentPlaybackPosition
 {
+    if (self.silenceTrimPlayer) {
+        [self _silenceTrimSaveCurrentPlaybackPosition];
+        return;
+    }
     CDEpisode* episode = self.playingEpisode;
     
     // update position on consumable
@@ -3301,6 +3329,11 @@ didReceiveResponse:(NSURLResponse *)response
 #endif
     }
 	
+    if (self.silenceTrimPlayer)
+    {
+        [self _closeSilenceTrimPlayerSavingPosition:saveCurrentPosition];
+    }
+
 	if (self.player)
 	{
         if (saveCurrentPosition) {
@@ -3373,6 +3406,7 @@ didReceiveResponse:(NSURLResponse *)response
         _volume = volume;
 
         self.player.volume = volume;
+        self.silenceTrimPlayer.volume = volume;
         [USER_DEFAULTS setFloat:volume forKey:kDefaultPlaybackVolume];
     }
 }
@@ -3399,6 +3433,9 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (BOOL) isPodcastPlaying
 {
+    if (self.silenceTrimPlayer) {
+        return self.silenceTrimPlayer.rate > 0;
+    }
     float rate = self.player.rate;
     if (rate > 0)
     {
@@ -3500,6 +3537,10 @@ didReceiveResponse:(NSURLResponse *)response
     // Play during loading changes intent; the ready event starts the player.
     if (!self.ready) { SEND_UPDATE return; }
     BOOL hasRecentSeek = (self.seekingPositionChangeDate && [self.seekingPositionChangeDate timeIntervalSinceNow] > -1);
+    if (self.silenceTrimPlayer) {
+        [self _playSilenceTrimPlayerWithRecentSeek:hasRecentSeek];
+        return;
+    }
 
 	// rewind 30 seconds if we paused more than 10 mins
 	if (self.lastPauseDate)
@@ -3541,6 +3582,7 @@ didReceiveResponse:(NSURLResponse *)response
     if (!wasPaused)
     {
         [self.player pause];
+        [self.silenceTrimPlayer pause];
         self.lastPauseDate = [NSDate date];
 
         // Track cumulative listening time
@@ -3645,6 +3687,11 @@ didReceiveResponse:(NSURLResponse *)response
             }
         });
     };
+
+    if (self.silenceTrimPlayer) {
+        [self.silenceTrimPlayer seekTo:time completion:finishSeekUpdate];
+        return;
+    }
 
     // Suppress auto-skip marker is handled by callers that represent deliberate position
     // choices (setPosition:, seekToChapter:) — NOT here, so skip buttons still trigger auto-skip
@@ -4036,6 +4083,7 @@ didReceiveResponse:(NSURLResponse *)response
     if (self.player.rate > 0) {
         self.player.rate = rate;
     }
+    self.silenceTrimPlayer.requestedRate = rate;
 }
 
 - (void) setSpeedControl:(PlaybackSpeedControl)_speed
@@ -4049,6 +4097,7 @@ didReceiveResponse:(NSURLResponse *)response
 		if (self.player.rate > 0) {
             self.player.rate = _playbackRate;
         }
+        self.silenceTrimPlayer.requestedRate = _playbackRate;
 
 		SEND_UPDATE
 	}
@@ -4063,6 +4112,7 @@ didReceiveResponse:(NSURLResponse *)response
     if (self.player.rate > 0) {
         self.player.rate = _playbackRate;
     }
+    self.silenceTrimPlayer.requestedRate = _playbackRate;
 }
 
 + (NSSet*) keyPathsForValuesAffectingPosition
@@ -4101,6 +4151,9 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (NSTimeInterval) time
 {
+    if (self.silenceTrimPlayer) {
+        return MIN(self.silenceTrimPlayer.currentTime, self.duration);
+    }
 	AVPlayerItem* item = self.player.currentItem;
 	CMTime current = [item currentTime];
 	NSTimeInterval time = (current.timescale > 0) ? (NSTimeInterval)current.value/(NSTimeInterval)current.timescale : 0;
@@ -4109,6 +4162,10 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (NSTimeInterval) duration
 {
+    if (self.silenceTrimPlayer) {
+        // Same value AVPlayer reports for the file (AVURLAsset default timing, floored).
+        return floor(self.silenceTrimPlayer.duration);
+    }
 	AVPlayerItem* item = self.player.currentItem;
     AVAsset* asset = item.asset;
     
@@ -4124,6 +4181,10 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (NSTimeInterval) playableDuration
 {
+    if (self.silenceTrimPlayer) {
+        // The engine only plays complete local files.
+        return self.silenceTrimPlayer.isReady ? self.duration : 0.0f;
+    }
 	if (!self.player.currentItem) {
 		return 0.0f;
 	}
@@ -4704,6 +4765,611 @@ didReceiveResponse:(NSURLResponse *)response
                                @"skipNameCount": @(skipNames.count),
                                @"sponsorKeywordEnabled": @(sponsorKeywordEnabled),
                            }];
+}
+
+
+#pragma mark - Silence trim engine
+
+// Pause shortening plays through ICSilenceTrimPlayer instead of AVPlayer. Everything in this
+// section only runs while that engine is active; with the feature off, self.silenceTrimPlayer
+// stays nil and every method above takes its unchanged AVPlayer path. The engine reports source
+// time of the episode file, so positions, chapters, skip markers, sync and the UI keep their
+// meaning.
+
+- (NSInteger) silenceTrimLevelForEpisode:(CDEpisode*)episode
+{
+    if (![USER_DEFAULTS boolForKey:PlayerSilenceTrimEnabled]) {
+        return ICSilenceTrimLevelOff;
+    }
+    CDFeed* feed = episode.feed;
+    NSInteger level = feed ? [feed integerForKey:PlayerSilenceTrimLevel] : [USER_DEFAULTS integerForKey:PlayerSilenceTrimLevel];
+    return MAX(ICSilenceTrimLevelOff, MIN(ICSilenceTrimLevelStrong, level));
+}
+
++ (NSSet*) keyPathsForValuesAffectingSilenceTrimActive
+{
+    return [NSSet setWithObject:@"silenceTrimPlayer"];
+}
+
+- (BOOL) isSilenceTrimActive
+{
+    return self.silenceTrimPlayer != nil;
+}
+
+- (NSTimeInterval) silenceTrimSavedTime
+{
+    return self.silenceTrimPlayer ? self.silenceTrimPlayer.savedSeconds : 0;
+}
+
++ (NSString*) titleForSilenceTrimLevel:(NSInteger)level
+{
+    switch (level) {
+        case ICSilenceTrimLevelMild: return @"Pause Shortening Mild".ls;
+        case ICSilenceTrimLevelMedium: return @"Pause Shortening Medium".ls;
+        case ICSilenceTrimLevelStrong: return @"Pause Shortening Strong".ls;
+        default: return @"Off".ls;
+    }
+}
+
++ (void) storeSilenceTrimLevel:(NSInteger)level forFeed:(CDFeed*)feed
+{
+    level = MAX(ICSilenceTrimLevelOff, MIN(ICSilenceTrimLevelStrong, level));
+    if (feed && [feed propertyForKey:PlayerSilenceTrimLevel insertOnDemand:NO]) {
+        // Same rule as the podcast settings: a value equal to the default is no override.
+        if (level == [USER_DEFAULTS integerForKey:PlayerSilenceTrimLevel]) {
+            [feed resetValueForKey:PlayerSilenceTrimLevel];
+        } else {
+            [feed setInteger:level forKey:PlayerSilenceTrimLevel];
+        }
+        [DMANAGER save];
+    } else {
+        [USER_DEFAULTS setInteger:level forKey:PlayerSilenceTrimLevel];
+    }
+}
+
+- (NSString*) silenceTrimStatusText
+{
+    CDEpisode* episode = self.playingEpisode;
+    if (!episode || [self silenceTrimLevelForEpisode:episode] == ICSilenceTrimLevelOff) {
+        return nil;
+    }
+    if (self.silenceTrimPlayer) {
+        NSTimeInterval saved = self.silenceTrimPlayer.savedSeconds;
+        if (saved < 1) {
+            return nil;
+        }
+        NSDateComponentsFormatter* formatter = [[NSDateComponentsFormatter alloc] init];
+        formatter.unitsStyle = NSDateComponentsFormatterUnitsStyleAbbreviated;
+        formatter.allowedUnits = saved >= 3600 ? (NSCalendarUnitHour | NSCalendarUnitMinute) : (NSCalendarUnitMinute | NSCalendarUnitSecond);
+        NSString* duration = [formatter stringFromTimeInterval:saved] ?: @"";
+        return [NSString stringWithFormat:@"Pause Shortening Saved %@".ls, duration];
+    }
+    if ([[ICSharePlayCoordinator sharedCoordinator] hasActiveSession]) {
+        return @"Pause Shortening Unavailable SharePlay".ls;
+    }
+    if ([[episode preferedMedium].mimeType hasPrefix:@"video"] || self.movingVideo) {
+        return @"Pause Shortening Unavailable Video".ls;
+    }
+    if (episode.objectHash.length > 0 && [self.silenceTrimRefusedEpisodeHash isEqualToString:episode.objectHash]) {
+        return @"Pause Shortening Unavailable File".ls;
+    }
+    if (self.mediaAsset && !self.mediaAsset.URL.isFileURL) {
+        return @"Pause Shortening Waiting For Download".ls;
+    }
+    return nil;
+}
+
+- (BOOL) _silenceTrimShouldOpenAsset:(AVURLAsset*)asset
+{
+#if TARGET_OS_IPHONE
+    [self _silenceTrimObserveDownloadsIfNeeded];
+    CDEpisode* episode = self.playingEpisode;
+    if (!episode || [self silenceTrimLevelForEpisode:episode] == ICSilenceTrimLevelOff) {
+        return NO;
+    }
+    // Only complete local files: downloads and finished stream caches. Streams keep AVPlayer
+    // until their download completes (see _silenceTrimDownloadDidFinish:).
+    if (!asset.URL.isFileURL) {
+        return NO;
+    }
+    if (episode.objectHash.length > 0 && [self.silenceTrimRefusedEpisodeHash isEqualToString:episode.objectHash]) {
+        return NO;
+    }
+    // SharePlay coordinates an AVPlayer timeline; participants must hear the same audio.
+    if ([[ICSharePlayCoordinator sharedCoordinator] hasActiveSession]) {
+        return NO;
+    }
+    if ([[episode preferedMedium].mimeType hasPrefix:@"video"]) {
+        return NO;
+    }
+    return YES;
+#else
+    return NO;
+#endif
+}
+
+- (void) _openSilenceTrimPlayerWithAsset:(AVURLAsset*)asset autostart:(BOOL)autostart
+{
+    CDEpisode* episode = self.playingEpisode;
+    ICSilenceTrimLevel level = (ICSilenceTrimLevel)[self silenceTrimLevelForEpisode:episode];
+    ICSilenceTrimPlayer* player = [[ICSilenceTrimPlayer alloc] initWithUrl:asset.URL level:level];
+    player.delegate = self;
+    player.volume = [USER_DEFAULTS floatForKey:kDefaultPlaybackVolume];
+    player.requestedRate = _playbackRate > 0 ? _playbackRate : [self rateFromSpeedControl:self.speedControl];
+    self.silenceTrimPlayer = player;
+    self.silenceTrimTicks = 0;
+
+    [[ICDiagnosticLogger shared] logEvent:@"silence-trim"
+                                  message:@"Pausen-Engine geöffnet"
+                                 metadata:@{
+        @"episodeHash": episode.objectHash ?: @"",
+        @"level": @(level),
+        @"initialPlaybackTime": @(self.initialPlaybackTime),
+        @"autostart": @(autostart),
+    }];
+
+    __weak PlaybackManager* weakSelf = self;
+    [self.playingEpisode addTaskObserver:self forKeyPath:@"position" task:^(id obj, NSDictionary *change) {
+        if (!weakSelf.changingPosition && weakSelf.paused) {
+            [weakSelf seekToTime:weakSelf.playingEpisode.position];
+        }
+    }];
+
+    [player prepareAt:self.initialPlaybackTime];
+    SEND_UPDATE
+}
+
+- (void) _closeSilenceTrimPlayerSavingPosition:(BOOL)saveCurrentPosition
+{
+    if (saveCurrentPosition) {
+        [self _silenceTrimSaveCurrentPlaybackPosition];
+    }
+    [self.silenceTrimTimer invalidate];
+    self.silenceTrimTimer = nil;
+
+    ICSilenceTrimPlayer* player = self.silenceTrimPlayer;
+    player.delegate = nil;
+    [player invalidate];
+    [[ICDiagnosticLogger shared] logEvent:@"silence-trim"
+                                  message:@"Pausen-Engine geschlossen"
+                                 metadata:@{
+        @"episodeHash": self.playingEpisode.objectHash ?: @"",
+        @"savedSeconds": [NSString stringWithFormat:@"%.1f", player.savedSeconds],
+    }];
+
+    [self.playingEpisode removeTaskObserver:self forKeyPath:@"position"];
+
+    self.embeddedChaptersForPersistence = @[];
+    self.chapters = nil;
+    if (_chapterTimesIdx) {
+        free(_chapterTimesIdx);
+        _chapterTimesIdx = NULL;
+    }
+    self.artworks = nil;
+    if (_artworkTimesIdx) {
+        free(_artworkTimesIdx);
+        _artworkTimesIdx = NULL;
+    }
+
+    self.silenceTrimPlayer = nil;
+    [self _setupRemotePlaybackCenterWithEpisode:nil];
+}
+
+- (void) _playSilenceTrimPlayerWithRecentSeek:(BOOL)hasRecentSeek
+{
+    // rewind 30 seconds if we paused more than 10 mins (same rule as the AVPlayer path)
+    if (self.lastPauseDate) {
+        if (!hasRecentSeek && [USER_DEFAULTS boolForKey:PlayerReplayAfterPause] && [[NSDate date] timeIntervalSinceDate:self.lastPauseDate] > 600) {
+            NSInteger cur = (NSInteger)self.time;
+            NSTimeInterval next = MAX(cur - 30, 0);
+            [self seekToTime:next];
+        }
+        self.lastPauseDate = nil;
+    }
+
+    float targetRate = _playbackRate > 0 ? _playbackRate : [self rateFromSpeedControl:self.speedControl];
+    self.silenceTrimPlayer.requestedRate = targetRate;
+    [self.silenceTrimPlayer play];
+
+    [[AudioSession sharedAudioSession] startSleepTimerIfNeeded];
+    self.playStartDate = [NSDate date];
+    SEND_UPDATE
+}
+
+- (void) _silenceTrimTemporarySavePosition
+{
+    if (self.paused) {
+        return;
+    }
+    CDEpisode* episode = self.playingEpisode;
+    NSString* key = episode.objectHash;
+    if (!episode || !key || !self.silenceTrimPlayer.isReady) {
+        return;
+    }
+    NSMutableDictionary* playbackPositions = [[USER_DEFAULTS objectForKey:kDefaultTemporaryPlaybackPositions] mutableCopy];
+    if (!playbackPositions) {
+        playbackPositions = [[NSMutableDictionary alloc] init];
+    }
+    [playbackPositions setObject:@((NSInteger)self.silenceTrimPlayer.currentTime) forKey:key];
+    [USER_DEFAULTS setObject:playbackPositions forKey:kDefaultTemporaryPlaybackPositions];
+}
+
+- (void) _silenceTrimSaveCurrentPlaybackPosition
+{
+    CDEpisode* episode = self.playingEpisode;
+    if (!episode || !self.silenceTrimPlayer.isReady) {
+        return;
+    }
+    NSInteger cur = (NSInteger)self.silenceTrimPlayer.currentTime;
+    _changingPosition = YES;
+    [DMANAGER setEpisode:episode position:(double)cur];
+    _changingPosition = NO;
+    [DMANAGER save];
+#if TARGET_OS_IPHONE
+    self.playbackUserActivity.needsSave = YES;
+#endif
+    [self _removeTemporarySavePosition];
+}
+
+- (void) _silenceTrimFinishEpisodeDueToSkip:(CDEpisode*)episode
+{
+    NSTimeInterval duration = self.silenceTrimPlayer.duration;
+    if (duration <= 0) {
+        return;
+    }
+    self.isAutoSkipping = YES;
+    [self _logPlaybackAutoSkipEvent:@"Skip springt zum Episodenende"
+                            episode:episode
+                        currentTime:self.time
+                           duration:duration
+                           metadata:@{ @"engine": @"silence-trim" }];
+    // The engine reports the end like AVPlayer's end notification.
+    __weak PlaybackManager* weakSelf = self;
+    ICSilenceTrimPlayer* player = self.silenceTrimPlayer;
+    [player seekTo:duration completion:^(BOOL finished) {
+        if (!finished && weakSelf.silenceTrimPlayer == player) {
+            weakSelf.isAutoSkipping = NO;
+        }
+    }];
+}
+
+// Reopens the playing episode at its current position, which picks the engine again.
+- (void) _silenceTrimReopenCurrentEpisodeWithReason:(NSString*)reason
+{
+    CDEpisode* episode = self.playingEpisode;
+    if (!episode || (!self.player && !self.silenceTrimPlayer)) {
+        return;
+    }
+    NSTimeInterval resumeTime = [self time];
+    if (self.seekingPositionChangeDate && [self.seekingPositionChangeDate timeIntervalSinceNow] > -1 && self.duration > 0) {
+        resumeTime = self.seekingPosition * self.duration;
+    }
+    BOOL wasPlaying = !self.paused || self.state == ShouldRunState || self.state == InitializedState;
+    [[ICDiagnosticLogger shared] logEvent:@"silence-trim"
+                                  message:@"Engine-Wechsel"
+                                 metadata:@{
+        @"episodeHash": episode.objectHash ?: @"",
+        @"reason": reason ?: @"",
+        @"resumeTime": [NSString stringWithFormat:@"%.2f", resumeTime],
+        @"wasPlaying": @(wasPlaying),
+        @"from": self.silenceTrimPlayer ? @"silence-trim" : @"avplayer",
+    }];
+    [self openWithEpisode:episode at:resumeTime autostart:wasPlaying];
+}
+
+- (void) silenceTrimSettingsDidChange
+{
+    // An explicit change by the user is a new attempt for an episode the engine refused.
+    self.silenceTrimRefusedEpisodeHash = nil;
+    CDEpisode* episode = self.playingEpisode;
+    if (!episode) {
+        return;
+    }
+    NSInteger level = [self silenceTrimLevelForEpisode:episode];
+    if (self.silenceTrimPlayer) {
+        if (level == ICSilenceTrimLevelOff) {
+            [self _silenceTrimReopenCurrentEpisodeWithReason:@"disabled"];
+        } else if (self.silenceTrimPlayer.level != (ICSilenceTrimLevel)level) {
+            self.silenceTrimPlayer.level = (ICSilenceTrimLevel)level;
+            [[ICDiagnosticLogger shared] logEvent:@"silence-trim"
+                                          message:@"Stufe geändert"
+                                         metadata:@{ @"episodeHash": episode.objectHash ?: @"", @"level": @(level) }];
+        }
+    } else if (self.player && self.ready && level != ICSilenceTrimLevelOff &&
+               [self _silenceTrimShouldOpenAsset:self.mediaAsset]) {
+        [self _silenceTrimReopenCurrentEpisodeWithReason:@"enabled"];
+    }
+    SEND_UPDATE
+}
+
+- (void) _silenceTrimObserveDownloadsIfNeeded
+{
+    if (self.silenceTrimObservingDownloads) {
+        return;
+    }
+    self.silenceTrimObservingDownloads = YES;
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(_silenceTrimDownloadDidFinish:)
+                                                 name:CacheManagerDidFinishCachingEpisodeNotification
+                                               object:nil];
+#if TARGET_OS_IPHONE
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(_silenceTrimSharePlayActivityDidChange:)
+                                                 name:[ICSharePlayCoordinator activityDidChangeNotification]
+                                               object:[ICSharePlayCoordinator sharedCoordinator]];
+#endif
+}
+
+// A SharePlay session coordinates an AVPlayer: hand over at once, also while paused (the 1 s
+// tick only notices it during playback).
+- (void) _silenceTrimSharePlayActivityDidChange:(NSNotification*)notification
+{
+#if TARGET_OS_IPHONE
+    if (self.silenceTrimPlayer && [[ICSharePlayCoordinator sharedCoordinator] hasActiveSession]) {
+        [self _silenceTrimReopenCurrentEpisodeWithReason:@"shareplay"];
+    }
+#endif
+}
+
+// A streamed episode whose file just became complete switches to the engine once, so pause
+// shortening starts without waiting for the next pause/resume.
+- (void) _silenceTrimDownloadDidFinish:(NSNotification*)notification
+{
+    CDEpisode* episode = notification.userInfo[@"episode"];
+    if (!episode || ![episode isEqual:self.playingEpisode] || self.silenceTrimPlayer || !self.player || !self.ready) {
+        return;
+    }
+    if (self.mediaAsset.URL.isFileURL || [self silenceTrimLevelForEpisode:episode] == ICSilenceTrimLevelOff) {
+        return;
+    }
+    if (![[CacheManager sharedCacheManager] episodeIsCached:episode] ||
+        [[ICSharePlayCoordinator sharedCoordinator] hasActiveSession] ||
+        [[episode preferedMedium].mimeType hasPrefix:@"video"]) {
+        return;
+    }
+    [self _silenceTrimReopenCurrentEpisodeWithReason:@"download-finished"];
+}
+
+- (void) _silenceTrimStartTimer
+{
+    [self.silenceTrimTimer invalidate];
+    NSTimer* timer = [NSTimer timerWithTimeInterval:1.0 target:self selector:@selector(_silenceTrimTick:) userInfo:nil repeats:YES];
+    timer.tolerance = 0.1;
+    [[NSRunLoop mainRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
+    self.silenceTrimTimer = timer;
+}
+
+// Counterpart of the AVPlayer periodic observers (1 s, 5 s, 30 s) for the engine.
+- (void) _silenceTrimTick:(NSTimer*)timer
+{
+    ICSilenceTrimPlayer* player = self.silenceTrimPlayer;
+    if (!player) {
+        [timer invalidate];
+        return;
+    }
+    if (player.rate <= 0) {
+        return;
+    }
+    self.silenceTrimTicks += 1;
+    NSUInteger ticks = self.silenceTrimTicks;
+    CDEpisode* episode = self.playingEpisode;
+
+    // A SharePlay session started while shortening: hand over to AVPlayer.
+    if ([[ICSharePlayCoordinator sharedCoordinator] hasActiveSession]) {
+        [self _silenceTrimReopenCurrentEpisodeWithReason:@"shareplay"];
+        return;
+    }
+
+    // Auto skip end (same rule as the AVPlayer periodic observer).
+    double periodFeedEnd = [episode.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", episode.feed.uid]];
+    double periodGeneralEnd = [USER_DEFAULTS doubleForKey:PlayerAutoSkipEndPeriod];
+    double skipEndPeriod = (periodFeedEnd != 0.0) ? periodFeedEnd : periodGeneralEnd;
+    NSTimeInterval duration = player.duration;
+    if (skipEndPeriod > 0.0 && duration > skipEndPeriod) {
+        double currentTime = player.currentTime;
+        double skipTriggerTime = duration - skipEndPeriod;
+        if (currentTime >= skipTriggerTime && currentTime < duration) {
+            [self _logPlaybackAutoSkipEvent:@"Auto-Skip-Ende ausgelöst"
+                                    episode:episode
+                                currentTime:currentTime
+                                   duration:duration
+                                   metadata:@{
+                                       @"skipEndPeriod": @(skipEndPeriod),
+                                       @"skipTriggerTime": @(skipTriggerTime),
+                                       @"feedSkipEndPeriod": @(periodFeedEnd),
+                                       @"globalSkipEndPeriod": @(periodGeneralEnd),
+                                       @"engine": @"silence-trim",
+                                   }];
+            [self _finishEpisodeDueToSkip:episode];
+            return;
+        }
+    }
+
+    float targetRate = _playbackRate > 0 ? _playbackRate : [self rateFromSpeedControl:self.speedControl];
+    if (fabsf(player.requestedRate - targetRate) > 0.02f) {
+        player.requestedRate = targetRate;
+    }
+
+    NSInteger chapter = self.currentChapter;
+    NSInteger artwork = self.currentArtwork;
+    [self _findAndSetCurrentChapter:-1];
+    [self _findAndSetCurrentArtwork];
+    if (self.currentChapter > -1) {
+        [self nextTimeAfterSkipChapter:episode];
+    }
+    // The lock screen extrapolates with the published rate; while pauses are shortened the real
+    // position runs ahead of it, so the elapsed time is corrected every 10 s.
+    if (self.currentChapter != chapter || self.currentArtwork != artwork || ticks % 10 == 0) {
+        [self _setNowPlayingInfoOfEpisode:episode];
+    }
+
+    if (ticks % 5 == 0 && self.ready) {
+        [self _temporarySavePosition];
+    }
+    if (ticks % 30 == 0 && self.ready && !self.paused) {
+        [self _saveCurrentPlaybackPosition];
+        [self _logBackgroundPlaybackCheckpointIfNeeded];
+        [[ICDiagnosticLogger shared] logEvent:@"silence-trim"
+                                      message:@"Wiedergabe-Stand"
+                                     metadata:@{
+            @"episodeHash": episode.objectHash ?: @"",
+            @"time": [NSString stringWithFormat:@"%.1f", player.currentTime],
+            @"savedSeconds": [NSString stringWithFormat:@"%.1f", player.savedSeconds],
+            @"speedupFactor": [NSString stringWithFormat:@"%.3f", player.pauseSpeedupFactor],
+            @"level": @(player.level),
+            @"rate": [NSString stringWithFormat:@"%.2f", player.requestedRate],
+            @"route": [self _silenceTrimRouteDescription],
+            @"automaticFlushes": @(player.automaticFlushCount),
+        }];
+    }
+
+    [self willChangeValueForKey:@"time"];
+    [self didChangeValueForKey:@"time"];
+    [self _sendUpdateNotification];
+}
+
+#pragma mark ICSilenceTrimPlayerDelegate
+
+- (void) silenceTrimPlayerDidBecomeReady:(ICSilenceTrimPlayer*)player
+{
+    if (player != self.silenceTrimPlayer) {
+        return;
+    }
+    if (self.state != InitializedState && self.state != LoadingPausedState) {
+        return;
+    }
+    CDEpisode* episode = self.playingEpisode;
+    CDFeed* feed = episode.feed;
+    [[ICDiagnosticLogger shared] logEvent:@"playback-open"
+                                  message:@"Folge bereit"
+                                 metadata:@{
+        @"episodeHash": episode.objectHash ?: @"",
+        @"readyAfterOpenMs": [NSString stringWithFormat:@"%.1f", (CACurrentMediaTime() - self.openStartMediaTime) * 1000.0],
+        @"engine": @"silence-trim",
+    }];
+
+    episode.lastPlayed = [NSDate date];
+    // Measured duration, same rule as the AVPlayer path (episode.duration is the media length).
+    NSTimeInterval measuredDuration = [self duration];
+    if (measuredDuration > 0 && (int32_t)measuredDuration != episode.duration) {
+        episode.duration = (int32_t)measuredDuration;
+    }
+    BOOL startedAtRequestedTime = self.initialPlaybackTime > 0;
+    if (!startedAtRequestedTime && episode.position > 0 &&
+        measuredDuration > 0 && (double)episode.position < measuredDuration - 5) {
+        // The "start over" verdict used the stored duration, which the measurement corrected.
+        [self seekToTime:episode.position];
+    }
+    self.initialPlaybackTime = 0;
+    [DMANAGER save];
+    self.movingVideo = NO;
+
+    if (![self _transitionPlaybackWithEvent:ICPlaybackEventReady]) return;
+    if (self.paused) {
+        [self _endNextItemHandover];
+    }
+
+    [self willChangeValueForKey:@"speedControl"];
+    _speedControl = [feed integerForKey:DefaultPlaybackSpeed];
+    _playbackRate = [self rateFromSpeedControl:_speedControl];
+    [self didChangeValueForKey:@"speedControl"];
+    player.requestedRate = _playbackRate;
+
+    [self willChangeValueForKey:@"duration"];
+    [self didChangeValueForKey:@"duration"];
+
+    [self _silenceTrimStartTimer];
+    SEND_UPDATE
+    [self _startLoadingChapters];
+    if (self.state == ShouldRunState) {
+        [self play];
+        [self updateNowPlayingInfo];
+    }
+}
+
+- (void) silenceTrimPlayer:(ICSilenceTrimPlayer*)player didFailWithError:(NSError*)error
+{
+    if (player != self.silenceTrimPlayer) {
+        return;
+    }
+    CDEpisode* episode = self.playingEpisode;
+    [[ICDiagnosticLogger shared] logEvent:@"silence-trim"
+                                  message:@"Pausen-Engine fehlgeschlagen, Wechsel zu AVPlayer"
+                                 metadata:@{
+        @"episodeHash": episode.objectHash ?: @"",
+        @"code": @(error.code),
+        @"reason": error.localizedDescription ?: @"",
+        @"ready": @(player.isReady),
+    }];
+    // AVPlayer plays this episode from now on; the next explicit settings change retries.
+    self.silenceTrimRefusedEpisodeHash = episode.objectHash;
+    if (player.isReady) {
+        [self _silenceTrimReopenCurrentEpisodeWithReason:@"engine-failed"];
+    } else {
+        NSTimeInterval time = self.initialPlaybackTime;
+        BOOL autostart = (self.state == InitializedState);
+        [self openWithEpisode:episode at:time autostart:autostart];
+    }
+}
+
+- (void) silenceTrimPlayerRateDidChange:(ICSilenceTrimPlayer*)player
+{
+    if (player != self.silenceTrimPlayer) {
+        return;
+    }
+    float rate = player.rate;
+    if (rate > 0 && self.state == ShouldRunState) {
+        if (![self _transitionPlaybackWithEvent:ICPlaybackEventStarted]) return;
+        [self performSelector:@selector(_endNextItemHandover) withObject:nil afterDelay:1.0];
+    }
+    if (rate == 0 && self.state == RunningState) {
+        if (![self _transitionPlaybackWithEvent:ICPlaybackEventStopped]) return;
+        [self _saveCurrentPlaybackPosition];
+    }
+    if (self.ready) {
+        [self willChangeValueForKey:@"paused"];
+        [self didChangeValueForKey:@"paused"];
+    }
+    __weak PlaybackManager* weakSelf = self;
+    [self perform:^(id sender) {
+        [weakSelf _setNowPlayingInfoOfEpisode:weakSelf.playingEpisode];
+        [weakSelf _setupRemotePlaybackCenterWithEpisode:weakSelf.playingEpisode];
+    } afterDelay:0.1];
+    MPNowPlayingInfoCenter.defaultCenter.playbackState = self.paused ? MPNowPlayingPlaybackStatePaused : MPNowPlayingPlaybackStatePlaying;
+    [self _sendUpdateNotification];
+}
+
+- (void) silenceTrimPlayerDidFlushAutomatically:(ICSilenceTrimPlayer*)player atTime:(NSTimeInterval)time
+{
+    [[ICDiagnosticLogger shared] logEvent:@"silence-trim"
+                                  message:@"Renderer automatisch geleert, Fortsetzung ab Flush-Zeit"
+                                 metadata:@{
+        @"episodeHash": self.playingEpisode.objectHash ?: @"",
+        @"time": [NSString stringWithFormat:@"%.2f", time],
+        @"route": [self _silenceTrimRouteDescription],
+        @"count": @(player.automaticFlushCount),
+    }];
+}
+
+- (NSString*) _silenceTrimRouteDescription
+{
+#if TARGET_OS_IPHONE
+    NSMutableArray* outputs = [NSMutableArray array];
+    for (AVAudioSessionPortDescription* port in [AVAudioSession sharedInstance].currentRoute.outputs) {
+        [outputs addObject:[NSString stringWithFormat:@"%@:%@", port.portType, port.portName]];
+    }
+    return [outputs componentsJoinedByString:@","];
+#else
+    return @"";
+#endif
+}
+
+- (void) silenceTrimPlayerDidPlayToEnd:(ICSilenceTrimPlayer*)player
+{
+    if (player != self.silenceTrimPlayer) {
+        return;
+    }
+    [self playerItemDidPlayToEndTimeNotification:nil];
 }
 
 

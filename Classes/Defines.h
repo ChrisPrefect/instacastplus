@@ -54,6 +54,8 @@ extern NSString* PlayerSkipBackPeriod;
 extern NSString* PlayerSkipForwardPeriod;
 extern NSString* PlayerNearChapterEndForwardSkipMode;
 extern NSString* PlayerNearChapterEndForwardSkipWindow;
+extern NSString* PlayerSilenceTrimEnabled;   // BOOL: pause shortening is offered (speed menu, settings)
+extern NSString* PlayerSilenceTrimLevel;     // NSInteger 0 off, 1 mild, 2 medium, 3 strong; per podcast via CDFeedProperty
 extern NSString* PlayerAutoSkipEndPeriod;
 extern NSString* PlayerAutoSkipStartPeriod;
 extern NSString* PlayerReplayAfterPause;

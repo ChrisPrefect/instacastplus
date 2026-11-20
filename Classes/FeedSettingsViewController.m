@@ -20,6 +20,7 @@
 #import "AppleWatchSyncManager.h"
 #import "VDModalInfo.h"
 #import "InstacastPlus-Swift.h"
+#import "PlaybackSettingsViewController.h"
 
 static const NSUInteger ICRestoreArchivedEpisodeBatchSize = 100;
 
@@ -188,7 +189,8 @@ enum {
         case kAutoDeleteSettingsSection:
             return 4;
         case kPlaybackSection:
-            return 4;
+            // The pause shortening row exists only while the feature is enabled globally.
+            return [USER_DEFAULTS boolForKey:PlayerSilenceTrimEnabled] ? 5 : 4;
         case kRestoreDeletedSection:
             return (self.archivedEpisodeCount.unsignedIntegerValue > 0 || self.archivedEpisodeCountError) ? 1 : 0;
         case kSyncPauseSection:
@@ -507,6 +509,14 @@ enum {
                 NSString* localizedKey = v[@(period)];
                 cell.detailTextLabel.text = localizedKey.ls;
 
+                break;
+            }
+            case 4:
+            {
+                cell.accessoryView = nil;
+                cell = [self detailCell];
+                cell.textLabel.text = @"Shorten Pauses".ls;
+                cell.detailTextLabel.text = [PlaybackManager titleForSilenceTrimLevel:[self.feed integerForKey:PlayerSilenceTrimLevel]];
                 break;
             }
             default:
@@ -936,6 +946,31 @@ enum {
             controller.title = (playbackRow == 2 ) ? @"Skipping Back".ls : @"Skipping Forward".ls;
             controller.values = @[ @(5), @(10), @(20), @(30), @(60), @(120), @(300), @(600) ];
             controller.titles = @[@"5 Seconds".ls, @"10 Seconds".ls, @"20 Seconds".ls, @"30 Seconds".ls, @"1 Minute".ls, @"2 Minutes".ls, @"5 Minutes".ls, @"10 Minutes".ls];
+            [self.navigationController pushViewController:controller animated:YES];
+        }
+        else if (playbackRow == 4)
+        {
+            CDFeed* feed = self.feed;
+            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+            controller.feed = feed;
+            controller.valueType = kSettingTypeInteger;
+            controller.key = PlayerSilenceTrimLevel;
+            controller.title = @"Shorten Pauses".ls;
+            controller.values = @[ @0, @1, @2, @3 ];
+            controller.titles = @[ [PlaybackManager titleForSilenceTrimLevel:0], [PlaybackManager titleForSilenceTrimLevel:1],
+                                   [PlaybackManager titleForSilenceTrimLevel:2], [PlaybackManager titleForSilenceTrimLevel:3] ];
+            controller.footerTexts = [PlaybackSettingsViewController silenceTrimLevelFooterTexts];
+            controller.selectedValue = @([feed integerForKey:PlayerSilenceTrimLevel]);
+            controller.selectionHandler = ^(id value) {
+                // Same storage rule as the other podcast settings: the default value is no override.
+                NSInteger level = [value integerValue];
+                if (level == [USER_DEFAULTS integerForKey:PlayerSilenceTrimLevel]) {
+                    [feed resetValueForKey:PlayerSilenceTrimLevel];
+                } else {
+                    [feed setInteger:level forKey:PlayerSilenceTrimLevel];
+                }
+                [[PlaybackManager playbackManager] silenceTrimSettingsDidChange];
+            };
             [self.navigationController pushViewController:controller animated:YES];
         }
     }

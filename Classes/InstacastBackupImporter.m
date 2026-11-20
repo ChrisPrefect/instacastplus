@@ -183,7 +183,8 @@ static NSString *ICBackupLegacyFeedSettingType(NSString *key, NSString *value) {
     }
     if ([key hasSuffix:@"_old_episode_delete_days"] ||
         [key isEqualToString:PlayerNearChapterEndForwardSkipMode] ||
-        [key isEqualToString:PlayerNearChapterEndForwardSkipWindow]) {
+        [key isEqualToString:PlayerNearChapterEndForwardSkipWindow] ||
+        [key isEqualToString:PlayerSilenceTrimLevel]) {
         return @"integer";
     }
 
@@ -3106,6 +3107,8 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"skipForward":             PlayerSkipForwardPeriod,
         @"autoSkipStart":           PlayerAutoSkipStartPeriod,
         @"autoSkipEnd":             PlayerAutoSkipEndPeriod,
+        @"silenceTrimEnabled":      PlayerSilenceTrimEnabled,
+        @"silenceTrimLevel":        PlayerSilenceTrimLevel,
         @"replayAfterPause":        PlayerReplayAfterPause,
         @"rememberChapterPosition": PlayerRememberChapterPosition,
         @"autoCacheAudio":          AutoCacheNewAudioEpisodes,
@@ -3188,7 +3191,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
     };
 
     NSSet *boolKeys = [NSSet setWithArray:@[
-        @"rememberChapterPosition",
+        @"rememberChapterPosition", @"silenceTrimEnabled",
         @"autoCacheAudio", @"autoCacheVideo", @"autoDeletePlayed", @"disableAutoLock",
         @"sleepTimerAlways", @"disableSleepTimerCarPlay", @"autoDeleteMarkedPlayed", @"autoDeleteNews",
         @"podcastRefreshOnAppStart",

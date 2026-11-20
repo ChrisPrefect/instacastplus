@@ -100,6 +100,15 @@ plutil -p <archive>/Products/Applications/InstacastPlus.app/Watch/InstacastWatch
 
 **`AVRoutePickerView` skaliert seinen Glyph mit den eigenen Bounds** (etwa `0.83 × Bounds − 17`, unterhalb ~42 pt auf ~18 pt geklemmt) und bietet keine Bild-API. Deshalb ist `ICVolumeView` ein `UIView`-Container, der den Picker mittig auf 50 pt legt und `hitTest:` auf den vollen 84-pt-Slot durchreicht. Icon-Grössen in solchen Fällen im Simulator ausmessen statt schätzen.
 
+## Sprechpausen kürzen (Entscheid 20.11.2026)
+
+- **Die eigene Engine läuft nur, wenn die Funktion aktiv ist.** `ICSilenceTrimPlayer` (`Classes/SilenceTrim/`) ersetzt AVPlayer nur, wenn alle Bedingungen gelten: `PlayerSilenceTrimEnabled` ist an, die Stufe des Podcasts beziehungsweise die globale Stufe ist > 0, die Datei liegt vollständig lokal vor, es läuft keine SharePlay-Sitzung, und es ist kein Video. In allen anderen Fällen ist `silenceTrimPlayer` nil, und jede Methode im PlaybackManager nimmt ihren unveränderten AVPlayer-Pfad. Den alten Pfad nicht für die Engine umbauen; neue Logik gehört in den Abschnitt „Silence trim engine“.
+- **Nach aussen gilt nur die Quellzeit.** Der Synchronizer läuft auf einer gekürzten Ausgabe-Zeitachse. `currentTime`, Positionen, Kapitel, Skip-Marker und der Sperrbildschirm verwenden die Zeit der Datei. Die Synchronizer-Zeit nie direkt verwenden.
+- **Engine-Wechsel laufen immer über `openWithEpisode:at:autostart:` an der aktuellen Position.** Auslöser: Einstellung geändert, Stream-Download fertig, SharePlay-Aktivität, Engine-Fehler. Nach einem Fehler bleibt die Folge bis zur nächsten expliziten Einstellungsänderung bei AVPlayer (`silenceTrimRefusedEpisodeHash`).
+- **AirPlay und Routenwechsel leeren den Renderer automatisch** (`AVSampleBufferAudioRendererWasFlushedAutomatically`). Die Ausgabe muss dann ab der Flush-Zeit neu dekodiert werden. Ein Stufenwechsel ersetzt bereits eingereihtes Audio erst ab der nächsten Pause, damit nie mitten in Sprache geschnitten wird.
+- **Die Stufenwerte sind gemessen, nicht geschätzt.** Vor jeder Änderung an Algorithmus oder Werten `Tools/SilenceTrim/silence_trim_analyze --verify` auf mehreren ganzen Folgen laufen lassen (siehe `Tools/SilenceTrim/README.md`). Sprache muss sample-genau unverändert bleiben.
+- E2E: `Tools/silence_trim_simulator_test.py`. Den Simulator nur ohne iCloud-Konto verwenden, weil der Test Podcasts anlegt.
+
 ## Listen und Swipe
 
 **Es gibt nur ein Swipe-System:** UIKits `UISwipeActionsConfiguration`. Der Legacy-Pan in `EpisodesTableViewCell` ist über `cell.usesNativeSwipeActions = YES` abgeschaltet, das in jedem `cellForRow` gesetzt werden muss — sonst kollidiert er mit UIKit.

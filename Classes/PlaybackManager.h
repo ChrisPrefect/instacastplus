@@ -115,6 +115,19 @@
 
 - (void) updateNowPlayingInfo;
 
+// Pause shortening. The level is 0 (off) unless the feature is enabled in the playback settings;
+// otherwise it is the podcast's own value or the global default (PlayerSilenceTrimLevel).
+- (NSInteger) silenceTrimLevelForEpisode:(CDEpisode*)episode;
+// Applies a changed enable switch or level to the playing episode (switches engines if needed).
+- (void) silenceTrimSettingsDidChange;
+@property (nonatomic, readonly, getter=isSilenceTrimActive) BOOL silenceTrimActive;
+@property (nonatomic, readonly) NSTimeInterval silenceTrimSavedTime;
+// Short status for the speed menu: time saved, or why shortening is not running right now.
+- (NSString*) silenceTrimStatusText;
++ (NSString*) titleForSilenceTrimLevel:(NSInteger)level;
+// Stores a level chosen in the player: for the podcast when it has its own value, else globally.
++ (void) storeSilenceTrimLevel:(NSInteger)level forFeed:(CDFeed*)feed;
+
 @property (nonatomic, strong) ICAudioEndpoint* audioEndpoint;
 
 

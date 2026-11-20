@@ -13,6 +13,7 @@
 
 typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     kPlaybackSection = 0,
+    kSilenceTrimSection,
     kNumberOfSections,
 };
 
@@ -87,6 +88,8 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     switch (section) {
         case kPlaybackSection:
             return 9;
+        case kSilenceTrimSection:
+            return [USER_DEFAULTS boolForKey:PlayerSilenceTrimEnabled] ? 2 : 1;
         default:
             break;
     }
@@ -95,6 +98,10 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
+    if (indexPath.section == kSilenceTrimSection)
+    {
+        return [self _silenceTrimCellForRow:indexPath.row];
+    }
     if (indexPath.section == kPlaybackSection)
     {
         NSDictionary* skippingValues = @{ @5 : @"5 Seconds".ls, @10 : @"10 Seconds".ls, @20 : @"20 Seconds".ls, @30 : @"30 Seconds".ls, @60 : @"1 Minute".ls, @120 : @"2 Minutes".ls, @300 : @"5 Minutes".ls, @600 : @"10 Minutes".ls };
@@ -260,6 +267,8 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     switch (section) {
         case kPlaybackSection:
             return @"Playback".ls;
+        case kSilenceTrimSection:
+            return @"Shorten Pauses".ls;
         default:
             break;
     }
@@ -271,6 +280,8 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     switch (section) {
         case kPlaybackSection:
             return @"These are the default settings. They can be overridden per podcast in the podcast settings.".ls;
+        case kSilenceTrimSection:
+            return @"Pause Shortening Footer".ls;
         default:
             break;
     }
@@ -300,6 +311,10 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
+    if (indexPath.section == kSilenceTrimSection && indexPath.row == 1)
+    {
+        [self _showSilenceTrimLevelSettings];
+    }
     if (indexPath.section == kPlaybackSection)
     {
         switch (indexPath.row) {
@@ -379,6 +394,67 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     else if (sender.tag == 8) {
         [USER_DEFAULTS setBool:sender.on forKey:PlayerRememberChapterPosition];
     }
+}
+
+#pragma mark - Pause shortening
+
+- (UITableViewCell*) _silenceTrimCellForRow:(NSInteger)row
+{
+    if (row == 0) {
+        UITableViewCell* cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+        control.on = [USER_DEFAULTS boolForKey:PlayerSilenceTrimEnabled];
+        UIListContentConfiguration* content = [cell defaultContentConfiguration];
+        content.text = @"Shorten Pauses".ls;
+        content.textProperties.color = ICTextColor;
+        content.textProperties.font = [UIFont systemFontOfSize:ICFontSize(17)];
+        content.secondaryText = @"Pause Shortening Explanation".ls;
+        content.secondaryTextProperties.color = ICMutedTextColor;
+        content.secondaryTextProperties.numberOfLines = 0;
+        cell.contentConfiguration = content;
+        [control removeTarget:nil action:NULL forControlEvents:UIControlEventValueChanged];
+        [control addTarget:self action:@selector(toggleSilenceTrim:) forControlEvents:UIControlEventValueChanged];
+        return cell;
+    }
+    UITableViewCell* cell = [self detailCell];
+    cell.textLabel.text = @"Pause Shortening Default Level".ls;
+    cell.detailTextLabel.text = [PlaybackManager titleForSilenceTrimLevel:[USER_DEFAULTS integerForKey:PlayerSilenceTrimLevel]];
+    return cell;
+}
+
+- (void) toggleSilenceTrim:(UISwitch*)sender
+{
+    [USER_DEFAULTS setBool:sender.on forKey:PlayerSilenceTrimEnabled];
+    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kSilenceTrimSection] withRowAnimation:UITableViewRowAnimationAutomatic];
+    [[PlaybackManager playbackManager] silenceTrimSettingsDidChange];
+}
+
++ (NSArray<NSString*>*) silenceTrimLevelFooterTexts
+{
+    return @[
+        @"Pause Shortening Off Explanation".ls,
+        @"Pause Shortening Mild Explanation".ls,
+        @"Pause Shortening Medium Explanation".ls,
+        @"Pause Shortening Strong Explanation".ls,
+    ];
+}
+
+- (void) _showSilenceTrimLevelSettings
+{
+    SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+    controller.valueType = kSettingTypeInteger;
+    controller.key = PlayerSilenceTrimLevel;
+    controller.title = @"Shorten Pauses".ls;
+    controller.values = @[ @0, @1, @2, @3 ];
+    controller.titles = @[ [PlaybackManager titleForSilenceTrimLevel:0], [PlaybackManager titleForSilenceTrimLevel:1],
+                           [PlaybackManager titleForSilenceTrimLevel:2], [PlaybackManager titleForSilenceTrimLevel:3] ];
+    controller.footerTexts = [PlaybackSettingsViewController silenceTrimLevelFooterTexts];
+    controller.selectedValue = @([USER_DEFAULTS integerForKey:PlayerSilenceTrimLevel]);
+    controller.selectionHandler = ^(id value) {
+        [USER_DEFAULTS setInteger:[value integerValue] forKey:PlayerSilenceTrimLevel];
+        [[PlaybackManager playbackManager] silenceTrimSettingsDidChange];
+    };
+    [self.navigationController pushViewController:controller animated:YES];
 }
 
 #pragma mark - Enabled Speed Steps

@@ -42,7 +42,8 @@ static NSString *ICBackupKnownFeedPropertyType(NSString *key) {
     }
     if ([key hasSuffix:@"_old_episode_delete_days"] ||
         [key isEqualToString:PlayerNearChapterEndForwardSkipMode] ||
-        [key isEqualToString:PlayerNearChapterEndForwardSkipWindow]) {
+        [key isEqualToString:PlayerNearChapterEndForwardSkipWindow] ||
+        [key isEqualToString:PlayerSilenceTrimLevel]) {
         return @"integer";
     }
     return nil;
@@ -1170,6 +1171,8 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
     if ([defaults objectForKey:PlayerSkipForwardPeriod]) [xml appendFormat:@"    <skipForward>%ld</skipForward>\n", (long)[defaults integerForKey:PlayerSkipForwardPeriod]];
     if ([defaults objectForKey:PlayerAutoSkipStartPeriod]) [xml appendFormat:@"    <autoSkipStart>%ld</autoSkipStart>\n", (long)[defaults integerForKey:PlayerAutoSkipStartPeriod]];
     if ([defaults objectForKey:PlayerAutoSkipEndPeriod]) [xml appendFormat:@"    <autoSkipEnd>%ld</autoSkipEnd>\n", (long)[defaults integerForKey:PlayerAutoSkipEndPeriod]];
+    if ([defaults objectForKey:PlayerSilenceTrimEnabled]) [xml appendFormat:@"    <silenceTrimEnabled>%@</silenceTrimEnabled>\n", [defaults boolForKey:PlayerSilenceTrimEnabled] ? @"true" : @"false"];
+    if ([defaults objectForKey:PlayerSilenceTrimLevel]) [xml appendFormat:@"    <silenceTrimLevel>%ld</silenceTrimLevel>\n", (long)[defaults integerForKey:PlayerSilenceTrimLevel]];
     if ([defaults objectForKey:PlayerReplayAfterPause]) [xml appendFormat:@"    <replayAfterPause>%ld</replayAfterPause>\n", (long)[defaults integerForKey:PlayerReplayAfterPause]];
     [xml appendFormat:@"    <rememberChapterPosition>%@</rememberChapterPosition>\n", [defaults boolForKey:PlayerRememberChapterPosition] ? @"true" : @"false"];
     NSDictionary* chapterPositions = [defaults dictionaryForKey:PlayerChapterPlaybackPositions];

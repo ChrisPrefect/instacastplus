@@ -226,6 +226,8 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     NSUserDefaults* defs = [NSUserDefaults standardUserDefaults];
     defaults[WidgetThemeDefaultActive] = @YES;
     defaults[EpisodeSwipeLeftAction] = @(ICEpisodeSwipeActionAddToPlayNext);
+    // Pause shortening stays off until it is enabled; this is only the level it then starts with.
+    defaults[PlayerSilenceTrimLevel] = @2;
     [defs registerDefaults:defaults];
     if (@available(iOS 17.0, *)) {
         [ICiCloudSyncManager purgeLegacyDefaultsBackedSyncMetadata];
