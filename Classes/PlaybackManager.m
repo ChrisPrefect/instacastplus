@@ -1414,6 +1414,7 @@ didReceiveResponse:(NSURLResponse *)response
 #if TARGET_OS_IPHONE
 @property (nonatomic) UIBackgroundTaskIdentifier bufferNextItemTaskIdentifier;
 @property (nonatomic, strong) dispatch_queue_t remoteCommandQueue;
+@property (nonatomic, strong) NSMapTable<MPRemoteCommand*, NSString*>* remoteCommandActions;
 #endif
 
 @property (nonatomic) double initialPlaybackTime;
@@ -1928,146 +1929,94 @@ didReceiveResponse:(NSURLResponse *)response
     NSInteger controls = [episode.feed integerForKey:kDefaultPlayerControls];
     NSInteger skipBack = [episode.feed integerForKey:PlayerSkipBackPeriod];
     NSInteger skipForward = [episode.feed integerForKey:PlayerSkipForwardPeriod];
-    // Diagnostics for the field report "lock screen shows Instacast but only a grayed-out play
-    // button": that is exactly the state after this method runs with episode == nil (all commands
-    // disabled) while now-playing info is still populated. Log every transition so the log shows
-    // who disabled the commands and whether a player was still active at that moment.
-    [[ICDiagnosticLogger shared] logEvent:@"remote-commands"
-                                  message:(episode ? @"Remote-Commands aktiviert" : @"Remote-Commands deaktiviert")
-                                 metadata:@{
+    CFTimeInterval queuedAt = CACurrentMediaTime();
+    NSDictionary* request = @{
+        @"requestID": NSUUID.UUID.UUIDString,
+        @"phase": @"requested",
+        @"hasEpisode": @(hasEpisode),
+        @"episodeHash": episode.objectHash ?: @"",
         @"episode": episode.title ?: @"",
         @"playingEpisode": self.playingEpisode.title ?: @"",
         @"playerRate": [NSString stringWithFormat:@"%.2f", self.player.rate],
         @"changingEpisode": self.changingEpisode ? @"true" : @"false",
-    }];
+        @"paused": @(self.paused),
+        @"ready": @(self.ready),
+        @"controls": @(controls),
+    };
+    [[ICDiagnosticLogger shared] logEvent:@"remote-commands" message:@"Remote-Konfiguration angefordert" metadata:request];
 
     dispatch_async(self.remoteCommandQueue, ^{
+        CFTimeInterval startedAt = CACurrentMediaTime();
         [self _applyRemotePlaybackCommands:hasEpisode controls:controls skipBack:skipBack skipForward:skipForward];
+        MPRemoteCommandCenter* center = MPRemoteCommandCenter.sharedCommandCenter;
+        NSMutableDictionary* applied = [request mutableCopy];
+        [applied addEntriesFromDictionary:@{
+            @"phase": @"applied",
+            @"queueWaitMs": @((startedAt - queuedAt) * 1000.0),
+            @"applyMs": @((CACurrentMediaTime() - startedAt) * 1000.0),
+            @"playEnabled": @(center.playCommand.enabled),
+            @"pauseEnabled": @(center.pauseCommand.enabled),
+            @"toggleEnabled": @(center.togglePlayPauseCommand.enabled),
+            @"mainThread": @([NSThread isMainThread]),
+        }];
+        [[ICDiagnosticLogger shared] logEvent:@"remote-commands" message:@"Remote-Konfiguration angewendet" metadata:applied];
     });
+#endif
+}
+
+- (void)_configureRemoteCommand:(MPRemoteCommand*)command enabled:(BOOL)enabled action:(SEL)action
+{
+#if TARGET_OS_IPHONE
+    // Confined to remoteCommandQueue. Re-registering unchanged transport handlers
+    // briefly leaves the paused app without any remote target and loses Now Playing.
+    if (!self.remoteCommandActions) {
+        self.remoteCommandActions = [NSMapTable strongToStrongObjectsMapTable];
+    }
+    NSString* previousAction = [self.remoteCommandActions objectForKey:command];
+    if (!enabled) {
+        if (command.enabled) command.enabled = NO;
+        if (previousAction) {
+            [command removeTarget:self action:NSSelectorFromString(previousAction)];
+            [self.remoteCommandActions removeObjectForKey:command];
+        }
+        return;
+    }
+
+    NSString* actionName = NSStringFromSelector(action);
+    if (![previousAction isEqualToString:actionName]) {
+        if (previousAction) [command removeTarget:self action:NSSelectorFromString(previousAction)];
+        [command addTarget:self action:action];
+        [self.remoteCommandActions setObject:actionName forKey:command];
+    }
+    if (!command.enabled) command.enabled = YES;
 #endif
 }
 
 - (void)_applyRemotePlaybackCommands:(BOOL)hasEpisode controls:(NSInteger)controls skipBack:(NSInteger)skipBack skipForward:(NSInteger)skipForward
 {
 #if TARGET_OS_IPHONE
-    MPRemoteCommandCenter *rcc = [MPRemoteCommandCenter sharedCommandCenter];
-    
-    // reset all commands first
-    MPRemoteCommand *pauseCommand = rcc.pauseCommand;
-    pauseCommand.enabled = NO;
-    [pauseCommand removeTarget:self];
-    //
-    MPRemoteCommand *playCommand = rcc.playCommand;
-    playCommand.enabled = NO;
-    [playCommand removeTarget:self];
-    
-    MPRemoteCommand *togglePlayPauseCommand = rcc.togglePlayPauseCommand;
-    togglePlayPauseCommand.enabled = NO;
-    [togglePlayPauseCommand removeTarget:self];
-    
-    
-    MPSkipIntervalCommand* skipBackwardIntervalCommand = rcc.skipBackwardCommand;
-    skipBackwardIntervalCommand.enabled = NO;
-    [skipBackwardIntervalCommand removeTarget:self];
-    
-    MPSkipIntervalCommand* skipForwardIntervalCommand = rcc.skipForwardCommand;
-    skipForwardIntervalCommand.enabled = NO;
-    [skipForwardIntervalCommand removeTarget:self];
-    
-    
-    MPRemoteCommand* nextTrackCommand = rcc.nextTrackCommand;
-    nextTrackCommand.enabled = NO;
-    [nextTrackCommand removeTarget:self];
-    
-    MPRemoteCommand* previousTrackCommand = rcc.previousTrackCommand;
-    previousTrackCommand.enabled = NO;
-    [previousTrackCommand removeTarget:self];
-    
-    MPRemoteCommand* skipForwardCommand = rcc.seekForwardCommand;
-    skipForwardCommand.enabled = NO;
-    [skipForwardCommand removeTarget:self];
-    
-    MPRemoteCommand* seekBackwardCommand = rcc.seekBackwardCommand;
-    seekBackwardCommand.enabled = NO;
-    [seekBackwardCommand removeTarget:self];
+    MPRemoteCommandCenter* rcc = MPRemoteCommandCenter.sharedCommandCenter;
+    [self _configureRemoteCommand:rcc.playCommand enabled:hasEpisode action:@selector(_playEvent:)];
+    [self _configureRemoteCommand:rcc.pauseCommand enabled:hasEpisode action:@selector(_pauseEvent:)];
+    [self _configureRemoteCommand:rcc.togglePlayPauseCommand enabled:hasEpisode action:@selector(_playPauseEvent:)];
+    [self _configureRemoteCommand:rcc.changePlaybackPositionCommand enabled:hasEpisode action:@selector(_changePlaybackPositionEvent:)];
 
-    MPChangePlaybackPositionCommand* changePlaybackPositionCommand = rcc.changePlaybackPositionCommand;
-    changePlaybackPositionCommand.enabled = NO;
-    [changePlaybackPositionCommand removeTarget:self];
-    
-    
-    if (hasEpisode)
-    {
-        MPRemoteCommand *pauseCommand = rcc.pauseCommand;
-        pauseCommand.enabled = YES;
-        [pauseCommand addTarget:self action:@selector(_pauseEvent:)];
-        //
-        MPRemoteCommand *playCommand = rcc.playCommand;
-        playCommand.enabled = YES;
-        [playCommand addTarget:self action:@selector(_playEvent:)];
-        
-        MPRemoteCommand *togglePlayPauseCommand = rcc.togglePlayPauseCommand;
-        togglePlayPauseCommand.enabled = YES;
-        [togglePlayPauseCommand addTarget:self action:@selector(_playPauseEvent:)];
-
-        MPChangePlaybackPositionCommand* changePlaybackPositionCommand = rcc.changePlaybackPositionCommand;
-        changePlaybackPositionCommand.enabled = YES;
-        [changePlaybackPositionCommand addTarget:self action:@selector(_changePlaybackPositionEvent:)];
-        
-        if (controls == kPlayerSkippingControls)
-        {
-            MPSkipIntervalCommand* skipBackwardIntervalCommand = rcc.skipBackwardCommand;
-            skipBackwardIntervalCommand.enabled = YES;
-            [skipBackwardIntervalCommand addTarget:self action:@selector(_skipBackwardEvent:)];
-            skipBackwardIntervalCommand.preferredIntervals = @[@(skipBack)];
-            
-            MPSkipIntervalCommand* skipForwardIntervalCommand = rcc.skipForwardCommand;
-            skipForwardIntervalCommand.enabled = YES;
-            skipForwardIntervalCommand.preferredIntervals = @[@(skipForward)];
-            [skipForwardIntervalCommand addTarget:self action:@selector(_skipForwardEvent:)];
-            
-            MPRemoteCommand* nextTrackCommand = rcc.nextTrackCommand;
-            nextTrackCommand.enabled = YES;
-            [nextTrackCommand addTarget:self action:@selector(_skipForwardEvent:)];
-            
-            MPRemoteCommand* previousTrackCommand = rcc.previousTrackCommand;
-            previousTrackCommand.enabled = YES;
-            [previousTrackCommand addTarget:self action:@selector(_skipBackwardEvent:)];
-        }
-        else
-        {
-            if (controls == kPlayerSeekingAndSkippingChaptersControls)
-            {
-                MPRemoteCommand* nextTrackCommand = rcc.nextTrackCommand;
-                nextTrackCommand.enabled = YES;
-                [nextTrackCommand addTarget:self action:@selector(_nextChapterEvent:)];
-                
-                MPRemoteCommand* previousTrackCommand = rcc.previousTrackCommand;
-                previousTrackCommand.enabled = YES;
-                [previousTrackCommand addTarget:self action:@selector(_previousChapterEvent:)];
-            }
-            else
-            {
-                MPRemoteCommand* nextTrackCommand = rcc.nextTrackCommand;
-                nextTrackCommand.enabled = YES;
-                [nextTrackCommand addTarget:self action:@selector(_skipForwardEvent:)];
-                
-                MPRemoteCommand* previousTrackCommand = rcc.previousTrackCommand;
-                previousTrackCommand.enabled = YES;
-                [previousTrackCommand addTarget:self action:@selector(_skipBackwardEvent:)];
-            }
-            
-            
-            MPRemoteCommand* skipForwardCommand = rcc.seekForwardCommand;
-            skipForwardCommand.enabled = YES;
-            [skipForwardCommand addTarget:self action:@selector(_seekForwardEvent:)];
-            
-            MPRemoteCommand* seekBackwardCommand = rcc.seekBackwardCommand;
-            seekBackwardCommand.enabled = YES;
-            [seekBackwardCommand addTarget:self action:@selector(_seekBackwardEvent:)];
-        }
-        
+    BOOL skips = (controls == kPlayerSkippingControls);
+    BOOL chapters = (controls == kPlayerSeekingAndSkippingChaptersControls);
+    [self _configureRemoteCommand:rcc.skipBackwardCommand enabled:hasEpisode && skips action:@selector(_skipBackwardEvent:)];
+    [self _configureRemoteCommand:rcc.skipForwardCommand enabled:hasEpisode && skips action:@selector(_skipForwardEvent:)];
+    if (hasEpisode && skips) {
+        NSArray* backInterval = @[@(skipBack)];
+        NSArray* forwardInterval = @[@(skipForward)];
+        if (![rcc.skipBackwardCommand.preferredIntervals isEqual:backInterval]) rcc.skipBackwardCommand.preferredIntervals = backInterval;
+        if (![rcc.skipForwardCommand.preferredIntervals isEqual:forwardInterval]) rcc.skipForwardCommand.preferredIntervals = forwardInterval;
     }
+    [self _configureRemoteCommand:rcc.nextTrackCommand enabled:hasEpisode
+                          action:chapters ? @selector(_nextChapterEvent:) : @selector(_skipForwardEvent:)];
+    [self _configureRemoteCommand:rcc.previousTrackCommand enabled:hasEpisode
+                          action:chapters ? @selector(_previousChapterEvent:) : @selector(_skipBackwardEvent:)];
+    [self _configureRemoteCommand:rcc.seekForwardCommand enabled:hasEpisode && !skips action:@selector(_seekForwardEvent:)];
+    [self _configureRemoteCommand:rcc.seekBackwardCommand enabled:hasEpisode && !skips action:@selector(_seekBackwardEvent:)];
 #endif
 }
 
@@ -2099,6 +2048,8 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (MPRemoteCommandHandlerStatus) _playPauseEvent:(MPRemoteCommandEvent*)event
 {
+    [[ICDiagnosticLogger shared] logEvent:@"remote-command" message:@"toggle-play-pause"
+                                 metadata:@{@"mainThread": @([NSThread isMainThread]), @"paused": @(self.paused), @"ready": @(self.ready)}];
     [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-play-pause"];
     [self playPause];
     return MPRemoteCommandHandlerStatusSuccess;
@@ -2106,6 +2057,8 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (MPRemoteCommandHandlerStatus) _playEvent:(MPRemoteCommandEvent*)event
 {
+    [[ICDiagnosticLogger shared] logEvent:@"remote-command" message:@"play"
+                                 metadata:@{@"mainThread": @([NSThread isMainThread]), @"paused": @(self.paused), @"ready": @(self.ready)}];
     [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-play"];
     if (self.paused) {
         [self play];
@@ -2116,6 +2069,8 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (MPRemoteCommandHandlerStatus) _pauseEvent:(MPRemoteCommandEvent*)event
 {
+    [[ICDiagnosticLogger shared] logEvent:@"remote-command" message:@"pause"
+                                 metadata:@{@"mainThread": @([NSThread isMainThread]), @"paused": @(self.paused), @"ready": @(self.ready)}];
     [[AudioSession sharedAudioSession] resetSleepTimerForUserInteraction:@"remote-pause"];
     [self pause];
     return MPRemoteCommandHandlerStatusSuccess;

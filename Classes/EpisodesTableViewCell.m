@@ -924,6 +924,18 @@
     [super willTransitionToState:state];
     
     self.showsEditControl = ((state & UITableViewCellStateShowingEditControlMask) > 0);
+    UITableView* table = [self _tableView];
+    NSIndexPath* path = [table indexPathForCell:self];
+    [[ICDiagnosticLogger shared] logEvent:@"episode-selection" message:@"cell-transition" metadata:@{
+        @"reason": @"cell-transition",
+        @"cellID": [NSString stringWithFormat:@"%p", (__bridge void*)self],
+        @"tableID": [NSString stringWithFormat:@"%p", (__bridge void*)table],
+        @"episodeHash": [self _episode].objectHash ?: @"",
+        @"row": path ? @(path.row) : @(-1),
+        @"requestedState": @(state), @"editing": @(self.editing),
+        @"showsEditControl": @(self.showsEditControl), @"selected": @(self.selected),
+        @"tableEditing": @(table.editing), @"multipleSelection": @(table.allowsMultipleSelectionDuringEditing),
+    }];
     if (self.showsEditControl) {
         self.contentView.backgroundColor = [UIColor clearColor];
         self.panningContentView.backgroundColor = [UIColor clearColor];

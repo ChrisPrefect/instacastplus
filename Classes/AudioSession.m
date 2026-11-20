@@ -303,6 +303,7 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
         NSInteger option = [userInfo[AVAudioSessionInterruptionOptionKey] integerValue];
 
         BOOL shouldResumeAfterInterruption = pman.hasBeenPlayingWhenInterrupted;
+        BOOL pausedBefore = pman.paused;
 
         if (interruptionType == AVAudioSessionInterruptionTypeBegan) {
             BOOL playingBeforeInterrupt = !pman.paused;
@@ -322,6 +323,16 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
                 [self updateNowPlayingInfo];
             }
         }
+        [[ICDiagnosticLogger shared] logEvent:@"audio-session" message:@"interruption-handled"
+                                     metadata:@{
+            @"type": @(interruptionType), @"options": @(option),
+            @"reason": userInfo[AVAudioSessionInterruptionReasonKey] ?: @(-1),
+            @"wasSuspended": userInfo[AVAudioSessionInterruptionWasSuspendedKey] ?: @NO,
+            @"wasPlayingWhenInterrupted": @(pman.hasBeenPlayingWhenInterrupted || shouldResumeAfterInterruption),
+            @"pausedBefore": @(pausedBefore), @"pausedAfter": @(pman.paused),
+            @"episodeHash": pman.playingEpisode.objectHash ?: @"",
+            @"applicationState": @([UIApplication sharedApplication].applicationState),
+        }];
     });
 }
 
@@ -351,6 +362,7 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
         
         
         AVAudioSessionRouteChangeReason reason = [userInfo[AVAudioSessionRouteChangeReasonKey] integerValue];
+        BOOL pausedBefore = pman.paused;
         
         if (reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) {
             [pman pause];
@@ -360,6 +372,15 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
         else if (reason == AVAudioSessionRouteChangeReasonCategoryChange) {
             [self resetSession];
         }
+        AVAudioSessionRouteDescription* previousRoute = userInfo[AVAudioSessionRouteChangePreviousRouteKey];
+        [[ICDiagnosticLogger shared] logEvent:@"audio-session" message:@"route-changed"
+                                     metadata:@{
+            @"reason": @(reason),
+            @"previousOutputs": [[previousRoute.outputs valueForKey:@"portType"] componentsJoinedByString:@","] ?: @"",
+            @"currentOutputs": [[[[AVAudioSession sharedInstance] currentRoute].outputs valueForKey:@"portType"] componentsJoinedByString:@","] ?: @"",
+            @"pausedBefore": @(pausedBefore), @"pausedAfter": @(pman.paused),
+            @"episodeHash": pman.playingEpisode.objectHash ?: @"",
+        }];
         
         [[NSNotificationCenter defaultCenter] postNotificationName:AudioSessionAudioRouteDidChangeNotification object:self];
     });

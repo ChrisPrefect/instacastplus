@@ -235,11 +235,15 @@ private struct ICDiagnosticLogLine: Encodable {
     @objc func crashLogMailAttachments() -> [ICDiagnosticMailAttachment] {
         queue.sync {
             self.ensureStartedLocked()
-            self.appendLocked(category: "diagnostics", message: "Crash-Log-Mail vorbereitet", metadata: [
+            // Each export is self-describing, even after the startup record was
+            // rotated out or a previously sent report cleared the old log.
+            var metadata = self.appMetadataLocked()
+            metadata.merge([
                 "previousSessionEndedUnexpectedly": self.previousSessionEndedUnexpectedly ? "true" : "false",
                 "previousSessionEndedInBackground": self.previousSessionEndedInBackground ? "true" : "false",
                 "previousSessionState": self.previousSessionState ?? "",
-            ])
+            ]) { _, current in current }
+            self.appendLocked(category: "diagnostics", message: "Crash-Log-Mail vorbereitet", metadata: metadata)
         }
 
         let files: [(String, URL)] = [
@@ -250,20 +254,6 @@ private struct ICDiagnosticLogLine: Encodable {
         let data = combinedCrashLogMailAttachmentData(from: files)
 
         return [ICDiagnosticMailAttachment(fileName: "InstacastPlus-CrashLogs.txt", mimeType: "text/plain", data: data)]
-    }
-
-    @objc func crashLogMailBody() -> String {
-        let metadata = appMetadataLocked()
-        return [
-            "InstacastPlus Crash Logs",
-            "",
-            "appVersion: \(metadata["appVersion"] ?? "")",
-            "build: \(metadata["build"] ?? "")",
-            "systemVersion: \(metadata["systemVersion"] ?? "")",
-            "previousSessionEndedUnexpectedly: \(previousSessionEndedUnexpectedly)",
-            "previousSessionEndedInBackground: \(previousSessionEndedInBackground)",
-            "previousSessionState: \(previousSessionState ?? "")",
-        ].joined(separator: "\n")
     }
 
     @objc func clearCrashLogMailArtifacts() {
@@ -679,7 +669,7 @@ private struct ICDiagnosticLogLine: Encodable {
 
     private func appMetadataLocked() -> [String: String] {
         let info = Bundle.main.infoDictionary ?? [:]
-        return [
+        var metadata = [
             "appVersion": (info["CFBundleShortVersionString"] as? String) ?? "unknown",
             "build": (info["CFBundleVersion"] as? String) ?? "unknown",
             "systemVersion": ProcessInfo.processInfo.operatingSystemVersionString,
@@ -689,6 +679,43 @@ private struct ICDiagnosticLogLine: Encodable {
             "transcriptsPath": ICTranscriptsDirectoryURL().path,
             "logsPath": logsDirectoryURL().path,
         ]
+        metadata.merge(Self.deviceMetadata) { _, current in current }
+        return metadata
+    }
+
+    // Foundation/Darwin only: the logger also reads this on its background queue.
+    // Do not use the user's device name or a hardware-to-marketing-name lookup.
+    private static let deviceMetadata: [String: String] = {
+#if targetEnvironment(macCatalyst)
+        let runsOnMac = true
+        let runtime = "Mac Catalyst"
+#elseif targetEnvironment(simulator)
+        let runsOnMac = false
+        let runtime = "simulator"
+#else
+        let runsOnMac = ProcessInfo.processInfo.isiOSAppOnMac
+        let runtime = runsOnMac ? "iOS on Mac" : "device"
+#endif
+#if targetEnvironment(simulator)
+        let model = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? "unknown"
+#else
+        let model = hardwareIdentifier(runsOnMac ? "hw.model" : "hw.machine")
+#endif
+        let family = runsOnMac ? "Mac" : model.hasPrefix("iPad") ? "iPad" : model.hasPrefix("iPhone") ? "iPhone" : "unknown"
+        return [
+            "deviceFamily": family,
+            "deviceModelIdentifier": model,
+            "runtimeEnvironment": runtime,
+            "systemName": runsOnMac ? "macOS" : family == "iPad" ? "iPadOS" : "iOS",
+        ]
+    }()
+
+    private static func hardwareIdentifier(_ key: String) -> String {
+        var size = 0
+        guard sysctlbyname(key, nil, &size, nil, 0) == 0, size > 0 else { return "unknown" }
+        var bytes = [UInt8](repeating: 0, count: size)
+        guard sysctlbyname(key, &bytes, &size, nil, 0) == 0 else { return "unknown" }
+        return String(decoding: bytes.prefix(while: { $0 != 0 }), as: UTF8.self)
     }
 
     private static func thermalStateString(_ state: ProcessInfo.ThermalState) -> String {

@@ -8,6 +8,10 @@ An isolated check is needed because a configured MessageUI account and a mail
 service termination are not reliably available in the simulator. UIKit boundary
 doubles deliver the callbacks; unchanged production methods write a real JSONL
 artifact. This does not reproduce the user's mail service or prove draft recovery.
+Also detects technical metadata leaking into the subject/body at composition.
+The simulator cannot provide a configured MessageUI account, and this Mac's
+XCTest runner cannot install on the public device OS; physical UI verification
+is retained separately from this focused production-action contract.
 """
 from pathlib import Path
 import subprocess
@@ -57,6 +61,10 @@ static NSString* UIApplicationDidBecomeActiveNotification=@"active";
 static NSString* UIApplicationWillTerminateNotification=@"terminate";
 static NSString* UIApplicationDidReceiveMemoryWarningNotification=@"memory";
 static NSString* UISceneDidDisconnectNotification=@"disconnect";
+static NSString* UISceneWillDeactivateNotification=@"scene-inactive";
+static NSString* UISceneDidEnterBackgroundNotification=@"scene-background";
+static NSString* UISceneWillEnterForegroundNotification=@"scene-foreground";
+static NSString* UISceneDidActivateNotification=@"scene-active";
 @interface UIApplication:NSObject
 @property NSInteger applicationState;
 + (instancetype)sharedApplication;
@@ -73,7 +81,9 @@ static NSString* UISceneDidDisconnectNotification=@"disconnect";
 @property SceneSession* session;
 @end
 @implementation UIScene @end
-@interface UIWindowScene:UIScene @end
+@interface UIWindowScene:UIScene
+@property NSInteger interfaceOrientation;
+@end
 @implementation UIWindowScene @end
 @interface UIWindow:NSObject
 @property UIWindowScene* windowScene;
@@ -89,6 +99,8 @@ static NSString* UISceneDidDisconnectNotification=@"disconnect";
 @property NSObject* presentingViewController;
 @property NSObject* presentedViewController;
 @property BOOL isBeingDismissed, isBeingPresented;
+@property(copy) NSString* observedSubject;
+@property(copy) NSString* observedBody;
 + (BOOL)canSendMail;
 - (void)setSubject:(NSString*)value;
 - (void)setToRecipients:(NSArray*)value;
@@ -101,9 +113,9 @@ static NSString* UISceneDidDisconnectNotification=@"disconnect";
 @end
 @implementation MFMailComposeViewController
 + (BOOL)canSendMail {return YES;}
-- (void)setSubject:(NSString*)value {}
+- (void)setSubject:(NSString*)value {self.observedSubject=value;}
 - (void)setToRecipients:(NSArray*)value {}
-- (void)setMessageBody:(NSString*)value isHTML:(BOOL)html {}
+- (void)setMessageBody:(NSString*)value isHTML:(BOOL)html {self.observedBody=value;}
 - (void)addAttachmentData:(NSData*)data mimeType:(NSString*)type fileName:(NSString*)name {}
 - (void)viewWillAppear:(BOOL)animated {}
 - (void)viewDidAppear:(BOOL)animated {}
@@ -121,7 +133,6 @@ static NSString* output;
 + (instancetype)shared;
 - (void)logEvent:(NSString*)category message:(NSString*)message metadata:(NSDictionary*)metadata;
 - (void)clearCrashLogMailArtifacts;
-- (NSString*)crashLogMailBody;
 - (NSArray*)crashLogMailAttachments;
 @end
 @implementation ICDiagnosticLogger
@@ -134,7 +145,6 @@ static NSString* output;
  else [data writeToFile:output atomically:YES];
 }
 - (void)clearCrashLogMailArtifacts { [NSData.data writeToFile:output atomically:YES]; }
-- (NSString*)crashLogMailBody {return @"Fixture";}
 - (NSArray*)crashLogMailAttachments {
  ICDiagnosticMailAttachment* file=[ICDiagnosticMailAttachment new];
  file.fileName=@"InstacastPlus-CrashLogs.txt";file.mimeType=@"text/plain";file.data=[@"fixture" dataUsingEncoding:NSUTF8StringEncoding];return @[file];
@@ -183,6 +193,7 @@ int main(int argc,const char* argv[]){@autoreleasepool{
   composer.viewIfLoaded.window.windowScene=[UIWindowScene new];
   composer.viewIfLoaded.window.windowScene.session=[SceneSession new];
   composer.viewIfLoaded.window.windowScene.session.persistentIdentifier=@"fixture-scene";
+  composer.viewIfLoaded.window.windowScene.interfaceOrientation=3;
   composer.presentingViewController=[NSObject new];
   [composer viewWillAppear:YES];[composer viewDidAppear:YES];
   for(NSString* event in @[UIApplicationWillResignActiveNotification,UIApplicationDidEnterBackgroundNotification,UIApplicationWillEnterForegroundNotification,UIApplicationDidBecomeActiveNotification,UIApplicationDidReceiveMemoryWarningNotification,UIApplicationWillTerminateNotification]){
@@ -199,6 +210,14 @@ int main(int argc,const char* argv[]){@autoreleasepool{
    }
   }
   require([messages containsObject:UIApplicationDidBecomeActiveNotification] && [messages containsObject:UIApplicationWillTerminateNotification],@"Foreground/termination events missing");
+  for(NSDictionary* entry in lines)require(entry[@"metadata"][@"processID"]!=nil && entry[@"metadata"][@"mailDelegateAlive"]!=nil,@"Process and delegate lifetime evidence missing");
+  NSUInteger previousCount=events().count;
+  [[NSNotificationCenter defaultCenter] postNotificationName:UISceneDidEnterBackgroundNotification object:composer.viewIfLoaded.window.windowScene];
+  require(events().count==previousCount+1 && [events().lastObject[@"metadata"][@"sceneInterfaceOrientation"] integerValue]==3,@"Matching scene background/orientation must be captured even while another scene stays active");
+  UIScene* other=[UIScene new];other.session=[SceneSession new];other.session.persistentIdentifier=@"unrelated-scene";
+  previousCount=events().count;
+  [[NSNotificationCenter defaultCenter] postNotificationName:UISceneDidEnterBackgroundNotification object:other];
+  require(events().count==previousCount,@"Unrelated scenes must not change the composer's evidence");
   composer.isBeingDismissed=YES;[composer viewWillDisappear:YES];composer.presentingViewController=nil;composer.viewIfLoaded.window=nil;[composer viewDidDisappear:YES];
  }
  require(released==nil,@"Diagnostics must not retain the composer/draft");
@@ -224,6 +243,8 @@ int main(int argc,const char* argv[]){@autoreleasepool{
  }
  OptionsViewController* owner=[OptionsViewController new];[owner emailCrashLogsClicked];
  require([owner.presentedViewController isKindOfClass:ICCrashLogMailComposeViewController.class],@"Real settings action must present the diagnostic composer");
+ require(owner.presentedViewController.observedBody.length==0,@"Technical metadata belongs in the attachment; the mail body must be empty");
+ require([owner.presentedViewController.observedSubject isEqual:@"Crash Logs InstacastPlus"],@"The mail subject must not contain version/build metadata");
  require([events().lastObject[@"message"] isEqual:@"presentation-completed"],@"Presentation completion missing");
  BOOL prepared=NO;
  for(NSDictionary* event in events())if([event[@"message"] isEqual:@"presentation-requested"]){
@@ -255,7 +276,6 @@ with tempfile.TemporaryDirectory(prefix='instacast-crash-mail-') as directory:
 + (instancetype)shared;
 - (void)logEvent:(NSString*)category message:(NSString*)message metadata:(NSDictionary*)metadata;
 - (void)clearCrashLogMailArtifacts;
-- (NSString*)crashLogMailBody;
 - (NSArray*)crashLogMailAttachments;
 @end
 ''' + interface + '\n' + implementation + '''

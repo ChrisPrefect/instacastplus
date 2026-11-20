@@ -55,6 +55,10 @@
             UIApplicationDidBecomeActiveNotification,
             UIApplicationWillTerminateNotification,
             UIApplicationDidReceiveMemoryWarningNotification,
+            UISceneWillDeactivateNotification,
+            UISceneDidEnterBackgroundNotification,
+            UISceneWillEnterForegroundNotification,
+            UISceneDidActivateNotification,
             UISceneDidDisconnectNotification,
         ]) {
             [center addObserver:self selector:@selector(diagnosticLifecycleNotification:) name:name object:nil];
@@ -73,7 +77,9 @@
     }
     NSMutableDictionary* snapshot = [@{
         @"attemptID": self.diagnosticAttemptID ?: @"",
+        @"processID": @(NSProcessInfo.processInfo.processIdentifier),
         @"applicationState": @([UIApplication sharedApplication].applicationState),
+        @"mailDelegateAlive": @(self.mailComposeDelegate != nil),
         @"composerPresented": @(self.presentingViewController != nil),
         @"composerViewInWindow": @(window != nil),
         @"beingPresented": @(self.isBeingPresented),
@@ -82,6 +88,7 @@
         @"presentedController": self.presentedViewController ? NSStringFromClass(self.presentedViewController.class) : @"",
         @"sceneSessionID": self.diagnosticSceneSessionID ?: @"",
         @"sceneActivationState": scene ? @((NSInteger)scene.activationState) : @(-1),
+        @"sceneInterfaceOrientation": @((NSInteger)scene.interfaceOrientation),
     } mutableCopy];
     [snapshot addEntriesFromDictionary:metadata];
     [[ICDiagnosticLogger shared] logEvent:@"crash-log-mail" message:event metadata:snapshot];
@@ -89,7 +96,7 @@
 
 - (void)diagnosticLifecycleNotification:(NSNotification*)notification
 {
-    if ([notification.name isEqualToString:UISceneDidDisconnectNotification]) {
+    if ([notification.object isKindOfClass:UIScene.class]) {
         UIScene* scene = notification.object;
         if (![scene.session.persistentIdentifier isEqualToString:self.diagnosticSceneSessionID]) return;
     }
@@ -110,7 +117,10 @@
 
 - (void)viewWillDisappear:(BOOL)animated
 {
-    [self logDiagnosticEvent:@"view-will-disappear" metadata:@{}];
+    NSArray* stack = NSThread.callStackSymbols;
+    [self logDiagnosticEvent:@"view-will-disappear" metadata:@{
+        @"callStack": [[stack subarrayWithRange:NSMakeRange(0, MIN(stack.count, 16))] componentsJoinedByString:@"\n"],
+    }];
     [super viewWillDisappear:animated];
 }
 
@@ -458,12 +468,9 @@ enum {
         ICCrashLogMailComposeViewController *mailComposer = [[ICCrashLogMailComposeViewController alloc] init];
         mailComposer.mailComposeDelegate = self;
 
-        NSString *appVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-        NSString *buildNumber = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"];
-        NSString *subject = [NSString stringWithFormat:@"%@ %@ (%@)", @"Crash Logs InstacastPlus".ls, appVersion, buildNumber];
-        [mailComposer setSubject:subject];
+        [mailComposer setSubject:@"Crash Logs InstacastPlus".ls];
         [mailComposer setToRecipients:@[@"info@instacast.ch"]];
-        [mailComposer setMessageBody:[[ICDiagnosticLogger shared] crashLogMailBody] isHTML:NO];
+        [mailComposer setMessageBody:@"" isHTML:NO];
 
         NSArray<ICDiagnosticMailAttachment *> *attachments = [[ICDiagnosticLogger shared] crashLogMailAttachments];
         NSUInteger attachmentBytes = 0;
@@ -542,11 +549,13 @@ enum {
         @"errorDomain": error.domain ?: @"",
         @"errorCode": @(error.code),
         @"errorDescription": error.localizedDescription ?: @"",
+        @"callbackComposerIsCurrent": @(self.presentedViewController == controller),
     };
     [diagnosticComposer logDiagnosticEvent:@"result" metadata:resultMetadata];
     BOOL clearCrashLogMailArtifacts = self.sendingCrashLogMail && result == MFMailComposeResultSent && !error;
     self.sendingCrashLogMail = NO;
 
+    [diagnosticComposer logDiagnosticEvent:@"dismiss-requested" metadata:resultMetadata];
     [self dismissViewControllerAnimated:YES completion:^{
         [diagnosticComposer logDiagnosticEvent:@"dismiss-completed" metadata:resultMetadata];
     }];

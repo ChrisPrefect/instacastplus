@@ -7,6 +7,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #import <stdatomic.h>
+#import <dlfcn.h>
 
 @interface NSObject (RemoteProbeAPI)
 + (id)sharedDatabaseManager;
@@ -26,6 +27,20 @@ static atomic_bool stallNext;
 static NSUInteger playbackStateWrites;
 static double actionMs;
 static _Thread_local BOOL inspectingCenter;
+static atomic_bool auditTransport;
+static NSArray<MPRemoteCommand*>* transportCommands;
+static NSMutableArray* transportLosses;
+static BOOL remoteSendResult;
+
+static void recordTransportLoss(MPRemoteCommand* command, NSString* operation) {
+    if (!atomic_load(&auditTransport)) return;
+    NSUInteger index = [transportCommands indexOfObjectIdenticalTo:command];
+    if (index == NSNotFound) return;
+    @synchronized(transportLosses) {
+        [transportLosses addObject:@{@"command": @[@"play", @"pause", @"toggle"][index],
+                                    @"operation": operation}];
+    }
+}
 
 static UIViewController *root(void) {
     return [(id)UIApplication.sharedApplication.delegate valueForKey:@"mainViewController"];
@@ -40,10 +55,13 @@ static void observe(NSString *operation, double start) {
 static NSDictionary *snapshot(void) {
     NSArray *calls;
     @synchronized(serviceCalls) { calls = serviceCalls.copy; }
+    NSArray *losses;
+    @synchronized(transportLosses) { losses = transportLosses.copy; }
     inspectingCenter = YES;
     MPRemoteCommandCenter *center = [MPRemoteCommandCenter sharedCommandCenter];
     inspectingCenter = NO;
-    return @{@"actionMs":@(actionMs), @"serviceCalls":calls,
+    return @{@"actionMs":@(actionMs), @"serviceCalls":calls, @"transportLosses": losses,
+        @"remoteSendResult": @(remoteSendResult),
         @"playbackStateWrites":@(playbackStateWrites),
         @"presented":@(root().presentedViewController != nil),
         @"ready":[manager() valueForKey:@"ready"], @"paused":[manager() valueForKey:@"paused"],
@@ -56,6 +74,25 @@ static NSDictionary *snapshot(void) {
 @implementation ICRemoteCommandsProbe
 + (void)load {
     serviceCalls = [NSMutableArray array];
+    transportLosses = [NSMutableArray array];
+    Method enabled = class_getInstanceMethod(MPRemoteCommand.class, @selector(setEnabled:));
+    void (*originalEnabled)(id,SEL,BOOL) = (void*)method_getImplementation(enabled);
+    method_setImplementation(enabled, imp_implementationWithBlock(^(MPRemoteCommand* command, BOOL value) {
+        originalEnabled(command, @selector(setEnabled:), value);
+        if (!value) recordTransportLoss(command, @"disabled");
+    }));
+    Method remove = class_getInstanceMethod(MPRemoteCommand.class, @selector(removeTarget:));
+    void (*originalRemove)(id,SEL,id) = (void*)method_getImplementation(remove);
+    method_setImplementation(remove, imp_implementationWithBlock(^(MPRemoteCommand* command, id target) {
+        originalRemove(command, @selector(removeTarget:), target);
+        recordTransportLoss(command, @"handler-removed");
+    }));
+    Method removeAction = class_getInstanceMethod(MPRemoteCommand.class, @selector(removeTarget:action:));
+    void (*originalRemoveAction)(id,SEL,id,SEL) = (void*)method_getImplementation(removeAction);
+    method_setImplementation(removeAction, imp_implementationWithBlock(^(MPRemoteCommand* command, id target, SEL action) {
+        originalRemoveAction(command, @selector(removeTarget:action:), target, action);
+        recordTransportLoss(command, @"handler-action-removed");
+    }));
     Method shared = class_getClassMethod(MPRemoteCommandCenter.class, @selector(sharedCommandCenter));
     id (*originalShared)(id,SEL) = (void*)method_getImplementation(shared);
     method_setImplementation(shared, imp_implementationWithBlock(^id(id cls) {
@@ -91,6 +128,7 @@ static NSDictionary *snapshot(void) {
                     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
                     [defaults setBool:NO forKey:@"AutoDownloadWhileStreaming"];
                     [defaults setBool:NO forKey:@"ScreenTimerAlwaysActive"];
+                    [defaults setBool:NO forKey:@"PlayerSilenceTrimEnabled"];
                     id database = [NSClassFromString(@"DatabaseManager") sharedDatabaseManager];
                     NSManagedObjectContext *context = [database valueForKey:@"objectContext"];
                     id feed = [NSEntityDescription insertNewObjectForEntityForName:@"Feed" inManagedObjectContext:context];
@@ -124,6 +162,17 @@ static NSDictionary *snapshot(void) {
                     [[selected valueForKey:@"feed"] setInteger:[request[@"mode"] integerValue] forKey:@"PlayerControls"];
                     atomic_store(&stallNext, [request[@"stall"] boolValue]);
                     [manager() _setupRemotePlaybackCenterWithEpisode:selected];
+                } else if ([action isEqual:@"auditTransport"]) {
+                    MPRemoteCommandCenter* center = MPRemoteCommandCenter.sharedCommandCenter;
+                    transportCommands = @[center.playCommand, center.pauseCommand, center.togglePlayPauseCommand];
+                    @synchronized(transportLosses) { [transportLosses removeAllObjects]; }
+                    atomic_store(&auditTransport, true);
+                } else if ([action isEqual:@"remote"]) {
+                    // Route through the real system media service, not the app's handler.
+                    void* framework = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_NOW);
+                    BOOL (*send)(unsigned int, CFDictionaryRef) = dlsym(framework, "MRMediaRemoteSendCommand");
+                    if (!send) @throw [NSException exceptionWithName:@"MissingMediaRemote" reason:@"System command API unavailable" userInfo:nil];
+                    remoteSendResult = send([request[@"command"] unsignedIntValue], NULL);
                 } else if ([action isEqual:@"close"]) [manager() close];
                 reply[@"state"] = snapshot();
             } @catch (NSException *exception) { reply[@"error"] = exception.description; }

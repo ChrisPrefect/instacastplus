@@ -25,6 +25,21 @@ ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = 'com.iteconomy.instacastplus'
 
 
+def diagnostic_contract(path):
+    events = [json.loads(line) for line in path.read_text().splitlines()]
+    requested = {e['metadata']['requestID']: e for e in events
+                 if e.get('category') == 'remote-commands' and e.get('metadata', {}).get('phase') == 'requested'}
+    applied = [e for e in events if e.get('category') == 'remote-commands'
+               and e.get('metadata', {}).get('phase') == 'applied']
+    inbound = [e for e in events if e.get('category') == 'remote-command']
+    phases_valid = bool(requested and applied) and all(
+        e['metadata']['requestID'] in requested and 'playEnabled' in e['metadata']
+        and 'queueWaitMs' in e['metadata'] and 'applyMs' in e['metadata'] for e in applied)
+    commands_valid = {'play', 'pause', 'toggle-play-pause'}.issubset({e['message'] for e in inbound}) and all(
+        'mainThread' in e['metadata'] and 'paused' in e['metadata'] for e in inbound)
+    return phases_valid, commands_valid
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--udid', required=True)
@@ -32,6 +47,7 @@ def main():
     parser.add_argument('--evidence', type=Path, required=True)
     parser.add_argument('--stall-service', action='store_true')
     parser.add_argument('--prepare-ui', action='store_true')
+    parser.add_argument('--transport-lifecycle', action='store_true', help='Exercise native Play/Pause, background return and system remote commands without losing handlers')
     args = parser.parse_args()
     out = args.evidence.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -156,9 +172,57 @@ final class NativeScrollTests: XCTestCase {
     check('restored player configures skip controls', state['skipEnabled'] and not state['seekEnabled']
           and state['intervals'] == [45] and state['pauseEnabled'], state)
     run(['xcrun', 'simctl', 'io', args.udid, 'screenshot', str(out / 'player.png')])
+    if args.transport_lifecycle:
+        command('auditTransport')
+        project = out / 'Transport.xcodeproj'
+        project.mkdir(exist_ok=True)
+        shutil.copy2(ROOT / 'Tools/fixtures/chapter_scroll_ui_project.pbxproj', project / 'project.pbxproj')
+        (out / 'NativeScrollTests.swift').write_text('''import XCTest
+final class NativeScrollTests: XCTestCase {
+ func testTransportAcrossBackground() {
+  let app=XCUIApplication(bundleIdentifier:"com.iteconomy.instacastplus")
+  app.activate()
+  let play=app.buttons["Play"].firstMatch
+  XCTAssertTrue(play.waitForExistence(timeout:10),app.debugDescription)
+  play.tap()
+  let pause=app.buttons["Pause"].firstMatch
+  XCTAssertTrue(pause.waitForExistence(timeout:10),app.debugDescription)
+  pause.tap()
+  XCTAssertTrue(play.waitForExistence(timeout:10),app.debugDescription)
+  XCUIDevice.shared.press(.home)
+  app.activate()
+  XCTAssertTrue(play.waitForExistence(timeout:10),app.debugDescription)
+  play.tap()
+  XCTAssertTrue(pause.waitForExistence(timeout:10),app.debugDescription)
+  let evidence=XCTAttachment(screenshot:app.screenshot());evidence.lifetime = .keepAlways;add(evidence)
+ }
+}
+''')
+        native = run(['xcodebuild', '-project', str(project), '-scheme', 'NativeScrollTests',
+                      '-destination', 'platform=iOS Simulator,id=' + args.udid,
+                      '-derivedDataPath', str(out / 'NativeDerived'), '-parallel-testing-enabled', 'NO',
+                      '-resultBundlePath', str(out / 'transport.xcresult'), 'test'], check=False)
+        assert '** TEST SUCCEEDED **' in native, native[-3500:]
+        state = command()
+        check('native Play/Pause and background return preserve remote handlers', not state['transportLosses'], state)
+        command('remote', command=1)
+        state = wait(lambda s: s['paused'])
+        check('system pause reaches the player', state['remoteSendResult'], state)
+        command('remote', command=0)
+        state = wait(lambda s: not s['paused'])
+        check('system play resumes the player', state['remoteSendResult'], state)
+        command('remote', command=2)
+        state = wait(lambda s: s['paused'])
+        check('headset toggle pauses the player', state['remoteSendResult'], state)
+        command('remote', command=2)
+        state = wait(lambda s: not s['paused'])
+        check('headset toggle resumes the player', state['remoteSendResult'], state)
+        check('remote Play/Pause preserves transport handlers', not state['transportLosses'], state)
     command('configure', mode=0)
     state = wait(lambda s: s['seekEnabled'] and not s['skipEnabled'])
     check('changed control mode arrives', state['playEnabled'] and state['pauseEnabled'], state)
+    if args.transport_lifecycle:
+        check('control mode changes preserve transport handlers', not state['transportLosses'], state)
     command('configure', mode=2, stall=args.stall_service)
     command('close')
     state = wait(lambda s: not s['playEnabled'] and not s['pauseEnabled'] and not s['skipEnabled'] and not s['seekEnabled']
@@ -166,6 +230,10 @@ final class NativeScrollTests: XCTestCase {
     check('close wins over pending control changes', not state['ready'], state)
     check('iOS does not write macOS playbackState', state['playbackStateWrites'] == 0, state['playbackStateWrites'])
     shutil.copytree(container / 'Documents/Logs', out / 'Logs', dirs_exist_ok=True)
+    if args.transport_lifecycle:
+        phases, commands = diagnostic_contract(out / 'Logs/Diagnostics.jsonl')
+        check('diagnostics distinguish requested and applied remote configuration', phases, str(out / 'Logs/Diagnostics.jsonl'))
+        check('diagnostics record incoming play/pause independently of sleep timer', commands, str(out / 'Logs/Diagnostics.jsonl'))
     run(['xcrun', 'simctl', 'terminate', args.udid, BUNDLE])
     return 0 if all(c['passed'] for c in checks) else 1
 

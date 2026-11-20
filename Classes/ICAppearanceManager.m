@@ -133,27 +133,13 @@ static UIColor* ICResolvedThemeTintColor(void)
         UIWindow* rootWindow = [(InstacastAppDelegate*)App.delegate window];
         rootWindow.tintColor = ICTintColor;
 
-        UIView* subview = [rootWindow.subviews lastObject];
-        [subview removeFromSuperview];
-        [rootWindow addSubview:subview];
-
         // Recursively update all existing navigation bars, toolbars, and tab bars
         if (rootWindow.rootViewController) {
             [self _recursivelyUpdateBarsForViewController:rootWindow.rootViewController];
         }
 
-        // workaround a bug in iOS where presented view controllers don't get appearance methods
-        UIViewController* presentedViewController = rootWindow.rootViewController.presentedViewController;
-        do {
-            [presentedViewController beginAppearanceTransition:NO animated:NO];
-            [presentedViewController endAppearanceTransition];
-
-            [presentedViewController beginAppearanceTransition:YES animated:NO];
-            [presentedViewController endAppearanceTransition];
-
-            presentedViewController = presentedViewController.presentedViewController;
-        } while (presentedViewController);
-
+        // UIKit owns presented controllers and their appearance lifecycle. Detaching
+        // the window content or faking disappearance invalidates MessageUI drafts.
         [[NSNotificationCenter defaultCenter] postNotificationName:ICAppearanceManagerDidUpdateAppearanceNotification object:self];
     }
 }

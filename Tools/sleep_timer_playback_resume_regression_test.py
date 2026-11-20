@@ -91,6 +91,7 @@ NSString* PlaybackManagerDidUpdateNotification=@"MPPlaybackManagerDidUpdateNotif
 @property BOOL failed;
 @property NSInteger state;
 @property PlayerStub* player;
+@property PlayerStub* silenceTrimPlayer; // These cases exercise the unchanged AVPlayer path (nil).
 @property NSDate* seekingPositionChangeDate;
 @property NSDate* lastPauseDate;
 @property NSDate* playStartDate;
@@ -108,6 +109,7 @@ NSString* PlaybackManagerDidUpdateNotification=@"MPPlaybackManagerDidUpdateNotif
 - (MPRemoteCommandHandlerStatus)_pauseEvent:(MPRemoteCommandEvent*)event;
 - (void)updateNowPlayingInfo;
 - (void)_sendUpdateNotification;
+- (void)_playSilenceTrimPlayerWithRecentSeek:(BOOL)recent;
 @end
 @implementation PlaybackManager
 + (instancetype)playbackManager { static id p; if(!p)p=[self new]; return p; }
@@ -116,6 +118,7 @@ NSString* PlaybackManagerDidUpdateNotification=@"MPPlaybackManagerDidUpdateNotif
 - (void)openWithEpisode:(Episode*)episode at:(NSTimeInterval)time autostart:(BOOL)start {abort();}
 - (void)_saveCurrentPlaybackPosition {}
 - (void)updateNowPlayingInfo {}
+- (void)_playSilenceTrimPlayerWithRecentSeek:(BOOL)recent {abort();}
 PLAYER_METHODS
 @end
 '''.replace('PLAYER_METHODS', '\n'.join(player_methods))

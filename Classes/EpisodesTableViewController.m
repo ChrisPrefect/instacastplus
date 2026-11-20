@@ -874,6 +874,9 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
             [self.tableView selectRowAtIndexPath:[NSIndexPath indexPathForItem:index inSection:0] animated:NO scrollPosition:UITableViewScrollPositionNone];
         }
     }
+    if (self.editingStyle == EpisodesTableViewEditingStyleDownload) {
+        [self _logSelectionState:@"reload-completed"];
+    }
 }
 
 #pragma mark -
@@ -2783,6 +2786,41 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 #pragma mark -
 #pragma mark Content Selection
 
+- (void)_logSelectionState:(NSString*)reason
+{
+    UITableView* table = self.tableView;
+    NSMutableArray* rows = [NSMutableArray array];
+    // Leave UIKit's open swipe alone, including its cell enumeration/layout.
+    if (!self.swipeInteractionActive) {
+        for (EpisodesTableViewCell* cell in table.visibleCells) {
+            if (![cell isKindOfClass:EpisodesTableViewCell.class]) continue;
+            NSIndexPath* path = [table indexPathForCell:cell];
+            CDEpisode* episode = cell.objectValue;
+            [rows addObject:@{
+                @"row": path ? @(path.row) : @(-1),
+                @"cellID": [NSString stringWithFormat:@"%p", (__bridge void*)cell],
+                @"episodeHash": episode.objectHash ?: @"",
+                @"editing": @(cell.editing), @"selected": @(cell.selected),
+                @"playHidden": @(cell.playAccessoryButton.hidden),
+                @"contentX": @(CGRectGetMinX(cell.contentView.frame)),
+            }];
+        }
+    }
+    NSData* data = [NSJSONSerialization dataWithJSONObject:rows options:0 error:nil];
+    [[ICDiagnosticLogger shared] logEvent:@"episode-selection" message:@"state" metadata:@{
+        @"reason": reason,
+        @"controller": NSStringFromClass(self.class),
+        @"tableID": [NSString stringWithFormat:@"%p", (__bridge void*)table],
+        @"controllerEditing": @(self.editing), @"tableEditing": @(table.editing),
+        @"editingStyle": @(self.editingStyle),
+        @"multipleSelection": @(table.allowsMultipleSelectionDuringEditing),
+        @"swipeActive": @(self.swipeInteractionActive),
+        @"rowCount": @(table.numberOfSections > 0 ? [table numberOfRowsInSection:0] : 0),
+        @"selectedCount": @(table.indexPathsForSelectedRows.count),
+        @"visibleRows": data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"[]",
+    }];
+}
+
 
 - (void) setEditingStyle:(EpisodesTableViewEditingStyle)editingStyle
 {
@@ -2804,6 +2842,11 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
 - (void) setEditing:(BOOL)editing animated:(BOOL)animated
 {
+    [[ICDiagnosticLogger shared] logEvent:@"episode-selection" message:@"editing-requested" metadata:@{
+        @"reason": @"editing-requested", @"requestedEditing": @(editing), @"animated": @(animated),
+        @"controllerEditing": @(self.editing), @"tableEditing": @(self.tableView.editing),
+        @"tableID": [NSString stringWithFormat:@"%p", (__bridge void*)self.tableView],
+    }];
     [super setEditing:editing animated:animated];
 
     if (!editing) {
@@ -2811,6 +2854,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     }
 
     [self _updateToolbarItemsAnimated:animated];
+    [self _logSelectionState:@"editing-applied"];
 }
 
 
@@ -2940,6 +2984,9 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 - (void)tableView:(UITableView *)tableView didDeselectRowAtIndexPath:(NSIndexPath *)indexPath
 {
     [self _updateCacheButtonStateWithSelectedIndexPathes:[self.tableView indexPathsForSelectedRows]];
+    if (self.editingStyle == EpisodesTableViewEditingStyleDownload) {
+        [self _logSelectionState:@"deselected"];
+    }
 }
 
 - (BOOL)tableView:(UITableView *)tableView canMoveRowAtIndexPath:(NSIndexPath *)indexPath
@@ -2955,6 +3002,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     
     if (self.editingStyle == EpisodesTableViewEditingStyleDownload) {
         [self _updateCacheButtonStateWithSelectedIndexPathes:[self.tableView indexPathsForSelectedRows]];
+        [self _logSelectionState:@"selected"];
         return;
     }
     
