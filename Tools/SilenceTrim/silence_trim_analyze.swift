@@ -72,7 +72,15 @@ func decode(url: URL, maximumSeconds: Double?, startSeconds: Double = 0) throws 
     return DecodedAudio(sampleRate: sampleRate, channels: channels, samples: samples)
 }
 
+/// Speech detection for every run when set (`--detector speech`).
+var speechModel: ICSileroVADModel?
+/// Overrides the compressor's level check for sounds without speech (`--island-max-db`).
+var islandMaximumLevelDB: Float?
+var islandLevelCheckSet = false
+
 struct LevelResult {
+    var islands: [ICSilenceCompressor.IslandRecord] = []
+    var runs: [(start: Int64, end: Int64)] = []
     var name: String
     var inputSeconds: Double
     var outputSeconds: Double
@@ -88,7 +96,8 @@ struct LevelResult {
 }
 
 func run(level name: String, parameters: ICSilenceCompressor.Parameters, audio: DecodedAudio, keepOutput: Bool, thresholdRatio: Float? = nil, relativeDB: Float? = nil) -> LevelResult {
-    let compressor = ICSilenceCompressor(sampleRate: audio.sampleRate, channelCount: audio.channels, parameters: parameters)
+    let compressor = ICSilenceCompressor(sampleRate: audio.sampleRate, channelCount: audio.channels, parameters: parameters, speechModel: speechModel)
+    if islandLevelCheckSet { compressor.nonSpeechIslandMaximumLevelDB = islandMaximumLevelDB }
     if let thresholdRatio { compressor.thresholdRatio = thresholdRatio }
     if let relativeDB { compressor.relativeSilenceDB = relativeDB }
     compressor.recordsPauses = true
@@ -128,7 +137,9 @@ func run(level name: String, parameters: ICSilenceCompressor.Parameters, audio: 
         }
     }
     let elapsed = Date().timeIntervalSince(start)
-    return LevelResult(name: name,
+    return LevelResult(islands: compressor.islandRecords,
+                       runs: compressor.silentRuns,
+                       name: name,
                        inputSeconds: Double(audio.frames) / audio.sampleRate,
                        outputSeconds: Double(producedFrames) / audio.sampleRate,
                        compressedPauses: compressor.compressedPauseCount,
@@ -298,6 +309,50 @@ func writeWAV(samples: [Float], sampleRate: Double, channels: Int, to url: URL) 
     }
 }
 
+/// Sounds between two silent stretches as speech detection judged them.
+func printIslandStatistics(_ islands: [ICSilenceCompressor.IslandRecord], sampleRate: Double) {
+    func seconds(_ list: [ICSilenceCompressor.IslandRecord]) -> Double { list.reduce(0) { $0 + Double($1.end - $1.start) / sampleRate } }
+    let nonSpeech = islands.filter { !$0.containsSpeech }
+    let absorbed = islands.filter(\.absorbed)
+    print(String(format: "islands: %d judged, %d without speech (%.1f s), absorbed %d (%.1f s), kept by level check %d (%.1f s)",
+                 islands.count, nonSpeech.count, seconds(nonSpeech), absorbed.count, seconds(absorbed),
+                 nonSpeech.count - absorbed.count, seconds(nonSpeech) - seconds(absorbed)))
+    var line = "  without speech, peak vs speech level:"
+    var edges: [Float] = [-.infinity]
+    edges += stride(from: Float(-35), through: 0, by: 5).map { $0 }
+    edges.append(.infinity)
+    for i in 0..<(edges.count - 1) {
+        let bin = nonSpeech.filter { $0.peakAboveSpeechDB >= edges[i] && $0.peakAboveSpeechDB < edges[i + 1] }
+        line += String(format: " [%@..%@) %d/%.1fs", edges[i].isFinite ? String(Int(edges[i])) : "-inf", edges[i + 1].isFinite ? String(Int(edges[i + 1])) : "inf", bin.count, seconds(bin))
+    }
+    print(line)
+    var lengths = "  absorbed lengths:"
+    for (lo, hi) in [(0.0, 0.1), (0.1, 0.2), (0.2, 0.5), (0.5, 1.0), (1.0, 2.0), (2.0, 10.0)] {
+        let bin = absorbed.filter { let l = Double($0.end - $0.start) / sampleRate; return l >= lo && l < hi }
+        lengths += String(format: " %.1f-%.1fs %d", lo, hi, bin.count)
+    }
+    print(lengths)
+}
+
+/// All absorbed sounds one after the other, 0.25 s of silence between them (listening check).
+func writeIslands(_ islands: [ICSilenceCompressor.IslandRecord], audio: DecodedAudio, to url: URL) throws {
+    var samples = [Float]()
+    var index = ""
+    let gap = [Float](repeating: 0, count: Int(audio.sampleRate * 0.25) * audio.channels)
+    for island in islands {
+        let from = Int(island.start) * audio.channels
+        let to = min(Int(island.end) * audio.channels, audio.samples.count)
+        guard from < to else { continue }
+        index += String(format: "%.3f %.3f %.3f %.1f\n", Double(samples.count / audio.channels) / audio.sampleRate,
+                        Double(island.start) / audio.sampleRate, Double(island.end) / audio.sampleRate, island.peakAboveSpeechDB)
+        samples.append(contentsOf: audio.samples[from..<to])
+        samples.append(contentsOf: gap)
+    }
+    try index.write(to: url.appendingPathExtension("txt"), atomically: true, encoding: .utf8)
+    try writeWAV(samples: samples, sampleRate: audio.sampleRate, channels: audio.channels, to: url)
+    print(String(format: "islands written: %d sounds, %.1f s -> %@", islands.count, Double(samples.count / audio.channels) / audio.sampleRate, url.path))
+}
+
 func histogram(_ lengths: [Double]) -> [(String, Int, Double)] {
     let edges: [(String, Double, Double)] = [
         ("<0.1s", 0, 0.1), ("0.1-0.2s", 0.1, 0.2), ("0.2-0.3s", 0.2, 0.3), ("0.3-0.5s", 0.3, 0.5),
@@ -322,6 +377,8 @@ struct Analyze {
         var jsonURL: URL?
         var seconds: Double?
         var sweep = false
+        var islandsWAV: URL?
+        var runsOut: URL?
         var verifyOutput = false
         var start = 0.0
         while !args.isEmpty {
@@ -331,6 +388,19 @@ struct Analyze {
             case "--json": jsonURL = URL(fileURLWithPath: args.removeFirst())
             case "--seconds": seconds = Double(args.removeFirst())
             case "--sweep": sweep = true
+            case "--detector":
+                let value = args.removeFirst()
+                if value == "speech" {
+                    let weights = URL(fileURLWithPath: "Classes/SilenceTrim/silero_vad_16k_v6.2.3.bin")
+                    guard let model = ICSileroVADModel(weightsURL: weights) else { print("cannot load \(weights.path)"); exit(2) }
+                    speechModel = model
+                }
+            case "--island-max-db":
+                let value = args.removeFirst()
+                islandLevelCheckSet = true
+                islandMaximumLevelDB = value == "off" ? nil : Float(value)
+            case "--islands-wav": islandsWAV = URL(fileURLWithPath: args.removeFirst())
+            case "--runs-out": runsOut = URL(fileURLWithPath: args.removeFirst())
             case "--verify": verifyOutput = true
             case "--start": start = Double(args.removeFirst()) ?? 0
             default: print("unknown flag \(flag)"); exit(2)
@@ -376,7 +446,17 @@ struct Analyze {
         for level in ICSilenceTrimLevel.allLevels where level != .off {
             let parameters = level.compressorParameters!
             let result = run(level: level.diagnosticName, parameters: parameters, audio: audio, keepOutput: wavDir != nil || verifyOutput)
-            if runLengths.isEmpty { runLengths = result.runLengths; detectorSummary = result.detector }
+            if runLengths.isEmpty {
+                runLengths = result.runLengths; detectorSummary = result.detector
+                if speechModel != nil {
+                    printIslandStatistics(result.islands, sampleRate: audio.sampleRate)
+                    if let islandsWAV { try writeIslands(result.islands.filter(\.absorbed), audio: audio, to: islandsWAV) }
+                }
+                if let runsOut {
+                    try result.runs.map { String(format: "%.3f %.3f", Double($0.start) / audio.sampleRate, Double($0.end) / audio.sampleRate) }
+                        .joined(separator: "\n").write(to: runsOut, atomically: true, encoding: .utf8)
+                }
+            }
             let saved = result.inputSeconds - result.outputSeconds
             print(String(format: "%-7@ saved %6.1f s = %5.1f %% (effective %.3fx), %5d pauses, processing %.2f s (%.0fx realtime)",
                          level.diagnosticName as NSString, saved, 100 * saved / result.inputSeconds,

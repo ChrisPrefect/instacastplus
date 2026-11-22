@@ -2,12 +2,14 @@
 //  ICSilenceTrimPlayer.swift
 //  InstacastPlus
 //
-//  Plays a local audio file with shortened pauses. It only runs while pause shortening is
-//  active for the playing episode; every other case keeps using PlaybackManager's AVPlayer.
+//  Plays an episode with shortened pauses: a local file, or a stream that the app's stream cache
+//  is still downloading. It only runs while pause shortening is active for the playing episode;
+//  every other case keeps using PlaybackManager's AVPlayer.
 //
-//  Pipeline (serial `queue`):
-//    AVAssetReader (LPCM float) -> ICSilenceCompressor -> CMSampleBuffer
-//      -> AVSampleBufferAudioRenderer attached to an AVSampleBufferRenderSynchronizer.
+//  Pipeline:
+//    AVAssetReader (LPCM float, own queue per session, see DecodeFeed) -> ICSilenceCompressor
+//      -> CMSampleBuffer -> AVSampleBufferAudioRenderer attached to an
+//      AVSampleBufferRenderSynchronizer (serial `queue`).
 //
 //  AVSampleBufferAudioRenderer + AVSampleBufferRenderSynchronizer is the custom-player path for
 //  which Apple documents AirPlay 2 enhanced buffering and long-form routing ("Implementing
@@ -25,6 +27,15 @@ import AVFoundation
 import Foundation
 import os
 
+/// The app's stream cache (ICStreamingCacheLoader): it serves the stream asset's loading requests
+/// from the partly downloaded file and downloads what is missing, the newest request first.
+@objc(ICSilenceTrimStreamSource)
+protocol ICSilenceTrimStreamSource: AVAssetResourceLoaderDelegate {
+    var resourceLoaderQueue: DispatchQueue { get }
+    /// Ends these requests with NSURLErrorCancelled and stops downloading for them.
+    func abandonLoadingRequests(_ requests: [AVAssetResourceLoadingRequest])
+}
+
 @objc protocol ICSilenceTrimPlayerDelegate: AnyObject {
     func silenceTrimPlayerDidBecomeReady(_ player: ICSilenceTrimPlayer)
     func silenceTrimPlayer(_ player: ICSilenceTrimPlayer, didFailWithError error: Error)
@@ -33,6 +44,8 @@ import os
     /// The renderer dropped enqueued audio by itself (route change, AirPlay rate change) and the
     /// player continued from the flush time.
     @objc optional func silenceTrimPlayerDidFlushAutomatically(_ player: ICSilenceTrimPlayer, atTime time: TimeInterval)
+    /// A stream ran out of downloaded audio and the clock stopped, or it continues.
+    @objc optional func silenceTrimPlayerWaitingForDataDidChange(_ player: ICSilenceTrimPlayer)
 }
 
 @objc(ICSilenceTrimPlayer)
@@ -43,6 +56,9 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     @objc static let unsupportedMediaErrorCode = 1
     /// Decoding or rendering failed while playing.
     @objc static let playbackErrorCode = 2
+    /// Decoding the stream failed before its file was complete (connection lost, stream cache
+    /// failed); the complete file may still play.
+    @objc static let streamErrorCode = 3
 
     // MARK: Main-thread state
 
@@ -53,6 +69,20 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     @objc private(set) var url: URL
     /// Number of automatic renderer flushes handled (diagnostics).
     @objc private(set) var automaticFlushCount = 0
+    /// Decodes a stream through the app's stream cache (`init(streamURL:...)`).
+    @objc let isStream: Bool
+    /// The stream ran out of downloaded audio and the clock stands still.
+    @objc private(set) var isWaitingForData = false
+    /// Number of times the clock stopped for missing stream data (diagnostics).
+    @objc private(set) var dataWaitCount = 0
+    /// Decoder restarts after a stream read timed out (diagnostics, pipeline queue).
+    var streamTimeoutRestarts = 0
+    /// Pause-detection switches: output sample and source sample where the new compressor took over
+    /// (test diagnostics, pipeline queue).
+    var detectionSwitches: [(output: Int64, source: Int64)] = []
+    /// Every session start: output origin, source sample, precise, end of the enqueued audio
+    /// before the restart (test diagnostics, pipeline queue).
+    var sessionLog: [(output: Int64, source: Int64, precise: Bool, enqueuedBefore: Int64, reset: Bool)] = []
 
     /// Test seam, Swift-internal (invisible to the app's Objective-C code and unset in the app):
     /// reports every buffer handed to the renderer and every flush, in pipeline order, so a test
@@ -88,8 +118,6 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     private let synchronizer = AVSampleBufferRenderSynchronizer()
     private var asset: AVURLAsset
     private var audioTrack: AVAssetTrack?
-    private var reader: AVAssetReader?
-    private var readerOutput: AVAssetReaderTrackOutput?
     private var compressor: ICSilenceCompressor?
     private var formatDescription: CMAudioFormatDescription?
     private var sampleRate: Double = 44100
@@ -112,7 +140,31 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     private var preciseTrack: AVAssetTrack?
     private var sessionIsPrecise = false
     private var pendingRealign = false
+    /// The pause detection changed; a new compressor takes over at the next silent pause.
+    private var pendingDetectionSwitch = false
     private var reportedFailure = false
+    /// The stream's file, once complete on the device; it becomes the precise decoder.
+    private var completeFileURL: URL?
+    private let streamTracker: StreamRequestTracker?
+    private var ownedHTTPSource: ICSilenceTrimHTTPSource?
+    // Decoding runs ahead on the feed's own queue (see DecodeFeed). When the feed is empty the
+    // pipeline stops asking for data until the feed reports input.
+    private var feed: DecodeFeed?
+    private var waitingForInput = false
+    private var dataWaitObserver: Any?
+    /// The renderer holds all it wants (or the file ended): the analysis reaches as far as it will
+    /// for now. Silent-point queries are answered then.
+    private var pipelineIdle = false
+    private var silentPointQueries: [(TimeInterval, @Sendable (TimeInterval) -> Void)] = []
+    /// Stream reads that timed out in a row without new input (see readNextInput).
+    private var streamTimeouts = 0
+    private static let maximumStreamTimeouts = 3
+    /// Seconds of enqueued audio left when the clock stops for missing data, and seconds that
+    /// have to be enqueued before it runs again.
+    private static let dataWaitMargin = 0.1
+    private static let dataResumeAhead = 1.0
+    /// Decoded ahead per session (frames = seconds x sample rate).
+    private static let decodeAheadSeconds = 4.0
 
     // MARK: Shared state (lock)
 
@@ -140,16 +192,74 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     /// it resets the timeline, so it can neither restart a paused clock nor stop a playing one.
     private let clockLock = NSLock()
     private var clockRate: Float = 0
+    /// The clock is held at 0 until enough audio is enqueued: after every seek and while a stream
+    /// waits for data. The synchronizer runs on without audio otherwise, also with
+    /// delaysRateChangeUntilHasSufficientMediaData (measured 21.11.2026: 0.84 s after
+    /// setRate(1) without any data; audio enqueued later lay in the past).
+    private var clockHeld = true
+    /// End (source seconds) of the decoded audio, for the playable range of a stream.
+    private let decodedEnd = OSAllocatedUnfairLock(initialState: 0.0)
 
     private var observers: [NSObjectProtocol] = []
 
     // MARK: Init
 
-    @objc init(url: URL, level: ICSilenceTrimLevel) {
+    /// Whether speech detection was asked for; `speechDetectionActive` tells whether it runs
+    /// (the model is part of the app bundle, so it only fails to load in a broken build).
+    @objc private(set) var requestedSpeechDetection: Bool
+    @objc var speechDetectionActive: Bool { speechDetectionOnMain }
+    private var speechDetectionOnMain: Bool
+    /// Pipeline queue.
+    private var speechModel: ICSileroVADModel?
+
+    @objc convenience init(url: URL, level: ICSilenceTrimLevel) {
+        self.init(url: url, level: level, speechDetection: false)
+    }
+
+    @objc convenience init(url: URL, level: ICSilenceTrimLevel, speechDetection: Bool) {
+        self.init(url: url, asset: AVURLAsset(url: url), tracker: nil, level: level, speechDetection: speechDetection)
+    }
+
+    /// Plays the stream cache's asset URL. AVAssetReader refuses http URLs (AVError -11838) but
+    /// reads through a resource loader; the stream cache serves the downloaded bytes and fetches
+    /// the missing ones first.
+    @objc convenience init(streamURL: URL, source: ICSilenceTrimStreamSource, level: ICSilenceTrimLevel, speechDetection: Bool) {
+        let asset = AVURLAsset(url: streamURL)
+        let tracker = StreamRequestTracker(source: source)
+        asset.resourceLoader.setDelegate(tracker, queue: source.resourceLoaderQueue)
+        self.init(url: streamURL, asset: asset, tracker: tracker, level: level, speechDetection: speechDetection)
+    }
+
+    /// Plays a stream the app does not keep (stream caching off): ICSilenceTrimHTTPSource fetches
+    /// the requested ranges into a temporary file that is deleted when the player is invalidated.
+    @objc convenience init(remoteURL: URL, username: String?, password: String?, mimeType: String?,
+                           level: ICSilenceTrimLevel, speechDetection: Bool) {
+        let source = ICSilenceTrimHTTPSource(remoteURL: remoteURL, username: username, password: password, mimeType: mimeType)
+        self.init(streamURL: URL(string: "instacast-silencetrim-stream://\(UUID().uuidString)")!, source: source,
+                  level: level, speechDetection: speechDetection)
+        ownedHTTPSource = source
+    }
+
+    /// Reads the stream with its own HTTP source instead of the app's stream cache.
+    @objc var readsStreamItself: Bool { ownedHTTPSource != nil }
+
+    /// For the app's chapter and artwork reading: an asset answered from this player's own
+    /// download, so the stream crosses the network once. Nil unless the player reads the stream
+    /// itself.
+    @objc func makeMetadataAsset() -> AVURLAsset? {
+        ownedHTTPSource?.makeMetadataAsset()
+    }
+
+    private init(url: URL, asset: AVURLAsset, tracker: StreamRequestTracker?, level: ICSilenceTrimLevel, speechDetection: Bool) {
+        self.requestedSpeechDetection = speechDetection
+        self.speechModel = speechDetection ? ICSileroVADModel.bundled : nil
+        self.speechDetectionOnMain = speechModel != nil
         self.url = url
-        self.asset = AVURLAsset(url: url)
-        self.levelValue = level == .off ? .medium : level
-        self.levelOnMain = level == .off ? .medium : level
+        self.asset = asset
+        self.streamTracker = tracker
+        self.isStream = tracker != nil
+        self.levelValue = level
+        self.levelOnMain = level
         super.init()
         synchronizer.addRenderer(renderer)
         // Same time-pitch algorithm as an AVPlayerItem for this file, so a speed setting sounds
@@ -163,6 +273,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
         }
+        ownedHTTPSource?.stop()
     }
 
     // MARK: Public API (main thread)
@@ -211,7 +322,12 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                         self.makeFormatDescription()
                         self.mapLock.withLock { $0.sampleRate = rate }
                         self.restartPipeline(atSource: max(0, min(time, seconds)), outputOrigin: 0, resetTimeline: true)
-                        self.warmUpPreciseTiming()
+                        // A stream has no precise decoder until its file is complete: the
+                        // precise asset reads the whole file first (measured: all 140 MB of a
+                        // 2.5 h episode before the first sample).
+                        if let preciseURL = self.isStream ? self.completeFileURL : self.url {
+                            self.warmUpPreciseTiming(from: preciseURL)
+                        }
                         DispatchQueue.main.async {
                             guard !self.invalidated else { return }
                             self.isReady = true
@@ -221,7 +337,10 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self?.fail(code: Self.unsupportedMediaErrorCode, reason: "asset load failed: \(error.localizedDescription)")
+                    // A stream that cannot be opened is a lost connection, not an unusable file.
+                    guard let self else { return }
+                    self.fail(code: self.isStream ? Self.streamErrorCode : Self.unsupportedMediaErrorCode,
+                              reason: "asset load failed: \(error.localizedDescription)")
                 }
             }
         }
@@ -237,6 +356,30 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     @objc var rate: Float {
         playing ? requestedRateValue : 0
     }
+
+    /// End of the decoded audio (source seconds); the whole file once it is local.
+    @objc var bufferedTime: TimeInterval {
+        decodedEnd.withLock { $0 }
+    }
+
+    /// The stream's file is complete on the device. Decoding moves to it at the next silent
+    /// pause (with exact sample positions from then on); the stream is not read any more.
+    @objc func adoptCompleteFile(at fileURL: URL) {
+        guard isStream else { return }
+        queue.async {
+            guard self.completeFileURL == nil, !self.reportedFailure else { return }
+            self.completeFileURL = fileURL
+            if self.audioTrack != nil {
+                self.warmUpPreciseTiming(from: fileURL)
+            }
+        }
+    }
+
+    /// Whether decoding reads the stream's complete file (diagnostics).
+    @objc var decodesCompleteFile: Bool { isStream && sessionIsPrecise }
+
+    /// Waiting stream requests of replaced decoders that were withdrawn (diagnostics).
+    @objc var withdrawnStreamRequests: Int { streamTracker?.withdrawnCount ?? 0 }
 
     /// Speed used while playing; applied immediately when playing.
     @objc var requestedRate: Float {
@@ -256,12 +399,58 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         set { renderer.volume = newValue }
     }
 
+    /// `.off` keeps playing without shortening (passthrough); see ICSilenceTrimLevel.
     @objc var level: ICSilenceTrimLevel {
         get { levelOnMain }
         set {
-            guard newValue != .off, newValue != levelOnMain else { return }
+            guard newValue != levelOnMain else { return }
             levelOnMain = newValue
             queue.async { self.applyLevel(newValue) }
+        }
+    }
+
+    /// Switches between speech detection (Silero) and the level detection while playing. A new
+    /// compressor takes over at the next shortened pause that is truly silent, primed, like the
+    /// switch to the precise decoder: a restart without that decoder may sit one MP3 frame off,
+    /// which mid-speech clicked (measured 21.11.2026, ATP 717: step x5.1 at -13 dB).
+    @objc func setSpeechDetection(_ enabled: Bool) {
+        guard enabled != requestedSpeechDetection else { return }
+        requestedSpeechDetection = enabled
+        let model = enabled ? ICSileroVADModel.bundled : nil
+        speechDetectionOnMain = model != nil
+        queue.async {
+            self.speechModel = model
+            self.pendingDetectionSwitch = self.compressor != nil
+        }
+    }
+
+    /// Finds the first silent point (level detection, ± 60 ms silent) at or after `time` (source
+    /// seconds) in the audio analysed so far. The completion runs on the main thread with the
+    /// source time, or -1 when there is none yet.
+    /// The answer waits until the pipeline has filled the renderer, i.e. analysed as far ahead as
+    /// it goes (about 2 s plus the planning look-ahead).
+    @objc func findSilentPoint(after time: TimeInterval, completion: @escaping @Sendable (TimeInterval) -> Void) {
+        queue.async {
+            self.silentPointQueries.append((time, completion))
+            if self.pipelineIdle || self.reportedFailure {
+                self.answerSilentPointQueries()
+            }
+        }
+    }
+
+    /// Pipeline queue.
+    private func answerSilentPointQueries() {
+        let queries = silentPointQueries
+        silentPointQueries.removeAll()
+        for (time, completion) in queries {
+            var found: TimeInterval = -1
+            if !reportedFailure, let compressor,
+               let sample = compressor.firstSilentSample(atOrAfter: Int64((time * sampleRate).rounded()),
+                                                         margin: Int64(0.06 * sampleRate)) {
+                found = Double(sample) / sampleRate
+            }
+            let answer = found
+            DispatchQueue.main.async { completion(answer) }
         }
     }
 
@@ -310,7 +499,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     private func setClockRate(_ rate: Float) {
         clockLock.lock()
         clockRate = rate
-        synchronizer.rate = rate
+        synchronizer.rate = clockHeld ? 0 : rate
         clockLock.unlock()
     }
 
@@ -353,10 +542,12 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
             self.generation += 1
             self.renderer.stopRequestingMediaData()
             self.renderer.flush()
-            self.reader?.cancelReading()
-            self.reader = nil
-            self.readerOutput = nil
+            self.feed?.cancel()
+            self.feed = nil
+            self.streamTracker?.beginDecoderSession()
+            self.ownedHTTPSource?.stop()
             self.compressor = nil
+            self.removeDataWaitObserver()
             if let observer = self.endObserver {
                 self.synchronizer.removeTimeObserver(observer)
                 self.endObserver = nil
@@ -458,12 +649,19 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
             synchronizer.removeTimeObserver(observer)
             endObserver = nil
         }
-        reader?.cancelReading()
-        reader = nil
-        readerOutput = nil
+        // The replaced feed stops on its own queue; its waiting stream requests are withdrawn.
+        feed?.cancel()
+        feed = nil
+        streamTracker?.beginDecoderSession()
+        waitingForInput = false
+        pipelineIdle = false
+        removeDataWaitObserver()
         readerFinished = false
 
         guard let defaultTrack = audioTrack else { return }
+        if renderEventObserver != nil {
+            sessionLog.append((outputOrigin, exactSample ?? Int64((source * sampleRate).rounded()), preciseAsset != nil, enqueuedEnd, resetTimeline))
+        }
         let decodeAsset = preciseAsset ?? asset
         let track = preciseTrack ?? defaultTrack
         sessionIsPrecise = preciseAsset != nil
@@ -471,9 +669,9 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         let sourceSample = exactSample ?? Int64((source * sampleRate).rounded())
 
         // The compressor decides where its input has to start (one hop earlier when primed).
-        let parameters = levelValue.compressorParameters ?? ICSilenceTrimLevel.medium.compressorParameters!
+        let parameters = levelValue.playbackParameters
         if compressor == nil || compressor?.sampleRate != sampleRate || compressor?.channelCount != channelCount {
-            compressor = ICSilenceCompressor(sampleRate: sampleRate, channelCount: channelCount, parameters: parameters)
+            compressor = ICSilenceCompressor(sampleRate: sampleRate, channelCount: channelCount, parameters: parameters, speechModel: speechModel)
         }
         guard let compressor else { return }
         compressor.updateParameters(parameters)
@@ -506,8 +704,18 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
             guard newReader.startReading() else {
                 throw newReader.error ?? NSError(domain: Self.errorDomain, code: Self.playbackErrorCode)
             }
-            reader = newReader
-            readerOutput = output
+            let newFeed = DecodeFeed(reader: newReader, output: output,
+                                     maximumFrames: Int(Self.decodeAheadSeconds * sampleRate))
+            let rate = sampleRate
+            newFeed.onDecoded = { [weak self] end in
+                self?.decodedEnd.withLock { $0 = max($0, Double(end) / rate) }
+            }
+            newFeed.onInput = { [weak self] in
+                guard let self else { return }
+                self.queue.async { self.feedHasInput(generation: currentGeneration) }
+            }
+            feed = newFeed
+            newFeed.start()
         } catch {
             reportFailure(reason: "reader start failed: \(error.localizedDescription)")
             return
@@ -544,9 +752,12 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         }
 
         if resetTimeline {
+            // Held at 0 until the new position has audio (see `clockHeld`).
             clockLock.lock()
-            synchronizer.setRate(clockRate, time: .zero)
+            clockHeld = true
+            synchronizer.setRate(0, time: .zero)
             clockLock.unlock()
+            decodedEnd.withLock { $0 = source }
         }
 
         renderer.requestMediaDataWhenReady(on: queue) { [weak self] in
@@ -561,61 +772,115 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
             return
         }
         while renderer.isReadyForMoreMediaData {
-            if pendingRealign, let compressor, compressor.nextHopIsShortened {
+            if pendingRealign || pendingDetectionSwitch, let compressor, compressor.nextHopIsSilentPause {
                 realignAtEnqueuedHead(compressor)
                 return
             }
-            guard let buffer = nextSampleBuffer() else {
+            switch nextSampleBuffer() {
+            case .buffer(let buffer):
+                renderer.enqueue(buffer)
+                renderEventObserver?(.enqueue(buffer))
+                releaseClockIfBuffered(force: false)
+            case .waitForInput:
+                // The feed reports new input (feedHasInput); until then the renderer plays
+                // what it has and the clock stops shortly before that runs out.
+                waitingForInput = true
+                renderer.stopRequestingMediaData()
+                armDataWait()
+                return
+            case .none:
                 if compressor?.isFinished == true {
                     renderer.stopRequestingMediaData()
                     scheduleEndOfStream()
+                    releaseClockIfBuffered(force: true)
+                    pipelineIdle = true
+                    answerSilentPointQueries()
                 }
                 return
+            case .restarted:
+                return
             }
-            renderer.enqueue(buffer)
-            renderEventObserver?(.enqueue(buffer))
         }
+        // The renderer holds all it wants.
+        releaseClockIfBuffered(force: true)
+        pipelineIdle = true
+        answerSilentPointQueries()
     }
 
-    private func nextSampleBuffer() -> CMSampleBuffer? {
-        guard let compressor else { return nil }
+    private enum NextBuffer {
+        case buffer(CMSampleBuffer)
+        case waitForInput
+        case none
+        /// A new session took over; it requests its own data.
+        case restarted
+    }
+
+    private func nextSampleBuffer() -> NextBuffer {
+        guard let compressor else { return .none }
         while true {
             if let chunk = compressor.produce(maximumFrames: 4096) {
-                return makeSampleBuffer(chunk)
+                guard let buffer = makeSampleBuffer(chunk) else { return .none }
+                return .buffer(buffer)
             }
-            if compressor.isFinished { return nil }
+            if compressor.isFinished { return .none }
             if !compressor.wantsInput && readerFinished {
                 compressor.finishInput()
                 continue
             }
-            guard readNextInput() else { return nil }
+            switch readNextInput() {
+            case .fed: continue
+            case .waitForInput: return .waitForInput
+            case .failed: return .none
+            case .restarted: return .restarted
+            }
         }
     }
 
-    /// Feeds one decoded buffer into the compressor. Returns false on a hard failure.
-    private func readNextInput() -> Bool {
-        guard let reader, let readerOutput, let compressor else { return false }
+    private enum InputResult { case fed, waitForInput, failed, restarted }
+
+    /// Feeds one decoded buffer into the compressor.
+    private func readNextInput() -> InputResult {
+        guard let feed, let compressor else { return .failed }
         if readerFinished {
             compressor.finishInput()
-            return true
+            return .fed
         }
-        guard let sampleBuffer = readerOutput.copyNextSampleBuffer() else {
-            if reader.status == .failed {
-                reportFailure(reason: "decoding failed: \(reader.error?.localizedDescription ?? "unknown")")
-                return false
-            }
+        let sampleBuffer: CMSampleBuffer
+        switch feed.next() {
+        case .buffer(let buffer):
+            sampleBuffer = buffer
+            streamTimeouts = 0
+        case .waitForInput:
+            return .waitForInput
+        case .finished:
             readerFinished = true
             compressor.finishInput()
-            return true
+            return .fed
+        case .failed(let error):
+            // Before its file is complete a stream fails for the connection or the stream cache.
+            let streamFailure = isStream && !sessionIsPrecise
+            // AVFoundation ends a loading request after about 9 s without data (NSURLError
+            // -1001, measured 21.11.2026), while the stream cache keeps downloading for up to
+            // 30 s. A new decoder continues at the end of the enqueued audio, primed; without the
+            // precise decoder that may be one MP3 frame off, after at least 9 s of silence.
+            if streamFailure, (error as NSError).domain == NSURLErrorDomain, (error as NSError).code == NSURLErrorTimedOut,
+               streamTimeouts < Self.maximumStreamTimeouts {
+                streamTimeouts += 1
+                streamTimeoutRestarts += 1
+                restartAtEnqueuedEnd()
+                return .restarted
+            }
+            reportFailure(reason: "decoding failed: \(error.localizedDescription)", code: streamFailure ? Self.streamErrorCode : Self.playbackErrorCode)
+            return .failed
         }
-        guard let block = CMSampleBufferGetDataBuffer(sampleBuffer) else { return true }
+        guard let block = CMSampleBufferGetDataBuffer(sampleBuffer) else { return .fed }
         let frames = CMSampleBufferGetNumSamples(sampleBuffer)
-        guard frames > 0 else { return true }
+        guard frames > 0 else { return .fed }
         // Skip the decoder pre-roll in front of the compressor's start.
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         let firstSample = pts.isNumeric ? pts.convertScale(CMTimeScale(sampleRate), method: .roundHalfAwayFromZero).value : compressorInputStart
         let skip = Int(max(0, min(Int64(frames), compressorInputStart - firstSample)))
-        guard skip < frames else { return true }
+        guard skip < frames else { return .fed }
         var lengthAtOffset = 0
         var totalLength = 0
         var pointer: UnsafeMutablePointer<CChar>?
@@ -633,13 +898,109 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                 _ = CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: totalLength, destination: raw.baseAddress!)
             }
             let copiedFrames = min(frames, copy.count / channelCount)
-            guard skip < copiedFrames else { return true }
+            guard skip < copiedFrames else { return .fed }
             copy.withUnsafeBufferPointer { floats in
                 compressor.append(interleaved: UnsafeBufferPointer(rebasing: floats[(skip * channelCount)..<(copiedFrames * channelCount)]),
                                   frameCount: copiedFrames - skip)
             }
         }
-        return true
+        return .fed
+    }
+
+    /// Continues with a new session where the enqueued audio ends: the same continuation point as
+    /// after an automatic flush there, primed, so nothing is lost or repeated.
+    private func restartAtEnqueuedEnd(newCompressor: Bool = false) {
+        let output = enqueuedEnd
+        let sample = mapLock.withLock { state in
+            state.output.isEmpty ? Int64((state.pendingSource * sampleRate).rounded()) : Self.sourceSample(in: state, output: output)
+        }
+        if newCompressor {
+            // restartPipeline builds it with the current speech model.
+            compressor = nil
+        }
+        restartPipeline(atSource: Double(sample) / sampleRate, outputOrigin: output, resetTimeline: false,
+                        sourceSample: sample, primed: true)
+    }
+
+    // MARK: Waiting for stream data (queue)
+
+    /// Output sample where the enqueued audio ends.
+    private var enqueuedEnd: Int64 {
+        sessionOutputOrigin + (compressor?.nextOutputPosition ?? 0)
+    }
+
+    private func feedHasInput(generation requestGeneration: Int) {
+        guard requestGeneration == generation, waitingForInput, !reportedFailure else { return }
+        waitingForInput = false
+        removeDataWaitObserver()
+        renderer.requestMediaDataWhenReady(on: queue) { [weak self] in
+            self?.provideMediaData(generation: requestGeneration)
+        }
+    }
+
+    /// Stops the clock shortly before the enqueued audio runs out, unless input arrives first.
+    private func armDataWait() {
+        removeDataWaitObserver()
+        let margin = Int64(Self.dataWaitMargin * sampleRate)
+        let boundary = enqueuedEnd - margin
+        let now = synchronizer.currentTime().convertScale(CMTimeScale(sampleRate), method: .roundTowardNegativeInfinity).value
+        guard boundary > now else {
+            holdClockForData()
+            return
+        }
+        let currentGeneration = generation
+        dataWaitObserver = synchronizer.addBoundaryTimeObserver(forTimes: [NSValue(time: CMTime(value: boundary, timescale: CMTimeScale(sampleRate)))],
+                                                                queue: queue) { [weak self] in
+            guard let self, self.generation == currentGeneration, self.waitingForInput else { return }
+            self.holdClockForData()
+        }
+    }
+
+    private func removeDataWaitObserver() {
+        if let observer = dataWaitObserver {
+            synchronizer.removeTimeObserver(observer)
+            dataWaitObserver = nil
+        }
+    }
+
+    private func holdClockForData() {
+        clockLock.lock()
+        let wasHeld = clockHeld
+        clockHeld = true
+        synchronizer.rate = 0
+        clockLock.unlock()
+        guard !wasHeld else { return }
+        DispatchQueue.main.async {
+            guard !self.invalidated else { return }
+            self.dataWaitCount += 1
+            self.isWaitingForData = true
+            self.delegate?.silenceTrimPlayerWaitingForDataDidChange?(self)
+        }
+    }
+
+    /// Lets the clock run once enough audio is enqueued (`force`: the renderer is full or the
+    /// file ends).
+    private func releaseClockIfBuffered(force: Bool) {
+        clockLock.lock()
+        guard clockHeld else {
+            clockLock.unlock()
+            return
+        }
+        if !force {
+            let ahead = Double(enqueuedEnd) / sampleRate - CMTimeGetSeconds(synchronizer.currentTime())
+            guard ahead >= Self.dataResumeAhead else {
+                clockLock.unlock()
+                return
+            }
+        }
+        clockHeld = false
+        synchronizer.rate = clockRate
+        clockLock.unlock()
+        DispatchQueue.main.async {
+            guard !self.invalidated, self.isWaitingForData else { return }
+            self.isWaitingForData = false
+            self.delegate?.silenceTrimPlayerWaitingForDataDidChange?(self)
+        }
     }
 
     private func makeSampleBuffer(_ chunk: ICSilenceCompressor.Chunk) -> CMSampleBuffer? {
@@ -697,8 +1058,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     }
 
     /// Loads the precise asset off the pipeline queue, including its file scan.
-    private func warmUpPreciseTiming() {
-        let url = self.url
+    private func warmUpPreciseTiming(from url: URL) {
         Task.detached(priority: .utility) { [weak self] in
             let precise = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
             guard let track = try? await precise.loadTracks(withMediaType: .audio).first,
@@ -724,11 +1084,19 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     /// Continues the current session with the precise decoder at the head of the enqueued
     /// audio, which lies inside a shortened pause. Nothing is flushed.
     private func realignAtEnqueuedHead(_ compressor: ICSilenceCompressor) {
-        pendingRealign = false
         let output = sessionOutputOrigin + compressor.nextOutputPosition
         let source = compressor.nextSourcePosition
-        realignCount += 1
-        lastRealign = (output, source)
+        if pendingRealign && preciseAsset != nil {
+            realignCount += 1
+            lastRealign = (output, source)
+        }
+        pendingRealign = false
+        if pendingDetectionSwitch {
+            pendingDetectionSwitch = false
+            // restartPipeline builds the new one with the current speech model.
+            self.compressor = nil
+            detectionSwitches.append((output, source))
+        }
         restartPipeline(atSource: Double(source) / sampleRate, outputOrigin: output, resetTimeline: false,
                         sourceSample: source, primed: true)
     }
@@ -755,7 +1123,8 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
     }
 
     private func applyLevel(_ newLevel: ICSilenceTrimLevel) {
-        guard newLevel != levelValue, let parameters = newLevel.compressorParameters else { return }
+        guard newLevel != levelValue else { return }
+        let parameters = newLevel.playbackParameters
         levelValue = newLevel
         guard let compressor else { return }
         // Audio not produced yet uses the new values at once.
@@ -813,7 +1182,8 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
 #if canImport(UIKit)
         observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification,
                                             object: nil, queue: nil) { [weak self] _ in
-            self?.queue.async { self?.reportFailure(reason: "media services were reset") }
+            guard let self else { return }
+            self.queue.async { self.reportFailure(reason: "media services were reset", code: Self.playbackErrorCode) }
         })
 #endif
     }
@@ -824,7 +1194,9 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         renderEventObserver?(.flushFrom(time))
         // Every sample from `time` on is gone (the notification names the first flushed sample).
         // Continue exactly there, primed, so the audio goes on without gap, overlap or fade dip.
-        let output = time.convertScale(CMTimeScale(sampleRate), method: .roundHalfAwayFromZero).value
+        // Nothing exists after the enqueued audio. A flush time beyond its end (measured in the
+        // glitch probe: 417 samples) continues there; starting at the flush time left a gap.
+        let output = min(time.convertScale(CMTimeScale(sampleRate), method: .roundHalfAwayFromZero).value, enqueuedEnd)
         let sample = mapLock.withLock { state in
             state.output.isEmpty ? Int64((state.pendingSource * sampleRate).rounded()) : Self.sourceSample(in: state, output: output)
         }
@@ -842,12 +1214,13 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
 
     // MARK: Failure
 
-    private func reportFailure(reason: String) {
+    private func reportFailure(reason: String, code: Int = ICSilenceTrimPlayer.playbackErrorCode) {
         guard !reportedFailure else { return }
         reportedFailure = true
         renderer.stopRequestingMediaData()
+        answerSilentPointQueries()
         DispatchQueue.main.async {
-            self.fail(code: Self.playbackErrorCode, reason: reason)
+            self.fail(code: code, reason: reason)
         }
     }
 
@@ -855,5 +1228,202 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         guard !invalidated else { return }
         let error = NSError(domain: Self.errorDomain, code: code, userInfo: [NSLocalizedDescriptionKey: reason])
         delegate?.silenceTrimPlayer(self, didFailWithError: error)
+    }
+}
+
+// MARK: - Decoding ahead
+
+/// Decodes one session ahead of the pipeline on its own queue. On a stream,
+/// `copyNextSampleBuffer` waits for the network; the pipeline queue must not wait with it,
+/// because seeks, level changes and the renderer run there.
+///
+/// AVAssetReader must not be cancelled while a copy waits: `cancelReading` from another thread
+/// crashed inside the waiting copy (SIGSEGV in FigSemaphoreWaitRelative, measured 21.11.2026).
+/// The reader is therefore only touched on `decodeQueue`; a replaced feed cancels it there as
+/// soon as the copy returns, and StreamRequestTracker ends the request the copy waits for.
+private final class DecodeFeed: @unchecked Sendable {
+    enum Item {
+        case buffer(CMSampleBuffer)
+        case waitForInput
+        case finished
+        case failed(Error)
+    }
+
+    private let reader: AVAssetReader
+    private let output: AVAssetReaderTrackOutput
+    private let decodeQueue = DispatchQueue(label: "com.iteconomy.instacast.silencetrim.decode", qos: .userInitiated)
+    private let maximumFrames: Int
+    private let lock = NSLock()
+    private var buffers: [CMSampleBuffer] = []
+    private var head = 0
+    private var bufferedFrames = 0
+    private var decoding = false
+    private var finished = false
+    private var failure: Error?
+    private var cancelled = false
+    private var consumerWaiting = false
+    /// Runs on `decodeQueue` when input arrives after `next()` found the feed empty.
+    var onInput: (() -> Void)?
+    /// Runs on `decodeQueue` with the end of every decoded buffer (source sample).
+    var onDecoded: ((Int64) -> Void)?
+
+    init(reader: AVAssetReader, output: AVAssetReaderTrackOutput, maximumFrames: Int) {
+        self.reader = reader
+        self.output = output
+        self.maximumFrames = maximumFrames
+    }
+
+    func start() {
+        lock.lock()
+        let go = claimDecodingLocked()
+        lock.unlock()
+        if go { decodeQueue.async { self.decode() } }
+    }
+
+    private func claimDecodingLocked() -> Bool {
+        guard !decoding, !finished, !cancelled, bufferedFrames < maximumFrames else { return false }
+        decoding = true
+        return true
+    }
+
+    private func decode() {
+        while true {
+            lock.lock()
+            if cancelled || bufferedFrames >= maximumFrames {
+                decoding = false
+                lock.unlock()
+                break
+            }
+            lock.unlock()
+            let sampleBuffer = output.copyNextSampleBuffer()
+            lock.lock()
+            if cancelled {
+                decoding = false
+                lock.unlock()
+                break
+            }
+            if let sampleBuffer {
+                buffers.append(sampleBuffer)
+                bufferedFrames += CMSampleBufferGetNumSamples(sampleBuffer)
+            } else {
+                if reader.status == .failed {
+                    failure = reader.error ?? NSError(domain: ICSilenceTrimPlayer.errorDomain, code: ICSilenceTrimPlayer.playbackErrorCode)
+                }
+                finished = true
+                decoding = false
+            }
+            let notify = consumerWaiting
+            consumerWaiting = false
+            lock.unlock()
+            if let sampleBuffer {
+                let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                if pts.isNumeric, let onDecoded {
+                    let rate = CMSampleBufferGetFormatDescription(sampleBuffer)
+                        .flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee.mSampleRate } ?? 44100
+                    let start = pts.convertScale(CMTimeScale(rate), method: .roundHalfAwayFromZero).value
+                    onDecoded(start + Int64(CMSampleBufferGetNumSamples(sampleBuffer)))
+                }
+            }
+            if notify { onInput?() }
+            if sampleBuffer == nil { break }
+        }
+        lock.lock()
+        let stop = cancelled
+        lock.unlock()
+        if stop { reader.cancelReading() }
+    }
+
+    /// Next decoded buffer, or why there is none (pipeline queue).
+    func next() -> Item {
+        lock.lock()
+        if head < buffers.count {
+            let buffer = buffers[head]
+            head += 1
+            if head >= 64 {
+                buffers.removeFirst(head)
+                head = 0
+            }
+            bufferedFrames -= CMSampleBufferGetNumSamples(buffer)
+            let go = bufferedFrames <= maximumFrames / 2 && claimDecodingLocked()
+            lock.unlock()
+            if go { decodeQueue.async { self.decode() } }
+            return .buffer(buffer)
+        }
+        defer { lock.unlock() }
+        if let failure { return .failed(failure) }
+        if finished { return .finished }
+        consumerWaiting = true
+        return .waitForInput
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        buffers.removeAll()
+        head = 0
+        bufferedFrames = 0
+        lock.unlock()
+        decodeQueue.async { self.reader.cancelReading() }
+    }
+}
+
+// MARK: - Stream requests
+
+/// Hands the stream asset's loading requests to the stream cache and withdraws those of replaced
+/// decoders. A replaced reader cannot be cancelled while it waits (see DecodeFeed), and a request
+/// it leaves behind competes with the new position: the stream cache serves every waiting
+/// request's range first and cancels the running download for a range elsewhere, so two waiting
+/// requests at different offsets restart the download on every received chunk.
+private final class StreamRequestTracker: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
+    private let source: ICSilenceTrimStreamSource
+    private let lock = NSLock()
+    /// 0 for the asset's own requests (duration, tracks), then one per decoder session.
+    private var session = 0
+    private var requests: [(request: AVAssetResourceLoadingRequest, session: Int)] = []
+    private var withdrawn = 0
+    var withdrawnCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return withdrawn
+    }
+
+    init(source: ICSilenceTrimStreamSource) {
+        self.source = source
+    }
+
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
+                        shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
+        lock.lock()
+        requests.removeAll { $0.request.isFinished || $0.request.isCancelled }
+        requests.append((loadingRequest, session))
+        lock.unlock()
+        return source.resourceLoader?(resourceLoader, shouldWaitForLoadingOfRequestedResource: loadingRequest) ?? false
+    }
+
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader, didCancel loadingRequest: AVAssetResourceLoadingRequest) {
+        lock.lock()
+        requests.removeAll { $0.request === loadingRequest }
+        lock.unlock()
+        source.resourceLoader?(resourceLoader, didCancel: loadingRequest)
+    }
+
+    /// Called before a new decoder starts. Requests of earlier decoders that still wait end now;
+    /// the asset's own requests stay.
+    func beginDecoderSession() {
+        lock.lock()
+        let previous = session
+        session += 1
+        var ended: [AVAssetResourceLoadingRequest] = []
+        requests.removeAll { entry in
+            guard entry.session >= 1, entry.session <= previous else { return false }
+            if !entry.request.isFinished && !entry.request.isCancelled {
+                ended.append(entry.request)
+            }
+            return true
+        }
+        withdrawn += ended.count
+        lock.unlock()
+        if !ended.isEmpty {
+            source.abandonLoadingRequests(ended)
+        }
     }
 }

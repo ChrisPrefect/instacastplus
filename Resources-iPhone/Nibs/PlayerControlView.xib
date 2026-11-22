@@ -81,7 +81,7 @@
                                 <action selector="beginBackwardAction:" destination="-1" eventType="touchDown" id="67"/>
                                 <action selector="cancelBackwardAction:" destination="-1" eventType="touchCancel" id="147"/>
                                 <action selector="endBackwardAction:" destination="-1" eventType="touchUpInside" id="68"/>
-                                <action selector="endBackwardAction:" destination="-1" eventType="touchUpOutside" id="69"/>
+                                <action selector="cancelBackwardAction:" destination="-1" eventType="touchUpOutside" id="69"/>
                             </connections>
                         </button>
                         <button opaque="NO" contentMode="scaleToFill" fixedFrame="YES" enabled="NO" contentHorizontalAlignment="center" contentVerticalAlignment="center" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="13" userLabel="Play Button">
@@ -114,7 +114,7 @@
                                 <action selector="beginForwardAction:" destination="-1" eventType="touchDown" id="70"/>
                                 <action selector="cancelForwardAction:" destination="-1" eventType="touchCancel" id="148"/>
                                 <action selector="endForwardAction:" destination="-1" eventType="touchUpInside" id="71"/>
-                                <action selector="endForwardAction:" destination="-1" eventType="touchUpOutside" id="72"/>
+                                <action selector="cancelForwardAction:" destination="-1" eventType="touchUpOutside" id="72"/>
                             </connections>
                         </button>
                     </subviews>

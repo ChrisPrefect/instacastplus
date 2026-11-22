@@ -320,6 +320,10 @@
 		5117E0C00000000000000011 /* ICSilenceCompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5117E0C00000000000000001 /* SilenceTrim/ICSilenceCompressor.swift */; };
 		5117E0C00000000000000012 /* ICSilenceTrimLevel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5117E0C00000000000000002 /* SilenceTrim/ICSilenceTrimLevel.swift */; };
 		5117E0C00000000000000013 /* ICSilenceTrimPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5117E0C00000000000000003 /* SilenceTrim/ICSilenceTrimPlayer.swift */; };
+		5117E0C00000000000000014 /* ICSileroVAD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5117E0C00000000000000004 /* SilenceTrim/ICSileroVAD.swift */; };
+		5117E0C00000000000000017 /* ICSilenceTrimHTTPSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5117E0C00000000000000007 /* SilenceTrim/ICSilenceTrimHTTPSource.swift */; };
+		5117E0C00000000000000015 /* silero_vad_16k_v6.2.3.bin in Resources */ = {isa = PBXBuildFile; fileRef = 5117E0C00000000000000005 /* SilenceTrim/silero_vad_16k_v6.2.3.bin */; };
+		5117E0C00000000000000016 /* SileroVAD-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 5117E0C00000000000000006 /* SilenceTrim/SileroVAD-LICENSE.txt */; };
 		A1B2C3D4E5F6A7B800000051 /* ICSharePlayCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000050 /* iOSIntegration/ICSharePlayCoordinator.swift */; };
 		A1B2C3D4E5F6A7B800000053 /* MediaSuggestions.intentdefinition in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000052 /* MediaSuggestions.intentdefinition */; };
 		A4D635E23144E9DFE29547D9 /* WatchDownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DA77CE3DBE6C0B97B4D3DD1 /* WatchDownloadManager.swift */; };
@@ -1004,6 +1008,10 @@
 		5117E0C00000000000000001 /* SilenceTrim/ICSilenceCompressor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SilenceTrim/ICSilenceCompressor.swift; sourceTree = "<group>"; };
 		5117E0C00000000000000002 /* SilenceTrim/ICSilenceTrimLevel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SilenceTrim/ICSilenceTrimLevel.swift; sourceTree = "<group>"; };
 		5117E0C00000000000000003 /* SilenceTrim/ICSilenceTrimPlayer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SilenceTrim/ICSilenceTrimPlayer.swift; sourceTree = "<group>"; };
+		5117E0C00000000000000004 /* SilenceTrim/ICSileroVAD.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SilenceTrim/ICSileroVAD.swift; sourceTree = "<group>"; };
+		5117E0C00000000000000007 /* SilenceTrim/ICSilenceTrimHTTPSource.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SilenceTrim/ICSilenceTrimHTTPSource.swift; sourceTree = "<group>"; };
+		5117E0C00000000000000005 /* SilenceTrim/silero_vad_16k_v6.2.3.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = "SilenceTrim/silero_vad_16k_v6.2.3.bin"; sourceTree = "<group>"; };
+		5117E0C00000000000000006 /* SilenceTrim/SileroVAD-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "SilenceTrim/SileroVAD-LICENSE.txt"; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000050 /* iOSIntegration/ICSharePlayCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = iOSIntegration/ICSharePlayCoordinator.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000054 /* Base */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file.intentdefinition; name = Base; path = Base.lproj/MediaSuggestions.intentdefinition; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000055 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/MediaSuggestions.strings; sourceTree = "<group>"; };
@@ -1274,6 +1282,10 @@
 				5117E0C00000000000000001 /* SilenceTrim/ICSilenceCompressor.swift */,
 				5117E0C00000000000000002 /* SilenceTrim/ICSilenceTrimLevel.swift */,
 				5117E0C00000000000000003 /* SilenceTrim/ICSilenceTrimPlayer.swift */,
+				5117E0C00000000000000004 /* SilenceTrim/ICSileroVAD.swift */,
+				5117E0C00000000000000007 /* SilenceTrim/ICSilenceTrimHTTPSource.swift */,
+				5117E0C00000000000000005 /* SilenceTrim/silero_vad_16k_v6.2.3.bin */,
+				5117E0C00000000000000006 /* SilenceTrim/SileroVAD-LICENSE.txt */,
 				E4B30EAA035EBC06274E7211 /* ICiCloudSyncSettingsViewController.h */,
 				D5EEF2A8812A8B647C7D9AF6 /* ICiCloudSyncSettingsViewController.m */,
 			);
@@ -2530,6 +2542,8 @@
 				1B919E6217BF99B100A30BDE /* tv@2x.png in Resources */,
 				1B61040D162462C20075541D /* PlayerControlView.xib in Resources */,
 				1BA27BE916A450BB00D51D59 /* Defaults.plist in Resources */,
+				5117E0C00000000000000015 /* silero_vad_16k_v6.2.3.bin in Resources */,
+				5117E0C00000000000000016 /* SileroVAD-LICENSE.txt in Resources */,
 				1B919E6317BF99B100A30BDE /* tv.png in Resources */,
 				1B2A468F1925089B0042C3E5 /* Tink.caf in Resources */,
 				188B3C752E175728004D14A5 /* SkipTimeCell.xib in Resources */,
@@ -2836,6 +2850,8 @@
 				5117E0C00000000000000011 /* ICSilenceCompressor.swift in Sources */,
 				5117E0C00000000000000012 /* ICSilenceTrimLevel.swift in Sources */,
 				5117E0C00000000000000013 /* ICSilenceTrimPlayer.swift in Sources */,
+				5117E0C00000000000000014 /* ICSileroVAD.swift in Sources */,
+				5117E0C00000000000000017 /* ICSilenceTrimHTTPSource.swift in Sources */,
 				A1B2C3D4E5F6A7B800000033 /* ICSpotlightIndexer.m in Sources */,
 				9535C53CC4BD2DFAA4A46985 /* SharedConstants.swift in Sources */,
 				DF013769E8097C30D565554B /* WidgetModels.swift in Sources */,
@@ -3014,7 +3030,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 53;
+				CURRENT_PROJECT_VERSION = 54;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatch/Info.plist;
@@ -3096,7 +3112,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 53;
+				CURRENT_PROJECT_VERSION = 54;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
@@ -3161,7 +3177,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 53;
+				CURRENT_PROJECT_VERSION = 54;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
@@ -3222,7 +3238,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 53;
+				CURRENT_PROJECT_VERSION = 54;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatch/Info.plist;
@@ -3252,7 +3268,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 53;
+				CURRENT_PROJECT_VERSION = 54;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatchWidgets/Info.plist;
@@ -3286,7 +3302,7 @@
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 53;
+				CURRENT_PROJECT_VERSION = 54;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWidgets/Info.plist;
@@ -3363,7 +3379,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 53;
+				CURRENT_PROJECT_VERSION = 54;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatchWidgets/Info.plist;
@@ -3397,7 +3413,7 @@
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 53;
+				CURRENT_PROJECT_VERSION = 54;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWidgets/Info.plist;

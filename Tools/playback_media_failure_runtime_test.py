@@ -168,11 +168,14 @@ static int verificationCancellations;
 @property int handoverEnds;
 @property int remoteClears;
 @property int directPlays;
+// Pause shortening: AVPlayer cases only, the engine stays nil here.
+@property id silenceTrimPlayer;
 + (instancetype)playbackManager;
 - (void)close;
 - (void)closeAndSaveCurrentPosition:(BOOL)save;
 - (void)_saveCurrentPlaybackPosition;
 - (void)_endNextItemHandover;
+- (void)_closeSilenceTrimPlayerSavingPosition:(BOOL)save;
 - (void)_setupRemotePlaybackCenterWithEpisode:(CDEpisode*)episode;
 - (void)_sendUpdateNotification;
 - (void)simulateFailure;
@@ -207,6 +210,7 @@ static AudioSession *session;
 + (instancetype)playbackManager {return currentManager;}
 - (void)_saveCurrentPlaybackPosition {self.saves++;}
 - (void)_endNextItemHandover {self.handoverEnds++;}
+- (void)_closeSilenceTrimPlayerSavingPosition:(BOOL)save {self.silenceTrimPlayer=nil;}
 - (void)_setupRemotePlaybackCenterWithEpisode:(CDEpisode*)episode {if(!episode)self.remoteClears++;}
 - (void)_sendUpdateNotification {self.updates++;}
 - (void)play {self.directPlays++;}

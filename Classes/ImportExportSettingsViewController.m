@@ -1173,6 +1173,7 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
     if ([defaults objectForKey:PlayerAutoSkipEndPeriod]) [xml appendFormat:@"    <autoSkipEnd>%ld</autoSkipEnd>\n", (long)[defaults integerForKey:PlayerAutoSkipEndPeriod]];
     if ([defaults objectForKey:PlayerSilenceTrimEnabled]) [xml appendFormat:@"    <silenceTrimEnabled>%@</silenceTrimEnabled>\n", [defaults boolForKey:PlayerSilenceTrimEnabled] ? @"true" : @"false"];
     if ([defaults objectForKey:PlayerSilenceTrimLevel]) [xml appendFormat:@"    <silenceTrimLevel>%ld</silenceTrimLevel>\n", (long)[defaults integerForKey:PlayerSilenceTrimLevel]];
+    if ([defaults objectForKey:PlayerSilenceTrimDetection]) [xml appendFormat:@"    <silenceTrimDetection>%ld</silenceTrimDetection>\n", (long)[defaults integerForKey:PlayerSilenceTrimDetection]];
     if ([defaults objectForKey:PlayerReplayAfterPause]) [xml appendFormat:@"    <replayAfterPause>%ld</replayAfterPause>\n", (long)[defaults integerForKey:PlayerReplayAfterPause]];
     [xml appendFormat:@"    <rememberChapterPosition>%@</rememberChapterPosition>\n", [defaults boolForKey:PlayerRememberChapterPosition] ? @"true" : @"false"];
     NSDictionary* chapterPositions = [defaults dictionaryForKey:PlayerChapterPlaybackPositions];

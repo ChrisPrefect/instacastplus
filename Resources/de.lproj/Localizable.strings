@@ -2197,8 +2197,14 @@
 "Pause Shortening Mild Explanation" = "Nur deutliche Pausen, behutsam gekürzt. Folgen werden etwa 3–6 % kürzer.";
 "Pause Shortening Medium Explanation" = "Pausen und Zögern laufen deutlich schneller. Folgen werden etwa 5–9 % kürzer.";
 "Pause Shortening Strong Explanation" = "Pausen verschwinden fast ganz. Folgen werden etwa 7–13 % kürzer.";
+"Pause Detection" = "Pausen erkennen";
+"Pause Detection Speech" = "Sprache (Silero)";
+"Pause Detection Level" = "Lautstärke";
+"Pause Detection Speech Explanation" = "Eine Spracherkennung (Silero VAD) prüft Geräusche zwischen zwei stillen Stellen. Was keine Sprache ist, etwa Atmer, Schmatzer oder Rascheln, gehört zur Pause. Wortanfänge und Wortenden bleiben unverändert.";
+"Pause Detection Level Explanation" = "Als Pause gilt nur, was leise ist. Geräusche in einer Pause bleiben in voller Länge.";
 "Pause Shortening Saved %@" = "%@ gespart";
 "Pause Shortening Waiting For Download" = "Startet, sobald die Folge geladen ist";
 "Pause Shortening Unavailable SharePlay" = "Nicht während SharePlay";
 "Pause Shortening Unavailable Video" = "Nicht bei Videos";
 "Pause Shortening Unavailable File" = "Für diese Datei nicht verfügbar";
+"Pause Shortening Unavailable Stream" = "Für diesen Stream ausgeschaltet";

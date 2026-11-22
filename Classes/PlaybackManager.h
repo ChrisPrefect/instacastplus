@@ -125,6 +125,9 @@
 // Short status for the speed menu: time saved, or why shortening is not running right now.
 - (NSString*) silenceTrimStatusText;
 + (NSString*) titleForSilenceTrimLevel:(NSInteger)level;
+// How pauses are found (PlayerSilenceTrimDetection): 0 level threshold, 1 speech detection.
++ (NSString*) titleForSilenceTrimDetection:(NSInteger)detection;
++ (BOOL) silenceTrimUsesSpeechDetection;
 // Stores a level chosen in the player: for the podcast when it has its own value, else globally.
 + (void) storeSilenceTrimLevel:(NSInteger)level forFeed:(CDFeed*)feed;
 

@@ -19,16 +19,179 @@
 //      flushes every session must equal its reference and every restart must continue at the
 //      exact source sample, also in the last unshortened hop before a pause (targeted flushes)
 //
+//   With SILENCE_TRIM_STREAM=<bytes per second> the player reads the file as a stream through a
+//   stand-in for the app's stream cache (StreamCacheStandIn: newest request first, then the rest
+//   in order). The download completes during the run and the player moves to the local file, so
+//   all checks above also cover the stream start and that move. Run 6 adds:
+//   S1 a stream slower than its bitrate: the clock stops before the audio runs out and the
+//      played audio stays contiguous and exact
+//   S2 seeking into a part not downloaded yet: the clock waits for it, the audio is exact, and
+//      the replaced decoder's waiting request is withdrawn
+//   With SILENCE_TRIM_HTTP=<base URL of Tools/SilenceTrim/silence_trim_range_server.py> the player
+//   reads the file over real HTTP with its own source (stream caching off, ICSilenceTrimHTTPSource);
+//   a separate download is emulated by handing it the local file after 4 s (runs 1-5).
+//
 //  Build:
 //    swiftc -O -parse-as-library -o build/SilenceTrim/silence_trim_glitch_probe \
 //      Classes/SilenceTrim/ICSilenceCompressor.swift Classes/SilenceTrim/ICSilenceTrimLevel.swift \
-//      Classes/SilenceTrim/ICSilenceTrimPlayer.swift Tools/SilenceTrim/silence_trim_glitch_probe.swift
+//      Classes/SilenceTrim/ICSilenceTrimPlayer.swift Classes/SilenceTrim/ICSilenceTrimHTTPSource.swift \
+//      Classes/SilenceTrim/ICSileroVAD.swift Tools/SilenceTrim/silence_trim_glitch_probe.swift
 //  Run:
 //    build/SilenceTrim/silence_trim_glitch_probe <episode.mp3> [report.json]
 //
 
 import AVFoundation
+
+/// SILENCE_TRIM_SPEECH=1 runs player and reference with speech detection (Silero VAD); the
+/// weights are read from the working copy.
+let probeSpeechDetection: Bool = {
+    guard ProcessInfo.processInfo.environment["SILENCE_TRIM_SPEECH"] == "1" else { return false }
+    ICSileroVADModel.resourceURLOverride = URL(fileURLWithPath: "Classes/SilenceTrim/silero_vad_16k_v6.2.3.bin")
+    return true
+}()
 import Foundation
+
+// MARK: Stream
+
+let probeStreamRate: Double? = ProcessInfo.processInfo.environment["SILENCE_TRIM_STREAM"].flatMap(Double.init)
+let probeHTTPBase: URL? = ProcessInfo.processInfo.environment["SILENCE_TRIM_HTTP"].flatMap(URL.init(string:))
+let probeStreams = probeStreamRate != nil || probeHTTPBase != nil
+
+/// Sets the download speed of the stand-in or of the range server.
+func setStreamRate(_ bytesPerSecond: Double) {
+    if let base = probeHTTPBase {
+        let done = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: URL(string: "\(base.absoluteString)/control?rate=\(Int(bytesPerSecond))")!) { _, _, _ in done.signal() }.resume()
+        done.wait()
+    } else {
+        currentStreamSource?.bytesPerSecond = bytesPerSecond
+    }
+}
+
+/// Serves a local file like ICStreamingCacheLoader: requests are answered from the downloaded
+/// part; the download fetches the newest waiting request's range first, then everything else in
+/// order, at `bytesPerSecond`.
+final class StreamCacheStandIn: NSObject, ICSilenceTrimStreamSource, @unchecked Sendable {
+    let resourceLoaderQueue = DispatchQueue(label: "probe.streamcache")
+    let data: Data
+    let contentType: String
+    var bytesPerSecond: Double
+    /// Delivered in pieces of 50 ms of download time (at least 4 KB), like network chunks.
+    private let block: Int
+    private var downloaded: [Bool]
+    private var downloadedCount = 0
+    private var pending: [AVAssetResourceLoadingRequest] = []
+    private var forwardBlock = 0
+    private var running = false
+    var abandonedRequests = 0
+    var logs = false
+    var onComplete: (() -> Void)?
+    var isComplete: Bool { resourceLoaderQueue.sync { downloadedCount == downloaded.count } }
+
+    init(file: URL, bytesPerSecond: Double) {
+        data = try! Data(contentsOf: file, options: .mappedIfSafe)
+        contentType = file.pathExtension.lowercased() == "mp3" ? "public.mp3" : "public.mpeg-4-audio"
+        self.bytesPerSecond = bytesPerSecond
+        let block = max(4096, Int(bytesPerSecond * 0.05))
+        self.block = block
+        downloaded = Array(repeating: false, count: (data.count + block - 1) / block)
+    }
+
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
+        resourceLoaderQueue.async {
+            if let info = loadingRequest.contentInformationRequest {
+                info.contentType = self.contentType
+                info.contentLength = Int64(self.data.count)
+                info.isByteRangeAccessSupported = true
+            }
+            self.pending.append(loadingRequest)
+            if self.logs, let d = loadingRequest.dataRequest {
+                print(String(format: "  [stream] %.2f request offset %lld length %ld toEnd %d, pending %d", CFAbsoluteTimeGetCurrent().truncatingRemainder(dividingBy: 1000), d.requestedOffset, d.requestedLength, d.requestsAllDataToEndOfResource ? 1 : 0, self.pending.count))
+            }
+            if let dataRequest = loadingRequest.dataRequest, dataRequest.requestedOffset > 0 {
+                self.forwardBlock = Int(dataRequest.requestedOffset) / self.block
+            }
+            self.process()
+            self.pump()
+        }
+        return true
+    }
+
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader, didCancel loadingRequest: AVAssetResourceLoadingRequest) {
+        if logs { print("  [stream] cancelled by AVFoundation") }
+        resourceLoaderQueue.async { self.pending.removeAll { $0 === loadingRequest } }
+    }
+
+    func abandonLoadingRequests(_ requests: [AVAssetResourceLoadingRequest]) {
+        resourceLoaderQueue.async {
+            for request in requests where self.pending.contains(where: { $0 === request }) {
+                self.pending.removeAll { $0 === request }
+                self.abandonedRequests += 1
+                if !request.isFinished && !request.isCancelled {
+                    request.finishLoading(with: NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled))
+                }
+            }
+        }
+    }
+
+    private func contiguousEnd(from offset: Int) -> Int {
+        var b = offset / block
+        while b < downloaded.count && downloaded[b] { b += 1 }
+        return min(data.count, b * block)
+    }
+
+    private func process() {
+        for request in pending {
+            guard let dataRequest = request.dataRequest else {
+                request.finishLoading()
+                pending.removeAll { $0 === request }
+                continue
+            }
+            let current = Int(dataRequest.currentOffset)
+            let end = dataRequest.requestsAllDataToEndOfResource ? data.count : min(data.count, Int(dataRequest.requestedOffset) + dataRequest.requestedLength)
+            let available = min(end, contiguousEnd(from: current))
+            if available > current {
+                dataRequest.respond(with: data.subdata(in: current..<available))
+                if logs { print(String(format: "  [stream] %.2f responded %d bytes at %d", CFAbsoluteTimeGetCurrent().truncatingRemainder(dividingBy: 1000), available - current, current)) }
+            }
+            if available >= end {
+                request.finishLoading()
+                pending.removeAll { $0 === request }
+            }
+        }
+    }
+
+    private func nextBlock() -> Int? {
+        // Newest waiting request first (what AVFoundation needs now), then onwards from there.
+        if let request = pending.last(where: { $0.dataRequest != nil }), let dataRequest = request.dataRequest {
+            let b = Int(dataRequest.currentOffset) / block
+            if b < downloaded.count && !downloaded[b] { return b }
+        }
+        if let b = (forwardBlock..<downloaded.count).first(where: { !downloaded[$0] }) { return b }
+        return downloaded.firstIndex(of: false)
+    }
+
+    private func pump() {
+        guard !running, let b = nextBlock() else { return }
+        running = true
+        let length = min(block, data.count - b * block)
+        resourceLoaderQueue.asyncAfter(deadline: .now() + Double(length) / bytesPerSecond) {
+            self.running = false
+            if !self.downloaded[b] {
+                self.downloaded[b] = true
+                self.downloadedCount += 1
+            }
+            self.process()
+            if self.downloadedCount == self.downloaded.count {
+                self.onComplete?()
+                self.onComplete = nil
+            }
+            self.pump()
+        }
+    }
+}
+
+var currentStreamSource: StreamCacheStandIn?
 
 // MARK: Reference
 
@@ -75,10 +238,12 @@ func decode(_ url: URL, fromSample start: Int64, seconds: Double, sampleRate: Do
 }
 
 /// Offline reference with random input chunk sizes (G3). Returns output and the pause plans.
-func reference(_ input: Decoded, startSample: Int64, level: ICSilenceTrimLevel, outputFrames: Int, seed: UInt64, primed: Bool = false)
+func reference(_ input: Decoded, startSample: Int64, level: ICSilenceTrimLevel, outputFrames: Int, seed: UInt64, primed: Bool = false,
+               speech: Bool = probeSpeechDetection)
     -> (output: [Float], pauses: [ICSilenceCompressor.PauseRecord], mapOutput: [Int64], mapInput: [Int64]) {
     // `input` must start at the compressor's session start (one hop earlier when primed).
-    let compressor = ICSilenceCompressor(sampleRate: input.sampleRate, channelCount: input.channels, parameters: level.compressorParameters!)
+    let compressor = ICSilenceCompressor(sampleRate: input.sampleRate, channelCount: input.channels, parameters: level.playbackParameters,
+                                         speechModel: speech ? ICSileroVADModel.bundled : nil)
     compressor.recordsPauses = true
     compressor.reset(atSourceSample: startSample, primed: primed)
     var generator = seed
@@ -177,6 +342,12 @@ final class Recorder: @unchecked Sendable {
 
     func reset() {
         lock.lock(); segments.removeAll(); seams.removeAll(); resets = 0; lock.unlock()
+    }
+
+    /// Output sample where the enqueued audio ends.
+    func enqueuedEnd() -> Int64 {
+        lock.lock(); defer { lock.unlock() }
+        return segments.map { $0.pts + Int64($0.samples.count / channels) }.max() ?? 0
     }
 }
 
@@ -283,8 +454,30 @@ func seamQuality(_ samples: [Float], frame: Int, channels: Int, sampleRate: Doub
 
 @main
 struct GlitchProbe {
-    static func makePlayer(_ url: URL, level: ICSilenceTrimLevel, recorder: Recorder) -> (ICSilenceTrimPlayer, Delegate) {
-        let player = ICSilenceTrimPlayer(url: url, level: level)
+    static func makePlayer(_ url: URL, level: ICSilenceTrimLevel, recorder: Recorder, streamRate: Double? = probeStreamRate,
+                           adoptsFile: Bool = true) -> (ICSilenceTrimPlayer, Delegate) {
+        let player: ICSilenceTrimPlayer
+        if let base = probeHTTPBase {
+            setStreamRate(streamRate ?? 0)
+            currentStreamSource = nil
+            player = ICSilenceTrimPlayer(remoteURL: base.appendingPathComponent(url.lastPathComponent), username: nil, password: nil,
+                                         mimeType: "audio/mpeg", level: level, speechDetection: probeSpeechDetection)
+            precondition(player.readsStreamItself)
+            if adoptsFile {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak player] in player?.adoptCompleteFile(at: url) }
+            }
+        } else if let streamRate {
+            let source = StreamCacheStandIn(file: url, bytesPerSecond: streamRate)
+            currentStreamSource = source
+            player = ICSilenceTrimPlayer(streamURL: URL(string: "probe-stream://\(UUID().uuidString)")!, source: source,
+                                         level: level, speechDetection: probeSpeechDetection)
+            source.onComplete = { [weak player] in
+                DispatchQueue.main.async { player?.adoptCompleteFile(at: url) }
+            }
+        } else {
+            player = ICSilenceTrimPlayer(url: url, level: level, speechDetection: probeSpeechDetection)
+        }
+        precondition(player.speechDetectionActive == probeSpeechDetection, "speech model not loaded")
         let delegate = Delegate()
         player.delegate = delegate
         player.volume = 0
@@ -350,7 +543,12 @@ struct GlitchProbe {
         wait(0.6)
         let afterResume = player.currentTime
         check("G5 resume continues from the paused point", afterResume > pausedAt && afterResume < pausedAt + 1.5, String(format: "%.3f -> %.3f", pausedAt, afterResume))
-        // Keep playing until the precise decoder took over inside a pause (warm-up 0.5-3 s).
+        // Keep playing until the precise decoder took over inside a pause (warm-up 0.5-3 s). A
+        // stream gets its precise decoder only once the download is complete.
+        if let source = currentStreamSource, probeStreamRate != nil {
+            let downloaded = Date().addingTimeInterval(60)
+            while !source.isComplete && Date() < downloaded { wait(0.1) }
+        }
         deadline = Date().addingTimeInterval(40)
         while player.realignCount == 0 && Date() < deadline { wait(0.1) }
         wait(4)
@@ -404,6 +602,11 @@ struct GlitchProbe {
                 // The seek's flushAll already cleared the old session in the recorder.
             } else {
                 player.play()
+                // The switch to the precise decoder waits for true silence, which a dense passage
+                // may not offer for several seconds; give it room for a check after it.
+                let deadline = Date().addingTimeInterval(14)
+                while player.realignCount == 0 && Date() < deadline { wait(0.1) }
+                wait(2)
             }
             wait(8)
             player.pause()
@@ -497,9 +700,13 @@ struct GlitchProbe {
             // already took), so this checks the player's restart against the documented semantics.
             let now = player.renderer.timebase.time
             var at = CMTimeAdd(now, CMTime(seconds: 0.25, preferredTimescale: CMTimeScale(rate)))
-            if n % 2 == 1, let session = player.automaticFlushRestarts.last ?? player.lastRealign {
-                // Every second flush hits the hardest case for the source lookup: the middle of
-                // the last unshortened hop in front of a shortened pause.
+            // Every second flush hits the hardest case for the source lookup: the middle of the
+            // last unshortened hop in front of a shortened pause. Whether one lies in the next
+            // second depends on the episode, so wait up to 4 s for one.
+            var attempts = n % 2 == 1 ? 27 : 0
+            while attempts > 0, let session = player.automaticFlushRestarts.last ?? player.lastRealign {
+                attempts -= 1
+                let now = player.renderer.timebase.time
                 let nowSample = now.convertScale(Int32(rate), method: .roundHalfAwayFromZero).value
                 let from = nowSample + Int64(0.35 * rate) - session.output
                 let to = nowSample + Int64(1.2 * rate) - session.output
@@ -513,8 +720,11 @@ struct GlitchProbe {
                     if target > stillAhead {
                         at = CMTime(value: target, timescale: CMTimeScale(rate))
                         targetedFlushes += 1
+                        break
                     }
                 }
+                wait(0.15)
+                at = CMTimeAdd(player.renderer.timebase.time, CMTime(seconds: 0.25, preferredTimescale: CMTimeScale(rate)))
             }
             NotificationCenter.default.post(name: .AVSampleBufferAudioRendererWasFlushedAutomatically, object: player.renderer,
                                             userInfo: [AVSampleBufferAudioRendererFlushTimeKey: NSValue(time: at)])
@@ -524,6 +734,10 @@ struct GlitchProbe {
         wait(0.3)
         stream = recorder.stream()
         check("G1 automatic flushes: stream contiguous", stream.gaps.isEmpty, "\(stream.gaps.prefix(3))")
+        if !stream.gaps.isEmpty {
+            for entry in player.sessionLog { print("  session start output \(entry.output) source \(entry.source) precise \(entry.precise) enqueued before \(entry.enqueuedBefore) reset \(entry.reset)") }
+            print("  flush restarts \(player.automaticFlushRestarts.map { $0.output }) realign \(String(describing: player.lastRealign))")
+        }
         seamReports = []
         worstStep = 0
         for seam in recorder.seams {
@@ -588,6 +802,173 @@ struct GlitchProbe {
         check("automatic flushes were handled", player.automaticFlushCount == flushCount, "\(player.automaticFlushCount)")
         player.invalidate()
         levels = []
+
+        // ---- Run 7: switching while playing, without a new player (deep E2E W): the pause
+        // detection is swapped inside the engine, and "off" passes the audio through.
+        if !probeStreams {
+            ICSileroVADModel.resourceURLOverride = URL(fileURLWithPath: "Classes/SilenceTrim/silero_vad_16k_v6.2.3.bin")
+            recorder.reset()
+            (player, delegate) = makePlayer(url, level: .medium, recorder: recorder)
+            _ = prepare(player, delegate, at: fileDuration * 0.4)
+            player.play()
+            let precise = Date().addingTimeInterval(20)
+            while !player.decodesPrecisely && Date() < precise { wait(0.05) }
+            wait(1)
+            player.setSpeechDetection(!probeSpeechDetection)
+            let switchDeadline = Date().addingTimeInterval(15)
+            while player.detectionSwitches.isEmpty && Date() < switchDeadline { wait(0.05) }
+            wait(5)
+            player.pause()
+            wait(0.3)
+            stream = recorder.stream()
+            check("G1 detection switched while playing: stream contiguous", stream.gaps.isEmpty, "\(stream.gaps.prefix(3))")
+            let switched = player.detectionSwitches.first
+            check("G9 the detection switch happened in a silent pause, in the same timeline", switched != nil && player.detectionSwitches.count == 1,
+                  "\(player.detectionSwitches), precise \(player.decodesPrecisely)")
+            if let switched {
+                let hop = ICSilenceCompressor.hopLength(sampleRate: rate)
+                let first = Int(switched.output - stream.start)
+                let frames = stream.samples.count / channels - first
+                let input = try decode(url, fromSample: switched.source - Int64(hop), seconds: Double(frames) / rate * 4 + 10, sampleRate: rate, channels: channels)
+                let ref = reference(input, startSample: switched.source, level: .medium, outputFrames: frames + 4096, seed: 70, primed: true,
+                                    speech: !probeSpeechDetection)
+                let played = compare(Array(stream.samples[(first * channels)...]), ref.output)
+                check("G9 after the detection switch the audio is the exact shortening with the new detection",
+                      played.maxDiff <= 1e-6 && played.count / channels == frames,
+                      String(format: "%d of %d frames, max diff %.2e", played.count / channels, frames, played.maxDiff))
+                let q = seamQuality(stream.samples, frame: first, channels: channels, sampleRate: rate)
+                check("G9 the detection switch seam has no click", q.stepRatio <= 1.5 || q.step <= 0.01,
+                      String(format: "step x%.2f (%.4f), level %.0f dB", q.stepRatio, q.step, q.levelDB))
+            }
+            // "off": after the already enqueued audio everything is the original, sample for sample.
+            recorder.reset()
+            player.play()
+            wait(1)
+            player.level = .off
+            wait(6)
+            player.pause()
+            wait(0.3)
+            stream = recorder.stream()
+            check("G1 switched off while playing: stream contiguous", stream.gaps.isEmpty, "\(stream.gaps.prefix(3))")
+            let tailFrames = Int(2.5 * rate)
+            let tail = Array(stream.samples.suffix(tailFrames * channels))
+            let around = Int64((player.currentTime * rate).rounded())
+            let original = try decode(url, fromSample: max(0, around - Int64(4 * rate)), seconds: 14, sampleRate: rate, channels: channels)
+            var match: Int? = nil
+            original.samples.withUnsafeBufferPointer { all in
+                tail.withUnsafeBufferPointer { t in
+                    let limit = all.count / channels - tailFrames
+                    var offset = 0
+                    while offset < limit {
+                        var same = true
+                        for k in stride(from: 0, to: 64 * channels, by: 1) where abs(all[offset * channels + k] - t[k]) > 1e-6 { same = false; break }
+                        if same {
+                            var exact = true
+                            for k in 0..<(tailFrames * channels) where abs(all[offset * channels + k] - t[k]) > 1e-6 { exact = false; break }
+                            if exact { match = offset; break }
+                        }
+                        offset += 1
+                    }
+                }
+            }
+            check("G10 switched off: the last 2.5 s played are the original audio, sample for sample", match != nil,
+                  match.map { "found at source \(Double(max(0, around - Int64(4 * rate)) + Int64($0)) / rate) s" } ?? "not found in the original")
+            player.invalidate()
+        }
+
+        if probeStreams {
+            // ---- Run 6: a stream slower than its bitrate (S1), then a seek into a part that is
+            // not downloaded yet (S2).
+            let bitrate = Double((try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)??.doubleValue ?? 0) / fileDuration
+            recorder.reset()
+            let t6 = fileDuration * 0.3
+            // Opening reads the file's header (ATP: 576 KB of ID3 tags) at a normal speed first.
+            (player, delegate) = makePlayer(url, level: .medium, recorder: recorder, streamRate: bitrate * 40, adoptsFile: false)
+            check("S setup: stream ready", prepare(player, delegate, at: t6), String(format: "bitrate %.0f B/s", bitrate))
+            setStreamRate(bitrate * 0.7)
+            player.play()
+            var overrun: Int64 = 0
+            var waitsSeen = 0
+            var wasWaiting = false
+            var firstWaitPosition: Double?
+            let runUntil = Date().addingTimeInterval(25)
+            while Date() < runUntil {
+                wait(0.005)
+                let clock = player.renderer.timebase.time.convertScale(Int32(rate), method: .roundTowardNegativeInfinity).value
+                let end = recorder.enqueuedEnd()
+                if end > 0 { overrun = max(overrun, clock - end) }
+                if player.isWaitingForData && !wasWaiting {
+                    waitsSeen += 1
+                    if firstWaitPosition == nil { firstWaitPosition = player.currentTime }
+                }
+                wasWaiting = player.isWaitingForData
+            }
+            player.pause()
+            wait(0.3)
+            stream = recorder.stream()
+            let played = Double(stream.samples.count / channels) / rate
+            check("S1 slow stream: the clock stopped for missing data", player.dataWaitCount >= 2 && waitsSeen >= 2,
+                  "waits \(player.dataWaitCount), seen \(waitsSeen), timeout restarts \(player.streamTimeoutRestarts)")
+            check("S1 slow stream: the clock never ran past the enqueued audio", overrun <= 0,
+                  String(format: "worst overrun %.1f ms", Double(overrun) / rate * 1000))
+            check("S1 slow stream: playback went on after the first wait", firstWaitPosition.map { player.currentTime > $0 + 1 } ?? false,
+                  String(format: "first wait at +%.1f s, position +%.1f s, enqueued %.1f s", (firstWaitPosition ?? t6) - t6, player.currentTime - t6, played))
+            check("G1 slow stream: stream contiguous", stream.gaps.isEmpty, "\(stream.gaps.prefix(3))")
+            let first6 = try firstSessionMatch(stream.samples, url: url, start: Int64((t6 * rate).rounded()), rate: rate, channels: channels)
+            check("G2 slow stream: the played audio is the exact shortening of the true audio, at most one MP3 frame off",
+                  first6.maxDiff <= 1e-6 && first6.frames == stream.samples.count / channels,
+                  String(format: "decoder offset %lld frames, max diff %.2e over %d of %d frames", first6.offset, first6.maxDiff, first6.frames, stream.samples.count / channels))
+            // S2: seek 20 minutes ahead, where nothing is downloaded, with a connection faster than
+            // the bitrate; the old decoder's request waits there.
+            setStreamRate(bitrate * 3)
+            currentStreamSource?.logs = ProcessInfo.processInfo.environment["SILENCE_TRIM_STREAM_LOG"] == "1"
+            let withdrawnBefore = player.withdrawnStreamRequests
+            let target = min(fileDuration - 60, t6 + 1200)
+            player.play()
+            wait(0.5)
+            recorder.reset()
+            var seeked = false
+            let seekStart = Date()
+            player.seek(to: target) { _ in seeked = true }
+            while !seeked { wait(0.005) }
+            let seekReturned = Date().timeIntervalSince(seekStart)
+            var startDelay = -1.0
+            overrun = 0
+            let seekUntil = Date().addingTimeInterval(15)
+            var nextLog = Date()
+            while Date() < seekUntil {
+                wait(0.005)
+                if currentStreamSource?.logs == true && Date() >= nextLog {
+                    nextLog = Date().addingTimeInterval(1)
+                    print(String(format: "  [engine] buffered %.2f, waiting %d, clock %.3f, enqueued end %lld", player.bufferedTime, player.isWaitingForData ? 1 : 0, player.renderer.timebase.time.seconds, recorder.enqueuedEnd()))
+                }
+                let clock = player.renderer.timebase.time.convertScale(Int32(rate), method: .roundTowardNegativeInfinity).value
+                if startDelay < 0 && clock > 0 { startDelay = Date().timeIntervalSince(seekStart) }
+                let end = recorder.enqueuedEnd()
+                overrun = max(overrun, clock - end)
+            }
+            player.pause()
+            wait(0.3)
+            stream = recorder.stream()
+            check("S2 seek into a part not downloaded: the seek returns at once", seekReturned < 0.2, String(format: "%.3f s", seekReturned))
+            check("S2 seek into a part not downloaded: the clock waits for the audio, then plays", startDelay > 0 && overrun <= 0,
+                  String(format: "clock started after %.2f s, worst overrun %.1f ms", startDelay, Double(overrun) / rate * 1000))
+            check("S2 the replaced decoder's waiting request was withdrawn", player.withdrawnStreamRequests > withdrawnBefore,
+                  "\(player.withdrawnStreamRequests - withdrawnBefore) withdrawn")
+            if stream.samples.count > channels * Int(rate) {
+                let firstS = try firstSessionMatch(stream.samples, url: url, start: Int64((target * rate).rounded()), rate: rate, channels: channels)
+                check("G2 after the seek the played audio is the exact shortening of the true audio, at most one MP3 frame off",
+                      firstS.maxDiff <= 1e-6 && firstS.frames == stream.samples.count / channels,
+                      String(format: "decoder offset %lld frames, max diff %.2e over %d of %d frames", firstS.offset, firstS.maxDiff, firstS.frames, stream.samples.count / channels))
+            } else {
+                check("G2 after the seek audio was played", false, "\(stream.samples.count / channels) frames")
+            }
+            check("G1 after the seek: stream contiguous", stream.gaps.isEmpty, "\(stream.gaps.prefix(3))")
+            let firstPeak = stream.samples.prefix(channels * 8).map { abs($0) }.max() ?? 0
+            check("G6 after the seek: no click at the start (fade-in)", firstPeak < 0.01, String(format: "first samples peak %.5f", firstPeak))
+            check("S no engine failure on the stream", delegate.failure == nil, "\(String(describing: delegate.failure))")
+            player.invalidate()
+        }
 
         if let reportURL {
             let data = try JSONSerialization.data(withJSONObject: ["file": url.lastPathComponent, "results": results], options: [.prettyPrinted])

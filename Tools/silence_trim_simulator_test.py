@@ -16,7 +16,7 @@ playback through PlaybackManager / AudioSession / PlaybackViewController. It che
   I  lock screen info: elapsed time follows the episode, rate = speed x speed-up factor
   J  audio session interruption pauses and resumes
   K  end of episode marks it played
-  L  a streamed episode switches to the engine once its download completed
+  L  a streamed episode plays on the engine at once and moves to the file once it is complete
   M  video media stays on AVPlayer and reports why
   N  disabling the feature restores AVPlayer and the tap-cycling speed button
 
@@ -86,12 +86,23 @@ class Peer(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
-    def _send(self, body, throttle=False):
+    def _send(self, body, throttle=False, entry=None):
         start, end = 0, len(fixture) - 1
         ranged = self.headers.get('Range')
         if ranged:
             lo, hi = ranged.removeprefix('bytes=').split('-', 1)
             start, end = int(lo), min(int(hi) if hi else end, end)
+        # Failure fixtures for the fallback checks (deep test S9-S11), from the middle of the file:
+        # /failonce... breaks the first such response off after 64 KB (a connection closed before
+        # any response is retried by CFNetwork itself and never reaches the app); /enginefail...
+        # answers 500 to every request that does not come from AVPlayer's own loader (User-Agent
+        # AppleCoreMedia).
+        break_off = body and start >= 1 << 20 and self.path.startswith('/failonce') and self.path not in dropped
+        if break_off:
+            dropped.add(self.path)
+        if body and start >= 1 << 20 and self.path.startswith('/enginefail') and 'AppleCoreMedia' not in self.headers.get('User-Agent', ''):
+            self.send_error(500)
+            return
         self.send_response(206 if ranged else 200)
         self.send_header('Content-Type', 'audio/mpeg')
         self.send_header('Content-Length', str(end - start + 1))
@@ -101,10 +112,22 @@ class Peer(BaseHTTPRequestHandler):
         self.end_headers()
         if body:
             view = memoryview(fixture)[start:end + 1]
+            step = 4096 if throttle == 'slow' else 1 << 16
             try:
-                for offset in range(0, len(view), 1 << 16):
-                    self.wfile.write(view[offset:offset + (1 << 16)])
-                    if throttle:
+                for offset in range(0, len(view), step):
+                    if break_off and offset >= 1 << 16:
+                        self.close_connection = True
+                        return
+                    self.wfile.write(view[offset:offset + step])
+                    self.wfile.flush()
+                    if entry is not None:
+                        # Bytes that reached the socket, for the transfer checks (deep test T).
+                        entry['start'] = start
+                        entry['sent'] = entry.get('sent', 0) + len(view[offset:offset + step])
+                    if throttle == 'slow' and start + offset >= 1 << 20:
+                        # 7 KB/s, below the fixture's 10 KB/s; the header comes at full speed
+                        time.sleep(len(view[offset:offset + step]) / 7000)
+                    elif throttle:
                         time.sleep(0.025)  # about 2.6 MB/s, so the stream phase is observable
             except (BrokenPipeError, ConnectionResetError):
                 pass
@@ -114,10 +137,14 @@ class Peer(BaseHTTPRequestHandler):
         self._send(False)
 
     def do_GET(self):
-        requests.append(dict(method='GET', path=self.path, range=self.headers.get('Range')))
-        self._send(True, throttle=self.path.startswith('/stream'))
+        entry = dict(method='GET', path=self.path, range=self.headers.get('Range'),
+                     avfoundation='AppleCoreMedia' in self.headers.get('User-Agent', ''))
+        requests.append(entry)
+        self._send(True, throttle='slow' if self.path.startswith('/slow') else self.path.startswith(('/stream', '/failonce', '/enginefail')),
+                   entry=entry)
 
 
+dropped = set()
 server = ThreadingHTTPServer(('127.0.0.1', 0), Peer)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 base = f'http://127.0.0.1:{server.server_port}'
@@ -260,10 +287,13 @@ try:
 
     # B: enable while playing.
     before = command()
+    switched_at = time.time()
     s = command('settings', enabled=True)
     s = wait(lambda s: s['engine'] == 'silence-trim' and s['playing'], 15)
     check('B enabling switches to the engine while playing', s['engine'] == 'silence-trim' and s['playing'] and s['trimLevel'] == 2, s)
-    check('B position kept across the switch', abs(s['time'] - before['time']) < 2.5, s, before=before['time'])
+    # AVPlayer plays on until the engine takes over at a silent point: the position keeps running.
+    expected = before['time'] + (time.time() - switched_at)
+    check('B position runs on across the switch', expected - 1.5 < s['time'] < expected + 1.5, s, before=before['time'], expected=expected)
     check('B speed button became a menu', s['speedButtonMenu'] and s['speedButtonMenuPrimary'], s)
 
     # B (UI): the real button opens the menu; choosing "Stark" goes through the menu action.
@@ -334,19 +364,21 @@ try:
     check('G strong level keeps playing and shortening', s['playing'] and d > w, s, advance=d, wall=w, factor=d / w)
     before = command()
     command('menuLevel', level=0)
-    s = wait(lambda s: s['engine'] == 'avplayer' and s['playing'], 15)
-    check('G menu "off" hands back to AVPlayer, still playing', s['engine'] == 'avplayer' and s['playing'], s)
-    check('G position kept when handing back', abs(s['time'] - before['time']) < 2.5, s, before=before['time'])
+    s = wait(lambda s: s['engine'] == 'silence-trim' and s.get('trimLevel') == 0 and s['playing'], 15)
+    # Switching off while playing keeps the player (no reopen): the engine passes the audio through.
+    check('G menu "off" keeps playing without shortening, same player', s['engine'] == 'silence-trim' and s.get('trimLevel') == 0 and s['playing'], s)
+    check('G position kept when switching off', abs(s['time'] - before['time']) < 2.5, s, before=before['time'])
+    time.sleep(2)  # the ~1.5 s already enqueued keep the old level
     d, w, s = advance(4)
-    check('G AVPlayer runs in real time again', abs(d - w) < 0.6, s, advance=d, wall=w)
+    check('G playback runs in real time again', abs(d - w) < 0.6, s, advance=d, wall=w)
     command('menuLevel', level=2)
     s = wait(lambda s: s['engine'] == 'silence-trim' and s['playing'], 15)
     check('G menu "medium" switches back to the engine', s['engine'] == 'silence-trim' and s['playing'] and s['trimLevel'] == 2, s)
 
     # H: podcast override.
     command('feedLevel', name='local', level=0)
-    s = wait(lambda s: s['engine'] == 'avplayer', 15)
-    check('H podcast set to off overrides the global level', s['engine'] == 'avplayer' and s['levelForEpisode'] == 0 and s['defaultsLevel'] == 2, s)
+    s = wait(lambda s: s.get('trimLevel') == 0, 15)
+    check('H podcast set to off overrides the global level', s.get('trimLevel') == 0 and s['levelForEpisode'] == 0 and s['defaultsLevel'] == 2, s)
     command('feedLevel', name='local', level=3)
     s = wait(lambda s: s['engine'] == 'silence-trim', 15)
     check('H podcast level 3 is used', s['engine'] == 'silence-trim' and s['trimLevel'] == 3 and s['levelForEpisode'] == 3, s)
@@ -358,10 +390,11 @@ try:
     s = command()
     check('H back on the global level', s['levelForEpisode'] == 2 and s['trimLevel'] == 2, s)
 
-    # I: lock screen info.
-    time.sleep(11)
-    s = command()
-    check('I lock screen elapsed time follows the episode', abs(s['nowPlayingElapsed'] - s['time']) < 3, s)
+    # I: lock screen info. The system extrapolates the elapsed time with the rate between the
+    # app's updates (every 10 s); right after an update the stored value is the episode time.
+    anchor = command()['nowPlayingElapsed']
+    s = wait(lambda s: s['nowPlayingElapsed'] != anchor, 15)
+    check('I lock screen elapsed time follows the episode', abs(s['nowPlayingElapsed'] - s['time']) < 1.0, s)
     check('I lock screen rate = speed x speed-up factor', s['nowPlayingRate'] >= 1.0 and abs(s['nowPlayingRate'] - s['trimFactor'] * s['trimRequestedRate']) < 0.15, s)
 
     # J: interruption.
@@ -379,15 +412,18 @@ try:
     s = command()
     check('K player closed after the last episode', s['engine'] == 'none', s)
 
-    # L: streamed episode switches once the download completed.
+    # L: a streamed episode (stream cache on) plays on the engine at once; once its download is
+    # complete the engine reads the file, without switching engines.
     command('defaults', values={'AutoDownloadWhileStreaming': True})
     command('seed', name='stream', title='LNP564 Stream', feedTitle='Pausen E2E Stream', url=f'{base}/stream.mp3', duration=DURATION, byteSize=len(fixture))
     command('present', name='stream', at=1200, autostart=True)
-    s = wait(lambda s: s['ready'], 20)
-    check('L stream starts on AVPlayer', s['engine'] == 'avplayer' and not s['assetURL'].startswith('file:'), s)
-    s = wait(lambda s: s['engine'] == 'silence-trim' and s['playing'], 120)
-    check('L engine takes over after the download completed', s['engine'] == 'silence-trim' and s['playing'] and s['cached'], s)
-    check('L position kept across the handover', 1195 < s['time'] < 1400, s)
+    s = wait(lambda s: s['ready'] and s['playing'], 20)
+    check('L stream plays on the engine right away', s['engine'] == 'silence-trim' and s.get('trimStream') and not s['assetURL'].startswith('file:'), s)
+    s = wait(lambda s: s.get('trimSaved', 0) > 0.5, 30)
+    check('L pauses are shortened while streaming', s.get('trimSaved', 0) > 0.5 and s.get('trimStream') and not s.get('trimDecodesFile'), s)
+    s = wait(lambda s: s.get('cached') and s.get('trimDecodesFile'), 120)
+    check('L after the download the engine reads the file, still playing', s['engine'] == 'silence-trim' and s.get('trimDecodesFile') and s['playing'] and s['cached'], s)
+    check('L position kept across the move to the file', 1195 < s['time'] < 1400, s)
     command('close')
 
     # M: video media.
@@ -405,10 +441,14 @@ try:
     s = wait(lambda s: s['ready'] and s['playing'] and s['engine'] == 'silence-trim', 20)
     check('N engine active before disabling', s['engine'] == 'silence-trim', s)
     command('settings', enabled=False)
-    s = wait(lambda s: s['engine'] == 'avplayer' and s['playing'], 15)
+    s = wait(lambda s: s.get('trimLevel') == 0 and s['playing'], 15)
+    check('N disabling while playing keeps playing without shortening', s['engine'] == 'silence-trim' and s.get('trimLevel') == 0 and s['playing'], s)
+    command('close')
+    command('present', name='local', at=500, autostart=True)
+    s = wait(lambda s: s['ready'] and s['playing'], 20)
     time.sleep(0.5)
     s = command()
-    check('N disabling restores AVPlayer while playing', s['engine'] == 'avplayer' and s['playing'], s)
+    check('N the next opening plays with AVPlayer again', s['engine'] == 'avplayer' and s['playing'], s)
     check('N speed button cycles again (no menu)', not s['speedButtonMenu'] and not s['speedButtonMenuPrimary'], s)
     screenshot('N-player-feature-off-again')
     speed_before = s['speedControl']
@@ -453,7 +493,7 @@ try:
 finally:
     for result in out.glob('*.xcresult'):
         run(['xcrun', 'xcresulttool', 'export', 'attachments', '--path', str(result), '--output-path', str(out / ('attachments-' + result.stem))], check=False)
-    (out / 'http-requests.json').write_text(json.dumps(requests[:2000], indent=1))
+    (out / 'http-requests.json').write_text(json.dumps(requests[:5000], indent=1))
     server.shutdown()
 
 failed = [c['name'] for c in checks if not c['passed']]

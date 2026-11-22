@@ -2197,8 +2197,14 @@
 "Pause Shortening Mild Explanation" = "Only clear pauses, gently shortened. Episodes become about 3–6 % shorter.";
 "Pause Shortening Medium Explanation" = "Pauses and hesitations play much faster. Episodes become about 5–9 % shorter.";
 "Pause Shortening Strong Explanation" = "Pauses almost disappear. Episodes become about 7–13 % shorter.";
+"Pause Detection" = "Detect Pauses";
+"Pause Detection Speech" = "Speech (Silero)";
+"Pause Detection Level" = "Loudness";
+"Pause Detection Speech Explanation" = "Speech detection (Silero VAD) checks sounds between two quiet stretches. Whatever is not speech, such as breaths, lip smacks or rustling, belongs to the pause. The beginnings and ends of words stay unchanged.";
+"Pause Detection Level Explanation" = "Only quiet stretches count as pauses. Sounds inside a pause keep their full length.";
 "Pause Shortening Saved %@" = "%@ saved";
 "Pause Shortening Waiting For Download" = "Starts when the episode has loaded";
 "Pause Shortening Unavailable SharePlay" = "Not during SharePlay";
 "Pause Shortening Unavailable Video" = "Not for videos";
 "Pause Shortening Unavailable File" = "Not available for this file";
+"Pause Shortening Unavailable Stream" = "Off for this stream";

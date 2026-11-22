@@ -109,6 +109,32 @@ static UIView* ICFindView(UIView* view, Class cls) {
                 else if ([action isEqual:@"speed"]) manager.speedControl = [command[@"control"] integerValue];
                 else if ([action isEqual:@"defaults"]) {
                     for (NSString *key in command[@"values"]) [defaults setObject:command[@"values"][key] forKey:key];
+                } else if ([action isEqual:@"trace"]) {
+                    // Records what a listener sees around an engine switch, every 10 ms: position,
+                    // engine, chapter artwork index, and episode-change notifications.
+                    NSMutableArray *samples = [NSMutableArray array];
+                    NSMutableArray *notes = [NSMutableArray array];
+                    CFTimeInterval start = NSProcessInfo.processInfo.systemUptime;
+                    NSString *traceName = command[@"file"] ?: @"trace.json";
+                    id observerChange = [[NSNotificationCenter defaultCenter] addObserverForName:@"MPPlaybackManagerDidChangeEpisodeNotification" object:nil queue:nil usingBlock:^(NSNotification *n) {
+                        [notes addObject:@{@"t": @(NSProcessInfo.processInfo.systemUptime - start), @"name": @"didChangeEpisode"}];
+                    }];
+                    double seconds = [command[@"seconds"] doubleValue];
+                    [NSTimer scheduledTimerWithTimeInterval:0.01 repeats:YES block:^(NSTimer *traceTimer) {
+                        PlaybackManager *m = [NSClassFromString(@"PlaybackManager") playbackManager];
+                        id trimPlayer = [m valueForKey:@"silenceTrimPlayer"];
+                        [samples addObject:@{@"t": @(NSProcessInfo.processInfo.systemUptime - start), @"time": @(m.time),
+                                             @"engine": trimPlayer ? @"silence-trim" : ([m valueForKey:@"player"] ? @"avplayer" : @"none"),
+                                             @"artwork": [m valueForKey:@"currentArtwork"] ?: @(-2),
+                                             @"chapters": @([[m valueForKey:@"chapters"] count]),
+                                             @"playing": @(m.isPodcastPlaying)}];
+                        if (NSProcessInfo.processInfo.systemUptime - start >= seconds) {
+                            [traceTimer invalidate];
+                            [[NSNotificationCenter defaultCenter] removeObserver:observerChange];
+                            NSData *json = [NSJSONSerialization dataWithJSONObject:@{@"samples": samples, @"notes": notes} options:0 error:nil];
+                            [json writeToFile:[directory stringByAppendingPathComponent:traceName] atomically:YES];
+                        }
+                    }];
                 } else if ([action isEqual:@"settings"]) {
                     if (command[@"enabled"]) [defaults setBool:[command[@"enabled"] boolValue] forKey:@"PlayerSilenceTrimEnabled"];
                     if (command[@"level"]) [defaults setInteger:[command[@"level"] integerValue] forKey:@"PlayerSilenceTrimLevel"];
@@ -203,15 +229,26 @@ static UIView* ICFindView(UIView* view, Class cls) {
                 reply[@"avplayerRate"] = @(player.rate);
                 reply[@"assetURL"] = [[manager valueForKey:@"mediaAsset"] valueForKeyPath:@"URL.absoluteString"] ?: @"";
                 reply[@"error"] = manager.playbackError.localizedDescription ?: @"";
+                reply[@"episodeSaved"] = @(manager.silenceTrimSavedTime);
                 if (trim) {
                     reply[@"trimTime"] = [trim valueForKey:@"currentTime"];
                     reply[@"trimSaved"] = [trim valueForKey:@"savedSeconds"];
                     reply[@"trimFactor"] = [trim valueForKey:@"pauseSpeedupFactor"];
                     reply[@"trimLevel"] = [trim valueForKey:@"level"];
+                    reply[@"trimSpeechDetection"] = [trim valueForKey:@"speechDetectionActive"];
                     reply[@"trimRequestedRate"] = [trim valueForKey:@"requestedRate"];
                     reply[@"trimRate"] = [trim valueForKey:@"rate"];
                     reply[@"trimVolume"] = [trim valueForKey:@"volume"];
+                    reply[@"trimStream"] = [trim valueForKey:@"isStream"];
+                    reply[@"trimDecodesFile"] = [trim valueForKey:@"decodesCompleteFile"];
+                    reply[@"trimWaits"] = [trim valueForKey:@"dataWaitCount"];
+                    reply[@"trimWaiting"] = [trim valueForKey:@"isWaitingForData"];
+                    reply[@"trimBuffered"] = [trim valueForKey:@"bufferedTime"];
+                    reply[@"trimWithdrawn"] = [trim valueForKey:@"withdrawnStreamRequests"];
+                    reply[@"trimOwnSource"] = [trim valueForKey:@"readsStreamItself"];
                 }
+                reply[@"playableDuration"] = @(manager.playableDuration);
+                reply[@"chapterCount"] = @([[manager valueForKey:@"chapters"] count]);
                 id playing = manager.playingEpisode;
                 if (playing) {
                     reply[@"levelForEpisode"] = @([manager silenceTrimLevelForEpisode:playing]);
@@ -245,6 +282,7 @@ static UIView* ICFindView(UIView* view, Class cls) {
                 reply[@"speedButtonMenuPrimary"] = @(speedButton.showsMenuAsPrimaryAction);
                 reply[@"defaultsEnabled"] = @([defaults boolForKey:@"PlayerSilenceTrimEnabled"]);
                 reply[@"defaultsLevel"] = @([defaults integerForKey:@"PlayerSilenceTrimLevel"]);
+                reply[@"defaultsDetection"] = @([defaults integerForKey:@"PlayerSilenceTrimDetection"]);
                 id playingFeed = [(NSObject*)episode valueForKey:@"feed"];
                 id feedProperty = [playingFeed respondsToSelector:@selector(propertyForKey:insertOnDemand:)] ? [playingFeed propertyForKey:@"PlayerSilenceTrimLevel" insertOnDemand:NO] : nil;
                 reply[@"feedOverride"] = feedProperty ? [feedProperty valueForKey:@"int32Value"] : [NSNull null];

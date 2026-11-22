@@ -3109,6 +3109,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"autoSkipEnd":             PlayerAutoSkipEndPeriod,
         @"silenceTrimEnabled":      PlayerSilenceTrimEnabled,
         @"silenceTrimLevel":        PlayerSilenceTrimLevel,
+        @"silenceTrimDetection":    PlayerSilenceTrimDetection,
         @"replayAfterPause":        PlayerReplayAfterPause,
         @"rememberChapterPosition": PlayerRememberChapterPosition,
         @"autoCacheAudio":          AutoCacheNewAudioEpisodes,

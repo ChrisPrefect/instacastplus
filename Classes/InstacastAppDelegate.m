@@ -228,6 +228,9 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     defaults[EpisodeSwipeLeftAction] = @(ICEpisodeSwipeActionAddToPlayNext);
     // Pause shortening stays off until it is enabled; this is only the level it then starts with.
     defaults[PlayerSilenceTrimLevel] = @2;
+    // Pauses are what has no speech, whatever is audible in them (21.11.2026); 0 is the level
+    // threshold alone.
+    defaults[PlayerSilenceTrimDetection] = @1;
     [defs registerDefaults:defaults];
     if (@available(iOS 17.0, *)) {
         [ICiCloudSyncManager purgeLegacyDefaultsBackedSyncMetadata];

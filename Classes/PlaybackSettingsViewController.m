@@ -89,7 +89,7 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
         case kPlaybackSection:
             return 9;
         case kSilenceTrimSection:
-            return [USER_DEFAULTS boolForKey:PlayerSilenceTrimEnabled] ? 2 : 1;
+            return [USER_DEFAULTS boolForKey:PlayerSilenceTrimEnabled] ? 3 : 1;
         default:
             break;
     }
@@ -315,6 +315,10 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     {
         [self _showSilenceTrimLevelSettings];
     }
+    if (indexPath.section == kSilenceTrimSection && indexPath.row == 2)
+    {
+        [self _showSilenceTrimDetectionSettings];
+    }
     if (indexPath.section == kPlaybackSection)
     {
         switch (indexPath.row) {
@@ -417,6 +421,11 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
         return cell;
     }
     UITableViewCell* cell = [self detailCell];
+    if (row == 2) {
+        cell.textLabel.text = @"Pause Detection".ls;
+        cell.detailTextLabel.text = [PlaybackManager titleForSilenceTrimDetection:[USER_DEFAULTS integerForKey:PlayerSilenceTrimDetection]];
+        return cell;
+    }
     cell.textLabel.text = @"Pause Shortening Default Level".ls;
     cell.detailTextLabel.text = [PlaybackManager titleForSilenceTrimLevel:[USER_DEFAULTS integerForKey:PlayerSilenceTrimLevel]];
     return cell;
@@ -452,6 +461,23 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     controller.selectedValue = @([USER_DEFAULTS integerForKey:PlayerSilenceTrimLevel]);
     controller.selectionHandler = ^(id value) {
         [USER_DEFAULTS setInteger:[value integerValue] forKey:PlayerSilenceTrimLevel];
+        [[PlaybackManager playbackManager] silenceTrimSettingsDidChange];
+    };
+    [self.navigationController pushViewController:controller animated:YES];
+}
+
+- (void) _showSilenceTrimDetectionSettings
+{
+    SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+    controller.valueType = kSettingTypeInteger;
+    controller.key = PlayerSilenceTrimDetection;
+    controller.title = @"Pause Detection".ls;
+    controller.values = @[ @1, @0 ];
+    controller.titles = @[ [PlaybackManager titleForSilenceTrimDetection:1], [PlaybackManager titleForSilenceTrimDetection:0] ];
+    controller.footerTexts = @[ @"Pause Detection Speech Explanation".ls, @"Pause Detection Level Explanation".ls ];
+    controller.selectedValue = @([USER_DEFAULTS integerForKey:PlayerSilenceTrimDetection]);
+    controller.selectionHandler = ^(id value) {
+        [USER_DEFAULTS setInteger:[value integerValue] forKey:PlayerSilenceTrimDetection];
         [[PlaybackManager playbackManager] silenceTrimSettingsDidChange];
     };
     [self.navigationController pushViewController:controller animated:YES];

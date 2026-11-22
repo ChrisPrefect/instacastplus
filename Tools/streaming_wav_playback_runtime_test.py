@@ -24,6 +24,11 @@ pre=r'''
 - (NSString*)ls{return self;}
 - (BOOL)caseInsensitiveEquals:(NSString*)other{return [self caseInsensitiveCompare:other]==NSOrderedSame;}
 @end
+// Declared in Swift (ICSilenceTrimPlayer.swift); the loader adopts it for pause shortening.
+@protocol ICSilenceTrimStreamSource <AVAssetResourceLoaderDelegate>
+@property (nonatomic, readonly, strong) dispatch_queue_t resourceLoaderQueue;
+- (void)abandonLoadingRequests:(NSArray<AVAssetResourceLoadingRequest*>*)requests;
+@end
 @interface CDEpisode:NSObject
 @property NSString *objectHash;
 @end

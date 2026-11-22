@@ -14,7 +14,8 @@
 //  Build:
 //    swiftc -O -parse-as-library -o build/SilenceTrim/silence_trim_player_probe \
 //      Classes/SilenceTrim/ICSilenceCompressor.swift Classes/SilenceTrim/ICSilenceTrimLevel.swift \
-//      Classes/SilenceTrim/ICSilenceTrimPlayer.swift Tools/SilenceTrim/silence_trim_player_probe.swift
+//      Classes/SilenceTrim/ICSilenceTrimPlayer.swift Classes/SilenceTrim/ICSilenceTrimHTTPSource.swift \
+//      Classes/SilenceTrim/ICSileroVAD.swift Tools/SilenceTrim/silence_trim_player_probe.swift
 //
 
 import Foundation

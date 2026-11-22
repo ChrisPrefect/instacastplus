@@ -59,6 +59,7 @@ NSString* PlayerNearChapterEndForwardSkipMode = @"PlayerNearChapterEndForwardSki
 NSString* PlayerNearChapterEndForwardSkipWindow = @"PlayerNearChapterEndForwardSkipWindow";
 NSString* PlayerSilenceTrimEnabled = @"PlayerSilenceTrimEnabled";
 NSString* PlayerSilenceTrimLevel = @"PlayerSilenceTrimLevel";
+NSString* PlayerSilenceTrimDetection = @"PlayerSilenceTrimDetection";
 NSString* PlayerAutoSkipEndPeriod = @"PlayerAutoSkipEndPeriod";
 NSString* PlayerAutoSkipStartPeriod = @"PlayerAutoSkipStartPeriod";
 NSString* PlayerReplayAfterPause = @"ReplayAfterPause";

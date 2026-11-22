@@ -28,7 +28,7 @@ import Foundation
                                                   leadingGuard: 0.06,
                                                   trailingGuard: 0.04)
         case .medium:
-            // Comparable to Overcast's Smart Speed: about 5-11 % shorter.
+            // About 5-9 % shorter; below the roughly 15 % reported for Overcast (see README).
             return ICSilenceCompressor.Parameters(silenceRate: 3.5,
                                                   maximumPauseDuration: 0.7,
                                                   leadingGuard: 0.045,
@@ -40,6 +40,19 @@ import Foundation
                                                   leadingGuard: 0.03,
                                                   trailingGuard: 0.018)
         }
+    }
+
+    /// Used while shortening is switched off during playback: the engine keeps playing and passes
+    /// every sample through (with a silence rate of 1 the compressor plans no pause at all), so
+    /// switching needs no player change.
+    static let passthroughParameters = ICSilenceCompressor.Parameters(silenceRate: 1.0,
+                                                                      maximumPauseDuration: 1.0,
+                                                                      leadingGuard: 0.045,
+                                                                      trailingGuard: 0.028)
+
+    /// Compressor values for this level, the passthrough ones for `.off`.
+    var playbackParameters: ICSilenceCompressor.Parameters {
+        compressorParameters ?? Self.passthroughParameters
     }
 
     var diagnosticName: String {
