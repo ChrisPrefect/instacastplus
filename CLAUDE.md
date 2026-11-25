@@ -22,7 +22,7 @@ Diese Datei enthält nur Dinge, die man dem Code NICHT ansieht: Fallen, die scho
 
 ## Build
 
-Es gibt vier Schemes: `Instacast` (iPhone und iPad kommen aus diesem einen Target), `InstacastWatch`, `InstacastWidgets`, `InstacastWatchWidgets`. Ein Scheme „Instacast HD" oder „InstacastMac" existiert nicht.
+`Instacast` startet den Debug-Build für iPhone, iPad und Mac Catalyst ohne automatischen LLDB-Attach. Für Breakpoints und Variableninspektion beim Start dient `Instacast - LLDB` mit demselben Target und derselben Build-Konfiguration. Weitere Schemes sind `InstacastWatch`, `InstacastWidgets` und `InstacastWatchWidgets`. Ein Scheme „Instacast HD" oder „InstacastMac" existiert nicht.
 
 ```bash
 xcodebuild -project Instacast.xcodeproj -scheme Instacast build

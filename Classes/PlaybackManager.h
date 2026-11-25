@@ -97,7 +97,7 @@
 - (BOOL)autoSkipsChapterTitle:(NSString*)title forFeed:(CDFeed*)feed;
 - (BOOL)autoSkipsChapterTitle:(NSString*)title atTime:(NSTimeInterval)time inEpisode:(CDEpisode*)episode;
 - (void)setChapterSkipped:(BOOL)skipped title:(NSString*)title atTime:(NSTimeInterval)time inEpisode:(CDEpisode*)episode;
-- (void)addSkipRuleForChapterTitle:(NSString*)title inEpisode:(CDEpisode*)episode atTime:(NSTimeInterval)time;
+- (void)addSkipRule:(NSString*)keyword forChapterTitle:(NSString*)title atTime:(NSTimeInterval)time inEpisode:(CDEpisode*)episode;
 
 - (void) nextTrack;
 - (void) previousTrack;

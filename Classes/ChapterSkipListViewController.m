@@ -63,6 +63,16 @@
     [self updateAppearance];
 }
 
+- (void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
+    if (self.initialKeyword != nil) {
+        NSString *keyword = self.initialKeyword;
+        self.initialKeyword = nil;
+        [self showAddKeywordAlertWithKeyword:keyword];
+    }
+}
+
 - (void)dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
@@ -435,6 +445,11 @@
 
 - (void)showAddKeywordAlert
 {
+    [self showAddKeywordAlertWithKeyword:nil];
+}
+
+- (void)showAddKeywordAlertWithKeyword:(NSString *)initialKeyword
+{
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Add Keyword…".ls
                                                                   message:nil
                                                            preferredStyle:UIAlertControllerStyleAlert];
@@ -442,6 +457,7 @@
     [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.placeholder = @"e.g. Ads, Intro, Sponsor".ls;
         textField.autocapitalizationType = UITextAutocapitalizationTypeSentences;
+        textField.text = initialKeyword;
     }];
 
     if ([ICAppearanceManager sharedManager].nightSettingMode) {
@@ -468,7 +484,13 @@
 
     [alert addAction:addAction];
     [alert addAction:cancelAction];
-    [self presentViewController:alert animated:YES completion:nil];
+    [self presentViewController:alert animated:YES completion:^{
+        if (initialKeyword.length > 0) {
+            UITextField *field = alert.textFields.firstObject;
+            [field becomeFirstResponder];
+            field.selectedTextRange = [field textRangeFromPosition:field.beginningOfDocument toPosition:field.endOfDocument];
+        }
+    }];
 }
 
 - (void)addKeyword:(NSString *)keyword
@@ -480,6 +502,7 @@
     NSInteger newRow = [self rowForKeywordAtIndex:self.keywords.count - 1];
     [self.tableView insertRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:newRow inSection:0]]
                           withRowAnimation:UITableViewRowAnimationAutomatic];
+    if (self.keywordAdded) self.keywordAdded(keyword);
 }
 
 #pragma mark - Stepper

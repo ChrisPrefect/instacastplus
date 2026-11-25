@@ -54,11 +54,12 @@ def main():
         audio.writeframes(b'\0\0' * 8000 * 96)
     shutil.copy2(directory / 'fixture.wav', out / 'fixture.wav')
     sources = [source, Path(__file__).resolve(), ROOT / 'Tools/fixtures/chapter_actions_ui.swift',
-               ROOT / 'Classes/PlayerInfoViewController_v5.m', ROOT / 'Classes/PlaybackManager.m']
+               ROOT / 'Classes/PlayerInfoViewController_v5.m', ROOT / 'Classes/PlaybackManager.m',
+               ROOT / 'Classes/ChapterSkipListViewController.m']
     (out / 'environment.json').write_text(json.dumps(dict(
         command=shlex.join([sys.executable, *sys.argv]), runtime=runtime, device=device, app=str(args.app.resolve()),
         fixture='96s WAV; two episodes in one feed, each eight chapters every 12s; duplicate Intro at 12s and 60s',
-        expected='Long press menu offers episode skip or named feed rule; strike, skip, reactivate without menu; episode isolation',
+        expected='Menu has actions only; rule action opens existing editor with selected chapter name, cancel saves nothing, edited rule is saved on Add; strike, playback, reactivation and episode isolation',
         scope='Native XCTest press and menu tap; actual UIKit rows/Core Data/AVPlayer, no replaced production methods',
         sourceSHA256={str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources},
         binarySHA256={p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in args.app.glob('InstacastPlus*') if p.is_file()}), indent=2))

@@ -44,6 +44,15 @@ final class ChapterActionsTests: XCTestCase {
         XCTAssertEqual(strikes[title], expected, "\(state)")
     }
     func press(_ title: String) { chapter(title).press(forDuration: 0.8) }
+    func testMenuContainsOnlyActions() throws {
+        app.activate()
+        press("Main")
+        try capture("menu-without-extra-text")
+        let menu = try command()
+        XCTAssertEqual(menu["menuTitle"] as? String, "")
+        XCTAssertEqual(menu["menuMessage"] as? String, "")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).tap()
+    }
     func testChapterActions() throws {
         app.activate()
         XCTAssertTrue(chapter("Intro").waitForExistence(timeout: 10))
@@ -75,10 +84,32 @@ final class ChapterActionsTests: XCTestCase {
         try assertStrike("Intro", false)
         press("Sponsor Special")
         app.buttons["Skip-Regel erstellen"].tap()
+        let nameField = app.alerts.textFields.firstMatch
+        let editorOpened = nameField.waitForExistence(timeout: 3)
+        XCTAssertTrue(editorOpened, app.debugDescription)
+        guard editorOpened else { return }
+        XCTAssertEqual(nameField.value as? String, "Sponsor Special")
+        XCTAssertEqual(try command()["rule"] as? String, "")
+        try assertStrike("Sponsor Special", false)
+        try capture("rule-editor-prefilled")
+        let selection = try command()
+        XCTAssertEqual(selection["editorSelectionStart"] as? Int, 0)
+        XCTAssertEqual(selection["editorSelectionLength"] as? Int, "Sponsor Special".count)
+        app.alerts.buttons["Abbrechen"].tap()
+        XCTAssertEqual(try command()["rule"] as? String, "")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        press("Sponsor Special")
+        app.buttons["Skip-Regel erstellen"].tap()
+        XCTAssertTrue(nameField.waitForExistence(timeout: 3))
+        XCTAssertEqual(nameField.value as? String, "Sponsor Special")
+        // Typing replaces the preselected title before the user saves the rule.
+        nameField.typeText("Sponsor")
+        app.alerts.buttons["Hinzufügen"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         try assertStrike("Sponsor Special", true)
         try capture("rule-created")
         let rule = try command()["rule"] as? String ?? ""
-        XCTAssertEqual(rule, "Sponsor Special")
+        XCTAssertEqual(rule, "Sponsor")
         press("Sponsor Special")
         XCTAssertFalse(app.buttons["Kapitel überspringen"].exists)
         try assertStrike("Sponsor Special", false)

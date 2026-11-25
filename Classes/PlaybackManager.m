@@ -3008,19 +3008,21 @@ didReceiveResponse:(NSURLResponse *)response
     if (episode == self.playingEpisode) [self _computeAutoSkipMarkers];
 }
 
-- (void)addSkipRuleForChapterTitle:(NSString*)title inEpisode:(CDEpisode*)episode atTime:(NSTimeInterval)time
+- (void)addSkipRule:(NSString*)keyword forChapterTitle:(NSString*)title atTime:(NSTimeInterval)time inEpisode:(CDEpisode*)episode
 {
-    if (title.length == 0 || !episode.feed) return;
+    if (keyword.length == 0 || !episode.feed) return;
     NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", episode.feed.uid];
     NSString *value = [episode.feed stringForKey:key];
     NSMutableArray *names = value.length ? [[value componentsSeparatedByString:@".  "] mutableCopy] : [NSMutableArray array];
-    if (![names containsObject:title]) {
-        [names addObject:title];
+    if (![names containsObject:keyword]) {
+        [names addObject:keyword];
         [episode.feed setString:[names componentsJoinedByString:@".  "] forKey:key];
     }
-    // A previously reactivated chapter must follow the newly requested rule again.
+    // Reactivated chapters follow a new rule only when the saved keyword matches.
     NSMutableDictionary *overrides = [[self _chapterSkipOverridesForEpisode:episode] mutableCopy];
-    [overrides removeObjectForKey:[self _chapterSkipIdentifierForTitle:title time:time]];
+    if ([self _matchingSkipNameForChapterTitle:title withNames:@[keyword]]) {
+        [overrides removeObjectForKey:[self _chapterSkipIdentifierForTitle:title time:time]];
+    }
     NSString *overridesKey = [self _chapterSkipOverridesKeyForEpisode:episode];
     if (overrides.count) {
         NSData *data = [NSJSONSerialization dataWithJSONObject:overrides options:NSJSONWritingSortedKeys error:nil];

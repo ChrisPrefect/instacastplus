@@ -60,7 +60,12 @@ static NSDictionary *snapshot(void) {
     }
     id feed = [episode valueForKey:@"feed"];
     NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", [feed valueForKey:@"uid"]];
-    return @{@"backupStatus": backupStatus, @"episodeHash": [pman valueForKeyPath:@"playingEpisode.objectHash"] ?: @"", @"targetEpisodeHash": [episode valueForKey:@"objectHash"] ?: @"", @"strikes": strikes, @"lastStrike": @(lastStrike), @"rule": [feed stringForKey:key] ?: @"", @"presented": @(player.view.window != nil && !player.isBeingPresented),
+    UIViewController *presented = player;
+    while (presented.presentedViewController) presented = presented.presentedViewController;
+    UIAlertController *menu = [presented isKindOfClass:UIAlertController.class] ? (id)presented : nil;
+    UITextField *field = menu.textFields.firstObject;
+    UITextRange *selection = field.selectedTextRange;
+    return @{@"editorSelectionStart": @(selection ? [field offsetFromPosition:field.beginningOfDocument toPosition:selection.start] : -1), @"editorSelectionLength": @(selection ? [field offsetFromPosition:selection.start toPosition:selection.end] : 0), @"menuTitle": menu.title ?: @"", @"menuMessage": menu.message ?: @"", @"backupStatus": backupStatus, @"episodeHash": [pman valueForKeyPath:@"playingEpisode.objectHash"] ?: @"", @"targetEpisodeHash": [episode valueForKey:@"objectHash"] ?: @"", @"strikes": strikes, @"lastStrike": @(lastStrike), @"rule": [feed stringForKey:key] ?: @"", @"presented": @(player.view.window != nil && !player.isBeingPresented),
         @"playerTop": @(player.topViewController == content), @"transitioning": @(player.transitionCoordinator != nil),
         @"ready": [pman valueForKey:@"ready"] ?: @NO, @"loading": @([content valueForKey:@"loadingInfo"] != nil), @"rows": @(rows),
         @"offset": @(table.contentOffset.y), @"height": @(table.bounds.size.height),

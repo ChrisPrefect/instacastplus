@@ -12,6 +12,7 @@
 #import "InstacastPlus-Swift.h"
 #import "PlayerInfoViewController_v5.h"
 #import "ChaptersTableViewCell.h"
+#import "ChapterSkipListViewController.h"
 #import "PlayerInfoHeaderFooterView.h"
 #import "PlayerBookmarksTableViewCell.h"
 #import "UIViewController+ShowNotes.h"
@@ -4011,8 +4012,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [self _updateVisibleChapterSkipStates];
         return;
     }
-    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:chapter.title
-        message:@"Skip this chapter only in this episode, or create a rule for this podcast.".ls
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:nil
+        message:nil
         preferredStyle:UIAlertControllerStyleActionSheet];
     __weak typeof(self) weakSelf = self;
     [sheet addAction:[UIAlertAction actionWithTitle:@"Skip Chapter".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
@@ -4020,8 +4021,13 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [weakSelf _updateVisibleChapterSkipStates];
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Create Skip Chapter Rule".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        [pman addSkipRuleForChapterTitle:chapter.title inEpisode:episode atTime:chapter.timecode];
-        [weakSelf _updateVisibleChapterSkipStates];
+        ChapterSkipListViewController *controller = [ChapterSkipListViewController controllerWithFeed:episode.feed];
+        controller.initialKeyword = chapter.title;
+        controller.keywordAdded = ^(NSString *keyword) {
+            [pman addSkipRule:keyword forChapterTitle:chapter.title atTime:chapter.timecode inEpisode:episode];
+            [weakSelf _updateVisibleChapterSkipStates];
+        };
+        [weakSelf.navigationController pushViewController:controller animated:YES];
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:nil]];
     sheet.overrideUserInterfaceStyle = [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
