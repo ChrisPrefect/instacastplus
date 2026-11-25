@@ -2191,8 +2191,7 @@
 "Pause Shortening Medium" = "Medium";
 "Pause Shortening Strong" = "Strong";
 "Pause Shortening Default Level" = "Default Strength";
-"Pause Shortening Explanation" = "Plays pauses in speech faster without speeding up voices, so episodes finish sooner. The strength is chosen in the player’s speed menu.";
-"Pause Shortening Footer" = "Applies to downloaded episodes and to streams once they have loaded completely. Not used for videos or during SharePlay. The strength can be set per podcast in the podcast settings.";
+"Pause Shortening Explanation" = "Plays pauses in speech faster without speeding up voices. The strength is chosen in the player’s speed menu.";
 "Pause Shortening Off Explanation" = "Pauses play unchanged.";
 "Pause Shortening Mild Explanation" = "Only clear pauses, gently shortened. Episodes become about 3–6 % shorter.";
 "Pause Shortening Medium Explanation" = "Pauses and hesitations play much faster. Episodes become about 5–9 % shorter.";
@@ -2208,3 +2207,8 @@
 "Pause Shortening Unavailable Video" = "Not for videos";
 "Pause Shortening Unavailable File" = "Not available for this file";
 "Pause Shortening Unavailable Stream" = "Off for this stream";
+
+/* Chapter long press */
+"Create Skip Chapter Rule" = "Create Skip Chapter Rule";
+"Chapter Skipped" = "Skipped";
+"Skip this chapter only in this episode, or create a rule for this podcast." = "Skip this chapter only in this episode, or create a rule for this podcast.";

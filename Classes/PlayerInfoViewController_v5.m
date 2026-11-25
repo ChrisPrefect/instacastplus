@@ -469,7 +469,7 @@ enum {
 
 
 
-@interface PlayerInfoViewController_v5 () <UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIScrollViewDelegate, UITextViewDelegate, UITextFieldDelegate>
+@interface PlayerInfoViewController_v5 () <UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIScrollViewDelegate, UITextViewDelegate, UITextFieldDelegate, UIGestureRecognizerDelegate>
 @property (nonatomic, strong, readwrite) UIImageView* imageView;
 
 @property (nonatomic) NSTimeInterval duration;
@@ -555,6 +555,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     BOOL _dismissEnded;
     CGFloat _startY;
     BOOL _didWillAppear;
+    BOOL _hasAppeared;
     BOOL _scrollingToChapterList;
     BOOL _chapterListAnchorActive;
     BOOL _chapterListTransitionActive;
@@ -849,6 +850,10 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [self.tableView registerClass:[PlayerBookmarksTableViewCell class] forCellReuseIdentifier:kBookmarkCell];
     [self.tableView registerClass:[EpisodesTableViewCell class] forCellReuseIdentifier:kUpNextCell];
     [self.tableView registerClass:[PlayerInfoHeaderFooterView class] forHeaderFooterViewReuseIdentifier:kHeaderView];
+
+    UILongPressGestureRecognizer *chapterPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleChapterLongPress:)];
+    chapterPress.delegate = self;
+    [self.tableView addGestureRecognizer:chapterPress];
     
     UIImage* placeholder = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) ? [UIImage imageNamed:@"Podcast Placeholder 580"] : [UIImage imageNamed:@"Podcast Placeholder 320"];
     self.imageView = [[UIImageView alloc] initWithImage:(self.image) ? self.image : placeholder];
@@ -2913,7 +2918,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 {
     [super viewWillAppear:animated];
 
-    _didWillAppear = YES;
+    _didWillAppear = !_hasAppeared;
 
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICTableSeparatorColor;
@@ -2956,6 +2961,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [super viewDidAppear:animated];
 
     _didWillAppear = NO;
+    _hasAppeared = YES;
     [self _updateTranscriptSyncTimerState];
 }
 
@@ -3575,7 +3581,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         
         // Strikethrough for auto-skipped chapters
         CDEpisode *episode = pman.playingEpisode;
-        BOOL shouldStrike = [pman autoSkipsChapterTitle:chapter.title forFeed:episode.feed];
+        BOOL shouldStrike = [pman autoSkipsChapterTitle:chapter.title atTime:chapter.timecode inEpisode:episode];
         NSDictionary *attrs;
         if (shouldStrike) {
             attrs = @{
@@ -3591,6 +3597,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             };
         }
         cell.textLabel.attributedText = [[NSAttributedString alloc] initWithString:chapter.title attributes:attrs];
+        cell.textLabel.accessibilityValue = shouldStrike ? @"Chapter Skipped".ls : nil;
 
         cell.progressView.hidden = (currentChapter != indexPath.row);
         cell.progressView.progress = 0;
@@ -3961,18 +3968,66 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSInteger section = [self _chaptersSection];
     self.displayedAudioIdentityNotice = notice;
     [self _configureAudioIdentityFooter:[self.tableView footerViewForSection:section]];
-    PlaybackManager *pman = [PlaybackManager playbackManager];
-    for (NSIndexPath *indexPath in self.tableView.indexPathsForVisibleRows) {
-        if (indexPath.section != section || indexPath.row >= self.chapters.count) continue;
-        UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
-        if (!cell.textLabel.attributedText) continue;
-        NSMutableAttributedString *title = [cell.textLabel.attributedText mutableCopy];
-        BOOL skip = [pman autoSkipsChapterTitle:title.string forFeed:pman.playingEpisode.feed];
-        [title addAttribute:NSStrikethroughStyleAttributeName value:@(skip ? NSUnderlineStyleSingle : NSUnderlineStyleNone) range:NSMakeRange(0, title.length)];
-        cell.textLabel.attributedText = title;
-    }
+    [self _updateVisibleChapterSkipStates];
     [self.tableView beginUpdates];
     [self.tableView endUpdates];
+}
+
+- (void)_updateVisibleChapterSkipStates
+{
+    PlaybackManager *pman = [PlaybackManager playbackManager];
+    for (NSIndexPath *indexPath in self.tableView.indexPathsForVisibleRows) {
+        if (indexPath.section != [self _chaptersSection] || indexPath.row >= self.chapters.count) continue;
+        UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
+        if (!cell.textLabel.attributedText) continue;
+        ICPlayerChapterDisplayItem *chapter = self.chapters[indexPath.row];
+        NSMutableAttributedString *title = [cell.textLabel.attributedText mutableCopy];
+        BOOL skip = [pman autoSkipsChapterTitle:chapter.title atTime:chapter.timecode inEpisode:pman.playingEpisode];
+        [title addAttribute:NSStrikethroughStyleAttributeName value:@(skip ? NSUnderlineStyleSingle : NSUnderlineStyleNone) range:NSMakeRange(0, title.length)];
+        cell.textLabel.attributedText = title;
+        cell.textLabel.accessibilityValue = skip ? @"Chapter Skipped".ls : nil;
+    }
+}
+
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer*)recognizer
+{
+    NSIndexPath *path = [self.tableView indexPathForRowAtPoint:[recognizer locationInView:self.tableView]];
+    return !self.editing && !self.presentedViewController && path &&
+        path.section == [self _chaptersSection] && path.row < self.chapters.count;
+}
+
+- (void)handleChapterLongPress:(UILongPressGestureRecognizer*)recognizer
+{
+    if (recognizer.state != UIGestureRecognizerStateBegan) return;
+    NSIndexPath *path = [self.tableView indexPathForRowAtPoint:[recognizer locationInView:self.tableView]];
+    if (!path || path.section != [self _chaptersSection] || path.row >= self.chapters.count) return;
+    ICPlayerChapterDisplayItem *chapter = self.chapters[path.row];
+    PlaybackManager *pman = [PlaybackManager playbackManager];
+    CDEpisode *episode = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    if (!episode) return;
+    PlayHapticFeedback(ICHapticFeedbackLight);
+    if ([pman autoSkipsChapterTitle:chapter.title atTime:chapter.timecode inEpisode:episode]) {
+        [pman setChapterSkipped:NO title:chapter.title atTime:chapter.timecode inEpisode:episode];
+        [self _updateVisibleChapterSkipStates];
+        return;
+    }
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:chapter.title
+        message:@"Skip this chapter only in this episode, or create a rule for this podcast.".ls
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak typeof(self) weakSelf = self;
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Skip Chapter".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [pman setChapterSkipped:YES title:chapter.title atTime:chapter.timecode inEpisode:episode];
+        [weakSelf _updateVisibleChapterSkipStates];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Create Skip Chapter Rule".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [pman addSkipRuleForChapterTitle:chapter.title inEpisode:episode atTime:chapter.timecode];
+        [weakSelf _updateVisibleChapterSkipStates];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:nil]];
+    sheet.overrideUserInterfaceStyle = [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+    sheet.popoverPresentationController.sourceView = self.tableView;
+    sheet.popoverPresentationController.sourceRect = [self.tableView rectForRowAtIndexPath:path];
+    [self presentViewController:sheet animated:YES completion:nil];
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section

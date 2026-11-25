@@ -162,6 +162,20 @@ static UIImage* ICPlayerTransportImage(NSString* name)
 
 @end
 
+@interface ICPlayerVolumeView : MPVolumeView
+@property (nonatomic, copy) void (^layoutHandler)(void);
+@end
+
+@implementation ICPlayerVolumeView
+- (void)layoutSubviews
+{
+    [super layoutSubviews];
+    if (self.layoutHandler) {
+        self.layoutHandler();
+    }
+}
+@end
+
 @interface PlaybackControlsViewController () <UIGestureRecognizerDelegate>
 @property (nonatomic, weak) NSTimer* progressTimer;
 @property (nonatomic, weak) NSTimer* skipTimer;
@@ -202,7 +216,11 @@ static UIImage* ICPlayerTransportImage(NSString* name)
     hitView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
     hitView.backgroundColor = [UIColor clearColor];
 
-    MPVolumeView* volumeView = [[MPVolumeView alloc] initWithFrame:CGRectMake(0, 0, sliderWidth, sliderHeight)];
+    ICPlayerVolumeView* volumeView = [[ICPlayerVolumeView alloc] initWithFrame:CGRectMake(0, 0, sliderWidth, sliderHeight)];
+    __weak typeof(self) weakSelf = self;
+    volumeView.layoutHandler = ^{
+        [weakSelf _alignVolumeButtonsToSliderTrack];
+    };
     volumeView.backgroundColor = [UIColor clearColor];
     volumeView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     volumeView.userInteractionEnabled = NO; // container handles all touches
@@ -256,10 +274,8 @@ static UIImage* ICPlayerTransportImage(NSString* name)
     [self updateToolButtonsVisibility];
 }
 
-- (void) _alignVolumeSliderTrack
+- (void) _alignVolumeButtonsToSliderTrack
 {
-    [self.volumeView layoutIfNeeded];
-
     UISlider* slider = nil;
     for (UIView* subview in self.volumeView.subviews) {
         if ([subview isKindOfClass:[UISlider class]]) {
@@ -271,16 +287,25 @@ static UIImage* ICPlayerTransportImage(NSString* name)
         return;
     }
 
+    [slider layoutIfNeeded];
     CGRect trackRect = [slider trackRectForBounds:slider.bounds];
     CGRect trackRectInPlayer = [self.view convertRect:trackRect fromView:slider];
-    [self.volumeMinButton layoutIfNeeded];
-    [self.volumeMaxButton layoutIfNeeded];
-    CGRect minIconRect = [self.view convertRect:self.volumeMinButton.imageView.bounds fromView:self.volumeMinButton.imageView];
-    CGRect maxIconRect = [self.view convertRect:self.volumeMaxButton.imageView.bounds fromView:self.volumeMaxButton.imageView];
-    CGFloat iconCenterY = (CGRectGetMidY(minIconRect) + CGRectGetMidY(maxIconRect)) / 2.0f;
-    CGFloat offset = iconCenterY - CGRectGetMidY(trackRectInPlayer);
-    if (ABS(offset) > 0.1f) {
-        self.volumeView.frame = CGRectOffset(self.volumeView.frame, 0, offset);
+    // Keep the system track at its native height; align the speaker artwork
+    // inside the existing 44-point touch targets instead of lowering the track.
+    for (UIButton* button in @[self.volumeMinButton, self.volumeMaxButton]) {
+        [button layoutIfNeeded];
+        CGRect iconRect = [self.view convertRect:button.imageView.bounds fromView:button.imageView];
+        CGFloat offset = CGRectGetMidY(trackRectInPlayer) - CGRectGetMidY(iconRect);
+        if (ABS(offset) > 0.5f) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            UIEdgeInsets insets = button.imageEdgeInsets;
+            insets.top += offset;
+            insets.bottom -= offset;
+            button.imageEdgeInsets = insets;
+#pragma clang diagnostic pop
+            [button layoutIfNeeded];
+        }
     }
 }
 
@@ -540,12 +565,13 @@ static UIImage* ICPlayerTransportImage(NSString* name)
     self.elapsedTimeLabel.frame = CGRectMake(20, 32, 70, 20);
     self.remainingTimeLabel.frame = CGRectMake(width - 90, 32, 70, 20);
 
-    self.controllerButtonGroup.frame = CGRectMake(left, transportY + extraHeight / 2, width, ICPlayerTransportRowHeight);
-    self.backButton.frame = CGRectMake(0, 0, width / 3, ICPlayerTransportRowHeight);
-    self.forwardButton.frame = CGRectMake(width * 2 / 3, 0, width / 3, ICPlayerTransportRowHeight);
+    // Give Play/Pause the free space above and below the transport glyphs.
+    self.controllerButtonGroup.frame = CGRectMake(left, transportY, width, ICPlayerTransportRowHeight + extraHeight);
+    self.backButton.frame = CGRectMake(0, extraHeight / 2, width / 3, ICPlayerTransportRowHeight);
+    self.forwardButton.frame = CGRectMake(width * 2 / 3, extraHeight / 2, width / 3, ICPlayerTransportRowHeight);
     CGRect playFrame = self.playButton.frame;
     playFrame.origin.y = 0;
-    playFrame.size.height = ICPlayerTransportRowHeight;
+    playFrame.size.height = CGRectGetHeight(self.controllerButtonGroup.bounds);
     self.playButton.frame = playFrame;
 
     self.volumeMinButton.frame = CGRectMake(left + 20, volumeY, 44, ICPlayerVolumeRowHeight);
@@ -591,7 +617,8 @@ static UIImage* ICPlayerTransportImage(NSString* name)
 {
     [super viewDidLayoutSubviews];
     [self _layoutPlayButtonAroundFold];
-    [self _alignVolumeSliderTrack];
+    [self.volumeView layoutIfNeeded];
+    [self _alignVolumeButtonsToSliderTrack];
 }
 
 - (void)_layoutPlayButtonAroundFold

@@ -95,6 +95,9 @@
 
 // Uses the same effective chapter-keyword list as playback marker generation.
 - (BOOL)autoSkipsChapterTitle:(NSString*)title forFeed:(CDFeed*)feed;
+- (BOOL)autoSkipsChapterTitle:(NSString*)title atTime:(NSTimeInterval)time inEpisode:(CDEpisode*)episode;
+- (void)setChapterSkipped:(BOOL)skipped title:(NSString*)title atTime:(NSTimeInterval)time inEpisode:(CDEpisode*)episode;
+- (void)addSkipRuleForChapterTitle:(NSString*)title inEpisode:(CDEpisode*)episode atTime:(NSTimeInterval)time;
 
 - (void) nextTrack;
 - (void) previousTrack;

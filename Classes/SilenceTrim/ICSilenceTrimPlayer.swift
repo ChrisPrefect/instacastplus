@@ -307,16 +307,20 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                 let seconds = loadedDuration.isNumeric ? CMTimeGetSeconds(loadedDuration) : 0
                 let sourceChannels = Int(asbd?.mChannelsPerFrame ?? 0)
                 let rate = asbd?.mSampleRate ?? 0
+                // AVAssetTrack is not marked Sendable. A loaded track is only read from here on,
+                // and only on the pipeline queue (AVFoundation: loaded assets and tracks may be
+                // read from any thread).
+                nonisolated(unsafe) let loadedAudio = audio
                 DispatchQueue.main.async {
                     guard let self, !self.invalidated else { return }
-                    guard let audio, !hasMovingVideo, sourceChannels >= 1, sourceChannels <= 2, rate >= 8000, seconds > 0 else {
+                    guard loadedAudio != nil, !hasMovingVideo, sourceChannels >= 1, sourceChannels <= 2, rate >= 8000, seconds > 0 else {
                         self.fail(code: Self.unsupportedMediaErrorCode,
-                                  reason: hasMovingVideo ? "video" : (audio == nil ? "no audio track" : "unsupported format \(sourceChannels) ch \(rate) Hz"))
+                                  reason: hasMovingVideo ? "video" : (loadedAudio == nil ? "no audio track" : "unsupported format \(sourceChannels) ch \(rate) Hz"))
                         return
                     }
                     self.duration = seconds
                     self.queue.async {
-                        self.audioTrack = audio
+                        self.audioTrack = loadedAudio
                         self.sampleRate = rate
                         self.channelCount = sourceChannels
                         self.makeFormatDescription()
@@ -760,9 +764,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
             decodedEnd.withLock { $0 = source }
         }
 
-        renderer.requestMediaDataWhenReady(on: queue) { [weak self] in
-            self?.provideMediaData(generation: currentGeneration)
-        }
+        requestMediaData(generation: currentGeneration)
     }
 
     private func provideMediaData(generation requestGeneration: Int) {
@@ -922,6 +924,13 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                         sourceSample: sample, primed: true)
     }
 
+    /// Asks the renderer for data for the session `requestGeneration` (pipeline queue).
+    private func requestMediaData(generation requestGeneration: Int) {
+        renderer.requestMediaDataWhenReady(on: queue) { [weak self] in
+            self?.provideMediaData(generation: requestGeneration)
+        }
+    }
+
     // MARK: Waiting for stream data (queue)
 
     /// Output sample where the enqueued audio ends.
@@ -933,9 +942,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
         guard requestGeneration == generation, waitingForInput, !reportedFailure else { return }
         waitingForInput = false
         removeDataWaitObserver()
-        renderer.requestMediaDataWhenReady(on: queue) { [weak self] in
-            self?.provideMediaData(generation: requestGeneration)
-        }
+        requestMediaData(generation: requestGeneration)
     }
 
     /// Stops the clock shortly before the enqueued audio runs out, unless input arrives first.
@@ -1072,10 +1079,12 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
             _ = output.copyNextSampleBuffer()
             reader.cancelReading()
             guard let self else { return }
+            // Loaded and only read on the pipeline queue from here on (see prepare(at:)).
+            nonisolated(unsafe) let preciseAudio = track
             self.queue.async {
                 guard !self.reportedFailure, self.compressor != nil else { return }
                 self.preciseAsset = precise
-                self.preciseTrack = track
+                self.preciseTrack = preciseAudio
                 if !self.sessionIsPrecise { self.pendingRealign = true }
             }
         }
@@ -1160,9 +1169,7 @@ final class ICSilenceTrimPlayer: NSObject, @unchecked Sendable {
                     // The renderer already took that audio (locally it holds all ~1.5 s it asked
                     // for); keep it, the new level follows right after it.
                     self.partialFlushRefusals += 1
-                    self.renderer.requestMediaDataWhenReady(on: self.queue) { [weak self] in
-                        self?.provideMediaData(generation: currentGeneration)
-                    }
+                    self.requestMediaData(generation: currentGeneration)
                 }
             }
         }

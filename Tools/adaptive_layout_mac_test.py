@@ -5,6 +5,7 @@ The test-only UIKit driver calls production navigation handlers. It never replac
 methods or window geometry. Resize the real window between --action invocations.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -32,6 +33,7 @@ p.add_argument('--verify-cover-at-top', action='store_true')
 p.add_argument('--verify-disclosure', action='store_true')
 p.add_argument('--verify-list-headers', action='store_true')
 p.add_argument('--verify-system-volume', action='store_true')
+p.add_argument('--verify-native-volume-position', action='store_true')
 p.add_argument('--verify-tools', action='store_true')
 p.add_argument('--verify-tool-glyphs', action='store_true')
 p.add_argument('--verify-player-glyphs', action='store_true')
@@ -70,9 +72,15 @@ if args.setup:
          str(ROOT / 'Tools/fixtures/adaptive_layout_probe.m'), '-o', str(library)])
     run(['codesign', '-s', 'Apple Development', str(library)])
     (out / 'environment.json').write_text(json.dumps({
+        'command': shlex.join([sys.executable, *sys.argv]),
         'app': str(args.app.resolve()), 'sdk': sdk,
         'expected': 'Signed production app stays running and returns real window geometry; no startup crash.',
         'signing': run(['codesign', '-d', '--entitlements', ':-', str(args.app.resolve())]),
+        'sourceSHA256': {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in [
+            Path(__file__).resolve(), ROOT / 'Tools/fixtures/adaptive_layout_probe.m',
+            ROOT / 'Classes/PlaybackControlsViewController.m', ROOT / 'Classes/PlayerInfoViewController_v5.m']},
+        'binarySHA256': {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                         for path in (args.app / 'Contents/MacOS').glob('InstacastPlus*') if path.is_file()},
     }, indent=2))
     # LaunchServices keeps subsequent native-app inspection attached to this
     # same instrumented instance instead of starting a second executable.
@@ -242,7 +250,7 @@ if args.verify_control_rows:
     volume_bottom = max(frames[k][1] + frames[k][3] for k in ['volumeMinButton', 'volumeMaxButton'])
     if transport_bottom > volume_top + .5 or volume_bottom > min(b['frame'][1] for b in controls['tools']) + .5:
         failures.append('Playback, volume and bottom tool touch rows overlap')
-if args.verify_system_volume:
+if args.verify_system_volume or args.verify_native_volume_position:
     controls = next(c for c in reply['controllers'] if c['class'] == 'PlaybackControlsViewController')
     sliders = [s for s in controls['systemVolume']['children'] if 'Slider' in s['class'] and not s['hidden'] and s['alpha'] > .01]
     if not sliders or sliders[0]['trackFrame'][2] < 80:
@@ -253,6 +261,15 @@ if args.verify_system_volume:
         low, high = frames['volumeMinButton'], frames['volumeMaxButton']
         if track[0] < low[0] + low[2] - .5 or track[0] + track[2] > high[0] + .5:
             failures.append('The volume track overlaps its speaker buttons')
+        if args.verify_native_volume_position:
+            shift = controls['systemVolume']['frame'][1] - frames['volumeHitView'][1]
+            if abs(shift) > .5:
+                failures.append(f'The native volume view was shifted down by {shift} points')
+            for glyph in controls['playerGlyphs']:
+                if glyph['key'] in ['volumeMinButton', 'volumeMaxButton']:
+                    frame = glyph['frame']
+                    if abs(frame[1] + frame[3] / 2 - track[1] - track[3] / 2) > .5:
+                        failures.append(f'{glyph["key"]} is not aligned with the native volume track')
 if failures:
     (out / (args.label + '-checks.json')).write_text(json.dumps({'passed': False, 'failures': failures}, indent=2))
     raise AssertionError(failures)

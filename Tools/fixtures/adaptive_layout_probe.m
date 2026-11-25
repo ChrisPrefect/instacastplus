@@ -14,6 +14,7 @@
 - (void)_pushShowNotesOfEpisode:(id)episode animated:(BOOL)animated inAppearanceTransition:(BOOL)transition;
 + (id)sharedAudioSession;
 - (void)appendToUpNext:(NSArray *)episodes;
+- (void)playNow:(id)sender;
 @end
 
 static NSString *directory;
@@ -113,7 +114,7 @@ static void controllers(UIViewController *vc, NSMutableArray *result) {
         entry[@"tools"] = buttons;
         NSMutableArray *playerGlyphs = [NSMutableArray array];
         NSMutableArray *glyphButtons = [NSMutableArray array];
-        for (NSString *key in @[@"backButton", @"forwardButton", @"playButton", @"bookmarkButton", @"transcriptButton"]) {
+        for (NSString *key in @[@"backButton", @"forwardButton", @"playButton", @"volumeMinButton", @"volumeMaxButton", @"bookmarkButton", @"transcriptButton"]) {
             UIButton *button = [vc valueForKey:key];
             if (button && !button.hidden) [glyphButtons addObject:@{@"key":key, @"button":button}];
         }
@@ -132,7 +133,7 @@ static void controllers(UIViewController *vc, NSMutableArray *result) {
                 rendered = CGSizeMake(source.size.width * scale, source.size.height * scale);
             } else if (view.contentMode >= UIViewContentModeCenter) rendered = source.size;
             NSMutableDictionary *state = [@{@"key":key, @"imageSize":@[@(source.size.width), @(source.size.height)],
-                @"renderedSize":@[@(rendered.width), @(rendered.height)], @"contentMode":@(view.contentMode),
+                @"renderedSize":@[@(rendered.width), @(rendered.height)], @"frame":rect([view convertRect:view.bounds toView:window()]), @"contentMode":@(view.contentMode),
                 @"sourceAlphaSize":alphaSize(source, [@"glyph-" stringByAppendingString:key])} mutableCopy];
             if ([key isEqual:@"backButton"] || [key isEqual:@"forwardButton"]) {
                 BOOL chapter = [key isEqual:@"forwardButton"] && [[vc valueForKey:@"forwardChapterSkipActive"] boolValue];
@@ -328,6 +329,8 @@ static UIViewController *top(void) {
             }
             [database save];
             [[NSClassFromString(@"AudioSession") sharedAudioSession] appendToUpNext:@[fixtureEpisode]];
+        } else if ([action isEqual:@"miniPlayer"]) {
+            [(id)main playNow:nil];
         } else if ([action isEqual:@"player"]) {
             id player = [NSClassFromString(@"PlaybackViewController") playbackViewControllerWithEpisode:fixtureEpisode];
             [player presentFromParentViewController:main autostart:NO completion:nil];

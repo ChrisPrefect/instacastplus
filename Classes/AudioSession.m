@@ -326,8 +326,8 @@ preservingPlaybackSource:(BOOL)preservingPlaybackSource;
         [[ICDiagnosticLogger shared] logEvent:@"audio-session" message:@"interruption-handled"
                                      metadata:@{
             @"type": @(interruptionType), @"options": @(option),
+            // The reason covers what the former "was suspended" key told; iOS 14.5+ no longer sends that key.
             @"reason": userInfo[AVAudioSessionInterruptionReasonKey] ?: @(-1),
-            @"wasSuspended": userInfo[AVAudioSessionInterruptionWasSuspendedKey] ?: @NO,
             @"wasPlayingWhenInterrupted": @(pman.hasBeenPlayingWhenInterrupted || shouldResumeAfterInterruption),
             @"pausedBefore": @(pausedBefore), @"pausedAfter": @(pman.paused),
             @"episodeHash": pman.playingEpisode.objectHash ?: @"",

@@ -280,8 +280,6 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     switch (section) {
         case kPlaybackSection:
             return @"These are the default settings. They can be overridden per podcast in the podcast settings.".ls;
-        case kSilenceTrimSection:
-            return @"Pause Shortening Footer".ls;
         default:
             break;
     }

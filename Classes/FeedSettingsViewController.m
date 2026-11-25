@@ -959,7 +959,6 @@ enum {
             controller.values = @[ @0, @1, @2, @3 ];
             controller.titles = @[ [PlaybackManager titleForSilenceTrimLevel:0], [PlaybackManager titleForSilenceTrimLevel:1],
                                    [PlaybackManager titleForSilenceTrimLevel:2], [PlaybackManager titleForSilenceTrimLevel:3] ];
-            controller.footerTexts = [PlaybackSettingsViewController silenceTrimLevelFooterTexts];
             controller.selectedValue = @([feed integerForKey:PlayerSilenceTrimLevel]);
             controller.selectionHandler = ^(id value) {
                 // Same storage rule as the other podcast settings: the default value is no override.

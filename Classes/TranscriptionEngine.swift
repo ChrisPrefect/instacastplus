@@ -686,14 +686,14 @@ private struct ICDiagnosticLogLine: Encodable {
     // Foundation/Darwin only: the logger also reads this on its background queue.
     // Do not use the user's device name or a hardware-to-marketing-name lookup.
     private static let deviceMetadata: [String: String] = {
+        // Read at run time in every build: as compile-time constants (true on the Mac, false in
+        // the simulator) the compiler flagged the other branches below as never executed.
+        let runsOnMac = ProcessInfo.processInfo.isMacCatalystApp || ProcessInfo.processInfo.isiOSAppOnMac
 #if targetEnvironment(macCatalyst)
-        let runsOnMac = true
         let runtime = "Mac Catalyst"
 #elseif targetEnvironment(simulator)
-        let runsOnMac = false
         let runtime = "simulator"
 #else
-        let runsOnMac = ProcessInfo.processInfo.isiOSAppOnMac
         let runtime = runsOnMac ? "iOS on Mac" : "device"
 #endif
 #if targetEnvironment(simulator)

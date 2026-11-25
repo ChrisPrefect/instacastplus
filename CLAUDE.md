@@ -17,6 +17,8 @@ Diese Datei enthält nur Dinge, die man dem Code NICHT ansieht: Fallen, die scho
 - Nichts eigenmächtig umbauen, was über den Auftrag hinausgeht; bei Unklarheit nachfragen.
 - Eine scheinbar tote Datei vor dem Löschen repo-weit prüfen. Die Regressionstests in `Tools/` pinnen Dateien, die im App-Code unreferenziert aussehen (z.B. `Resources-iPad/`, `InstacastMac.entitlements`).
 - Builds und Simulatoren sind jederzeit ohne Rückfrage erlaubt; bei kleinen Änderungen trotzdem lieber gezielt testen als voll bauen.
+- **Chris' Arbeits-iPhone ist kein Testgerät.** Ein Auftrag für Code- oder UI-Änderungen erlaubt dort keine Installationen, Appstarts, Instrumentierung oder Testbereinigung. Physische Gerätetests brauchen einen ausdrücklichen Auftrag für genau diesen Test; standardmäßig ausschließlich Simulatoren verwenden. Eine beauftragte Datenwiederherstellung erlaubt nur die dafür notwendigen Wiederherstellungsschritte, keine weiteren Tests oder Testinstallationen.
+- **Produktive App-Container niemals mit `devicectl ... copy to --remove-existing-content` bearbeiten.** Dieser Bereinigungsweg hat am 23.11.2026 Instacast-Daten auf dem Arbeits-iPhone gelöscht. Vor jeder autorisierten Zustandswiederherstellung vorhandene Daten unverändert sichern und die Sicherung prüfen; ausschließlich einzeln benannte Dateien übertragen, keine Container- oder Verzeichnisbereinigung. Wiederherstellungskopien mit Audiodateien dauerhaft außerhalb von `build/` erhalten. XML-Exporte enthalten keine Audiodateien.
 
 ## Build
 

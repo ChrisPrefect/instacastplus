@@ -30,6 +30,10 @@ signatures = [
     "- (NSString*)_matchingSkipNameForChapterTitle:",
     "- (BOOL)_autoSkipSponsorsEnabledForFeed:",
     "- (NSArray*)_effectiveAutoSkipNamesForFeed:",
+    "- (NSString*)_chapterSkipOverridesKeyForEpisode:",
+    "- (NSString*)_chapterSkipIdentifierForTitle:",
+    "- (NSDictionary*)_chapterSkipOverridesForEpisode:",
+    "- (NSString*)_skipNameForChapter:",
     "- (void)_computeAutoSkipMarkers",
     "- (void)_suppressAutoSkipMarkerAtTime:",
     "- (void)nextTimeAfterSkipChapter:",
@@ -49,6 +53,7 @@ if "- (id)_audioContentGenerationAtURL:" in source:
 
 preamble = r'''
 #import <Foundation/Foundation.h>
+#import <math.h>
 #import <sys/stat.h>
 #import <fcntl.h>
 #import <unistd.h>

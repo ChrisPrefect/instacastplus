@@ -2191,8 +2191,7 @@
 "Pause Shortening Medium" = "Mittel";
 "Pause Shortening Strong" = "Stark";
 "Pause Shortening Default Level" = "Standardstärke";
-"Pause Shortening Explanation" = "Spielt Sprechpausen schneller ab, ohne Stimmen zu beschleunigen, damit Folgen früher fertig sind. Die Stärke wählst du im Tempo-Menü des Players.";
-"Pause Shortening Footer" = "Gilt für geladene Folgen und für Streams, sobald sie vollständig geladen sind. Nicht bei Videos und während SharePlay. Pro Podcast lässt sich die Stärke in den Podcast-Einstellungen festlegen.";
+"Pause Shortening Explanation" = "Spielt Sprechpausen schneller ab, ohne Stimmen zu beschleunigen. Die Stärke wählst du im Tempo-Menü des Players.";
 "Pause Shortening Off Explanation" = "Pausen bleiben unverändert.";
 "Pause Shortening Mild Explanation" = "Nur deutliche Pausen, behutsam gekürzt. Folgen werden etwa 3–6 % kürzer.";
 "Pause Shortening Medium Explanation" = "Pausen und Zögern laufen deutlich schneller. Folgen werden etwa 5–9 % kürzer.";
@@ -2208,3 +2207,8 @@
 "Pause Shortening Unavailable Video" = "Nicht bei Videos";
 "Pause Shortening Unavailable File" = "Für diese Datei nicht verfügbar";
 "Pause Shortening Unavailable Stream" = "Für diesen Stream ausgeschaltet";
+
+/* Chapter long press */
+"Create Skip Chapter Rule" = "Skip-Regel erstellen";
+"Chapter Skipped" = "Wird übersprungen";
+"Skip this chapter only in this episode, or create a rule for this podcast." = "Dieses Kapitel nur in dieser Folge überspringen oder eine Regel für diesen Podcast erstellen.";

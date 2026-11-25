@@ -2960,6 +2960,78 @@ didReceiveResponse:(NSURLResponse *)response
                                         withNames:[self _effectiveAutoSkipNamesForFeed:feed]] != nil;
 }
 
+- (NSString*)_chapterSkipOverridesKeyForEpisode:(CDEpisode*)episode
+{
+    return [@"EpisodeChapterSkipOverrides_" stringByAppendingString:episode.objectHash ?: @""];
+}
+
+- (NSString*)_chapterSkipIdentifierForTitle:(NSString*)title time:(NSTimeInterval)time
+{
+    // Titles can repeat within one episode. Match the chapter's source time as well.
+    return [NSString stringWithFormat:@"%lld|%@", llround(time * 1000.0), title ?: @""];
+}
+
+- (NSDictionary*)_chapterSkipOverridesForEpisode:(CDEpisode*)episode
+{
+    NSString *json = [episode.feed stringForKey:[self _chapterSkipOverridesKeyForEpisode:episode]];
+    if (json.length == 0) return @{};
+    id values = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    return [values isKindOfClass:NSDictionary.class] ? values : @{};
+}
+
+- (NSString*)_skipNameForChapter:(ICMetadataChapter*)chapter withNames:(NSArray*)names overrides:(NSDictionary*)overrides
+{
+    id override = overrides[[self _chapterSkipIdentifierForTitle:chapter.title time:CMTimeGetSeconds(chapter.start)]];
+    // An empty name represents an episode-only skip, without a rule's offsets.
+    if ([override isKindOfClass:NSNumber.class]) return [override boolValue] ? @"" : nil;
+    return [self matchingSkipNameForChapter:chapter withNames:names];
+}
+
+- (BOOL)autoSkipsChapterTitle:(NSString*)title atTime:(NSTimeInterval)time inEpisode:(CDEpisode*)episode
+{
+    if (!episode || !isfinite(time)) return NO;
+    if (episode == self.playingEpisode && self.automaticChapterSkippingAudioUnverified) return NO;
+    id override = [self _chapterSkipOverridesForEpisode:episode][[self _chapterSkipIdentifierForTitle:title time:time]];
+    if ([override isKindOfClass:NSNumber.class]) return [override boolValue];
+    return [self autoSkipsChapterTitle:title forFeed:episode.feed];
+}
+
+- (void)setChapterSkipped:(BOOL)skipped title:(NSString*)title atTime:(NSTimeInterval)time inEpisode:(CDEpisode*)episode
+{
+    if (!episode.feed || episode.objectHash.length == 0 || !isfinite(time)) return;
+    NSMutableDictionary *overrides = [[self _chapterSkipOverridesForEpisode:episode] mutableCopy];
+    overrides[[self _chapterSkipIdentifierForTitle:title time:time]] = @(skipped);
+    NSData *data = [NSJSONSerialization dataWithJSONObject:overrides options:NSJSONWritingSortedKeys error:nil];
+    [episode.feed setString:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]
+                    forKey:[self _chapterSkipOverridesKeyForEpisode:episode]];
+    [DMANAGER save];
+    if (episode == self.playingEpisode) [self _computeAutoSkipMarkers];
+}
+
+- (void)addSkipRuleForChapterTitle:(NSString*)title inEpisode:(CDEpisode*)episode atTime:(NSTimeInterval)time
+{
+    if (title.length == 0 || !episode.feed) return;
+    NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", episode.feed.uid];
+    NSString *value = [episode.feed stringForKey:key];
+    NSMutableArray *names = value.length ? [[value componentsSeparatedByString:@".  "] mutableCopy] : [NSMutableArray array];
+    if (![names containsObject:title]) {
+        [names addObject:title];
+        [episode.feed setString:[names componentsJoinedByString:@".  "] forKey:key];
+    }
+    // A previously reactivated chapter must follow the newly requested rule again.
+    NSMutableDictionary *overrides = [[self _chapterSkipOverridesForEpisode:episode] mutableCopy];
+    [overrides removeObjectForKey:[self _chapterSkipIdentifierForTitle:title time:time]];
+    NSString *overridesKey = [self _chapterSkipOverridesKeyForEpisode:episode];
+    if (overrides.count) {
+        NSData *data = [NSJSONSerialization dataWithJSONObject:overrides options:NSJSONWritingSortedKeys error:nil];
+        [episode.feed setString:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] forKey:overridesKey];
+    } else {
+        [episode.feed resetValueForKey:overridesKey];
+    }
+    [DMANAGER save];
+    if (episode == self.playingEpisode) [self _computeAutoSkipMarkers];
+}
+
 - (void)nextTimeAfterSkipChapter:(CDEpisode *)episode {
     [self _refreshAutoSkipMarkersIfNeeded];
     if (self.isAutoSkipping) return;
@@ -4579,6 +4651,7 @@ didReceiveResponse:(NSURLResponse *)response
         [offsets addObject:@[@([episode.feed doubleForKey:startKey]), @([episode.feed doubleForKey:endKey])]];
     }
     return @{@"episode": episode.objectHash ?: @"", @"names": names, @"offsets": offsets,
+             @"chapterOverrides": episode ? ([episode.feed stringForKey:[self _chapterSkipOverridesKeyForEpisode:episode]] ?: @"") : @"",
              @"generated": @(self.chaptersUseGeneratedAnalysis), @"verified": @(self.generatedChapterAudioVerified)};
 }
 
@@ -4621,7 +4694,8 @@ didReceiveResponse:(NSURLResponse *)response
     CDEpisode *episode = self.playingEpisode;
     BOOL sponsorKeywordEnabled = episode ? [self _autoSkipSponsorsEnabledForFeed:episode.feed] : NO;
     NSArray *skipNames = episode ? [self _effectiveAutoSkipNamesForFeed:episode.feed] : @[];
-    BOOL audioUnverified = self.chaptersUseGeneratedAnalysis && !self.generatedChapterAudioVerified && skipNames.count > 0;
+    NSDictionary *overrides = [self _chapterSkipOverridesForEpisode:episode];
+    BOOL audioUnverified = self.chaptersUseGeneratedAnalysis && !self.generatedChapterAudioVerified && (skipNames.count > 0 || [overrides.allValues containsObject:@YES]);
     if (self.automaticChapterSkippingAudioUnverified != audioUnverified) {
         self.automaticChapterSkippingAudioUnverified = audioUnverified;
     }
@@ -4646,7 +4720,7 @@ didReceiveResponse:(NSURLResponse *)response
         return;
     }
 
-    if (skipNames.count == 0) {
+    if (skipNames.count == 0 && ![overrides.allValues containsObject:@YES]) {
         self.autoSkipMarkers = nil;
         [self _logPlaybackAutoSkipEvent:@"Auto-Skip-Marker berechnet"
                                 episode:episode
@@ -4667,13 +4741,13 @@ didReceiveResponse:(NSURLResponse *)response
 
     while (i < chapterCount) {
         ICMetadataChapter *chapter = self.chapters[i];
-        NSString *skipName = [self matchingSkipNameForChapter:chapter withNames:skipNames];
+        NSString *skipName = [self _skipNameForChapter:chapter withNames:skipNames overrides:overrides];
 
         if (!skipName) {
             // Check if next chapter is a skip chapter with negative startOffset → early skip from this chapter
             if (i + 1 < chapterCount) {
                 ICMetadataChapter *nextChapter = self.chapters[i + 1];
-                NSString *nextSkipName = [self matchingSkipNameForChapter:nextChapter withNames:skipNames];
+                NSString *nextSkipName = [self _skipNameForChapter:nextChapter withNames:skipNames overrides:overrides];
                 if (nextSkipName) {
                     NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, nextSkipName];
                     double startOffset = [episode.feed doubleForKey:startKey];
@@ -4698,7 +4772,7 @@ didReceiveResponse:(NSURLResponse *)response
         NSInteger j = i + 1;
         while (j < chapterCount) {
             ICMetadataChapter *nextChap = self.chapters[j];
-            NSString *nextName = [self matchingSkipNameForChapter:nextChap withNames:skipNames];
+            NSString *nextName = [self _skipNameForChapter:nextChap withNames:skipNames overrides:overrides];
             if (!nextName) break;
             lastSkipName = nextName;
             groupEnd = j;
@@ -4710,7 +4784,7 @@ didReceiveResponse:(NSURLResponse *)response
         NSTimeInterval firstSkipChapterStart = CMTimeGetSeconds(firstSkipChapter.start);
 
         NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, firstSkipName];
-        double startOffset = [episode.feed doubleForKey:startKey];
+        double startOffset = firstSkipName.length ? [episode.feed doubleForKey:startKey] : 0;
 
         NSTimeInterval skipStart;
         if (startOffset < 0) {
@@ -4733,7 +4807,7 @@ didReceiveResponse:(NSURLResponse *)response
             NSTimeInterval lastSkipChapterEnd = CMTimeGetSeconds(lastSkipChapter.end);
 
             NSString *endKey = [NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", episode.feed.uid, lastSkipName];
-            double endOffset = [episode.feed doubleForKey:endKey];
+            double endOffset = lastSkipName.length ? [episode.feed doubleForKey:endKey] : 0;
 
             resumeTime = lastSkipChapterEnd + endOffset;
 
